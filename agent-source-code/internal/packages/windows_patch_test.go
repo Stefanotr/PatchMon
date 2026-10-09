@@ -307,6 +307,8 @@ func TestClassifyWinGetExit(t *testing.T) {
 		{0x8A15002B, StatusSkip, false},
 		{0x8A15004F, StatusSkip, false},
 		{0x8A150014, StatusSkip, false},
+		{0x8A15008E, StatusSkip, false},
+		{0x8A150068, StatusSkip, false},
 		{0x8A150101, StatusFail, false},
 		{0x8A15010A, StatusFail, true},
 		{0x8A150050, StatusFail, false},

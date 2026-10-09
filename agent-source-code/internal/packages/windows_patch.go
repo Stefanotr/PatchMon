@@ -665,9 +665,18 @@ const (
 	wingetUpgradeVersionNewer uint32 = 0x8A15004F
 	wingetInstallDowngrade    uint32 = 0x8A15010E
 	wingetVersionUnknown      uint32 = 0x8A150050
+	wingetPackageIsPinned     uint32 = 0x8A150068
+	wingetInstallTechMismatch uint32 = 0x8A15008E
 )
 
 // ClassifyWinGetExit turns a `winget upgrade` exit code into an item result.
+//
+// A package winget refuses before it downloads anything (a newer version
+// built with another installer technology, a blocking pin) is a skip: the host
+// is unchanged, and `winget upgrade --all` skips those packages the same way.
+// Failing them would fail every patch_all run on a host that has one, such as
+// Microsoft Edge on Windows Server, which the OS image installs and Edge's own
+// updater keeps current.
 func ClassifyWinGetExit(code uint32) ItemResult {
 	switch code {
 	case 0:
@@ -680,6 +689,11 @@ func ClassifyWinGetExit(code uint32) ItemResult {
 		return ItemResult{Status: StatusSkip, Detail: "no applicable upgrade any more (already up to date)"}
 	case wingetNoPackagesFound:
 		return ItemResult{Status: StatusSkip, Detail: "package no longer installed"}
+	case wingetInstallTechMismatch:
+		return ItemResult{Status: StatusSkip, Detail: "winget cannot upgrade this install in place: the newer version uses another installer technology " +
+			"(MSI, EXE, MSIX) than the installed one. Left as is, as winget upgrade --all does; let the app update itself, or reinstall it with winget"}
+	case wingetPackageIsPinned:
+		return ItemResult{Status: StatusSkip, Detail: "a winget pin on this host blocks the upgrade (see winget pin list)"}
 	case wingetPackageInUse:
 		return ItemResult{Status: StatusFail, Detail: "the application is running; close it and retry"}
 	case wingetInstallInProgress:
