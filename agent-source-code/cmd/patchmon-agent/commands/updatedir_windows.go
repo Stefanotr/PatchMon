@@ -19,11 +19,7 @@ import (
 // also maps only the read-only attribute on Windows, so a 0600 file mode is not
 // a control here: the DACL has to be set explicitly.
 func secureUpdateDir() (string, error) {
-	base := os.Getenv("ProgramData")
-	if base == "" {
-		base = `C:\ProgramData`
-	}
-	dir := filepath.Join(base, "PatchMon", "update")
+	dir := filepath.Join(programDataDir(), "PatchMon", "update")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create update directory: %w", err)
 	}

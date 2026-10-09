@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"runtime"
 	"slices"
 	"strings"
@@ -74,6 +76,44 @@ type windowsPatchBackend interface {
 	InstallWUA(ctx context.Context, u packages.WUAUpdate, out io.Writer) (packages.ItemResult, error)
 	UpgradeWinGet(ctx context.Context, wingetPath string, app packages.WinGetUpgrade, out io.Writer) (packages.ItemResult, error)
 	RebootPending() (bool, string)
+	// LoadWinGetRefusals and SaveWinGetRefusals keep, across runs, the
+	// upgrades winget refused (packages.WinGetRefusals).
+	LoadWinGetRefusals() (*packages.WinGetRefusals, error)
+	SaveWinGetRefusals(*packages.WinGetRefusals) error
+}
+
+// windowsHost is the production backend: the patcher, plus the state file in
+// which runs keep what they learn about the host.
+type windowsHost struct {
+	*packages.WindowsPatcher
+	statePath string
+}
+
+func newWindowsHost() windowsHost {
+	return windowsHost{
+		WindowsPatcher: packages.NewWindowsPatcher(logger),
+		statePath:      stateFilePath("windows-patch-state.json"),
+	}
+}
+
+func (h windowsHost) LoadWinGetRefusals() (*packages.WinGetRefusals, error) {
+	f, err := openTrustedStateFile(h.statePath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return packages.NewWinGetRefusals(), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return packages.ReadWinGetRefusals(f)
+}
+
+func (h windowsHost) SaveWinGetRefusals(r *packages.WinGetRefusals) error {
+	var b bytes.Buffer
+	if err := r.Encode(&b); err != nil {
+		return err
+	}
+	return writeTrustedStateFile(h.statePath, b.Bytes())
 }
 
 // windowsPatchServer is the server side of a run, besides the output stream.
@@ -145,7 +185,7 @@ func runPatchWindows(ctx context.Context, httpClient *client.Client, patchRunID,
 
 	outcome := executeWindowsPatch(ctx,
 		windowsPatchRequest{patchType: patchType, names: packageNames, dryRun: dryRun},
-		packages.NewWindowsPatcher(logger),
+		newWindowsHost(),
 		windowsPatchServerClient{client: httpClient, patchRunID: patchRunID},
 		sink, defaultWindowsPatchOptions)
 	sink.Flush()
@@ -254,6 +294,8 @@ type windowsRun struct {
 	skipped   int
 	attempted int
 	reboot    bool
+	// refusals holds the upgrades winget refused, in this run or before.
+	refusals *packages.WinGetRefusals
 }
 
 // executeWindowsPatch runs the whole Windows patch flow and writes its output
@@ -274,6 +316,7 @@ func executeWindowsPatch(ctx context.Context, req windowsPatchRequest, be window
 		r.printf("Stopped during the inventory; nothing was installed\n")
 		return windowsPatchOutcome{err: fmt.Errorf("stopped during the inventory: %w", ctx.Err())}
 	}
+	r.loadRefusals(inv)
 	var targets []packages.WindowsTarget
 	if req.patchType == "patch_all" {
 		targets = r.selectAll(inv)
@@ -297,8 +340,45 @@ func executeWindowsPatch(ctx context.Context, req windowsPatchRequest, be window
 			}
 			srv.ReportReboot(needed)
 		}
+		r.saveRefusals()
 	}
 	return r.finish(len(runnable))
+}
+
+// loadRefusals reads the upgrades winget refused in earlier runs and drops
+// those that no longer apply to the listing. Failing to read them only means
+// winget is asked again.
+func (r *windowsRun) loadRefusals(inv packages.WindowsInventory) {
+	r.refusals = packages.NewWinGetRefusals()
+	if inv.WinGetErr != nil || inv.WinGetPath == "" {
+		return
+	}
+	refusals, err := r.be.LoadWinGetRefusals()
+	if err != nil {
+		r.write(packages.DetailLine("warning: could not read the upgrades winget refused before (" + err.Error() + "); they are tried again"))
+		return
+	}
+	// An incomplete listing proves nothing about the apps it is missing.
+	if inv.WinGetUnreadable == 0 {
+		refusals.Prune(inv.WinGet, time.Now())
+	}
+	r.refusals = refusals
+}
+
+// saveRefusals keeps what this run learnt. A dry run changes nothing on the
+// host, this file included.
+func (r *windowsRun) saveRefusals() {
+	if r.req.dryRun || !r.refusals.Dirty() {
+		return
+	}
+	if err := r.be.SaveWinGetRefusals(r.refusals); err != nil {
+		r.write(packages.DetailLine("warning: could not remember the upgrades winget refused: " + err.Error()))
+	}
+}
+
+func refusalDetail(ref packages.WinGetRefusal) string {
+	return fmt.Sprintf("winget refused this upgrade (%s -> %s) on %s: %s; it is asked again once either version changes, or after %d days",
+		ref.Installed, ref.Available, ref.At.Format("2006-01-02"), ref.Reason, int(packages.RefusalTTL/(24*time.Hour)))
 }
 
 func (r *windowsRun) printf(format string, a ...any) {
@@ -436,6 +516,12 @@ func (r *windowsRun) plan(inv packages.WindowsInventory, targets []packages.Wind
 			r.status(packages.StatusFail, t.Name, t.Ref(), b)
 			continue
 		}
+		if t.Kind == packages.TargetWinGet {
+			if ref, ok := r.refusals.Lookup(t.App, time.Now()); ok {
+				r.status(packages.StatusSkip, t.Name, t.Ref(), refusalDetail(ref))
+				continue
+			}
+		}
 		details := []string{t.Ref() + " | " + t.PlanDetail()}
 		if w := t.Warning(); w != "" {
 			details = append(details, "warning: "+w)
@@ -517,6 +603,14 @@ func (r *windowsRun) installOne(inv packages.WindowsInventory, t packages.Window
 	r.status(res.Status, t.Name, res.Detail)
 	if res.Status == packages.StatusOK {
 		r.installed++
+	}
+	if t.Kind == packages.TargetWinGet {
+		switch {
+		case res.Refusal != "":
+			r.refusals.Record(t.App, res.Refusal, time.Now())
+		case res.Status == packages.StatusOK:
+			r.refusals.Forget(t.App.ID)
+		}
 	}
 	r.reboot = r.reboot || res.RebootRequired
 	if t.Kind == packages.TargetWUA && res.Status != packages.StatusSkip {

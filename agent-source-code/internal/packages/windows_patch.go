@@ -509,16 +509,20 @@ func DetailLine(text string) string {
 
 // OneLine makes s safe to print as a single line of run output.
 func OneLine(s string) string {
-	s = strings.Map(func(r rune) rune {
+	if s = singleLine(s); s == "" {
+		return "(unnamed)"
+	}
+	return s
+}
+
+// singleLine replaces control characters with spaces and trims the result.
+func singleLine(s string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
 		}
 		return r
-	}, s)
-	if s = strings.TrimSpace(s); s == "" {
-		return "(unnamed)"
-	}
-	return s
+	}, s))
 }
 
 func orDefault(s, def string) string {
@@ -633,6 +637,9 @@ type ItemResult struct {
 	Status         string `json:"status"` // StatusOK, StatusFail or StatusSkip
 	Detail         string `json:"detail"`
 	RebootRequired bool   `json:"reboot"`
+	// Refusal is set when winget refused the upgrade for a reason that holds
+	// until a version changes, so the run remembers it (WinGetRefusals).
+	Refusal string `json:"-"`
 }
 
 // ParseItemResult decodes the result line of a WUA install script.
@@ -669,6 +676,8 @@ const (
 	wingetInstallTechMismatch uint32 = 0x8A15008E
 )
 
+const techMismatchReason = "the newer version uses another installer technology (MSI, EXE, MSIX) than the installed one"
+
 // ClassifyWinGetExit turns a `winget upgrade` exit code into an item result.
 //
 // A package winget refuses before it downloads anything (a newer version
@@ -690,8 +699,12 @@ func ClassifyWinGetExit(code uint32) ItemResult {
 	case wingetNoPackagesFound:
 		return ItemResult{Status: StatusSkip, Detail: "package no longer installed"}
 	case wingetInstallTechMismatch:
-		return ItemResult{Status: StatusSkip, Detail: "winget cannot upgrade this install in place: the newer version uses another installer technology " +
-			"(MSI, EXE, MSIX) than the installed one. Left as is, as winget upgrade --all does; let the app update itself, or reinstall it with winget"}
+		return ItemResult{
+			Status: StatusSkip,
+			Detail: "winget cannot upgrade this install in place: " + techMismatchReason +
+				". Left as is, as winget upgrade --all does; let the app update itself, or reinstall it with winget",
+			Refusal: techMismatchReason,
+		}
 	case wingetPackageIsPinned:
 		return ItemResult{Status: StatusSkip, Detail: "a winget pin on this host blocks the upgrade (see winget pin list)"}
 	case wingetPackageInUse:
