@@ -36,11 +36,10 @@ function formatRepoName(name) {
 	return name;
 }
 
-// A host is "patchable" for a specific package if it has a pending update
-// and isn't running Windows (Windows patching is not supported by the agent).
-const isHostPatchable = (host) =>
-	!!host.needsUpdate &&
-	!(host.osType || host.os_type || "").toLowerCase().includes("windows");
+// A host is "patchable" for a specific package if it has a pending update.
+// Windows hosts included: the agent installs Windows Updates (WUA) and WinGet
+// apps by the name the inventory reported.
+const isHostPatchable = (host) => !!host.needsUpdate;
 
 const PackageDetail = () => {
 	const { packageId } = useParams();
@@ -613,31 +612,27 @@ const PackageDetail = () => {
 														</div>
 													</div>
 													<div className="flex flex-col gap-2 items-end">
-														{host.needsUpdate &&
-															canManageHosts() &&
-															!(host.osType || host.os_type || "")
-																.toLowerCase()
-																.includes("windows") && (
-																<button
-																	type="button"
-																	onClick={(e) => {
-																		e.stopPropagation();
-																		setPatchConfirmTarget({
-																			hostId: host.hostId,
-																			hostName:
-																				host.friendlyName || host.hostname,
-																			packageName: pkg.name,
-																		});
-																	}}
-																	disabled={patchingHostId === host.hostId}
-																	className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-primary-100 text-primary-800 hover:bg-primary-200 dark:bg-primary-900 dark:text-primary-200 dark:hover:bg-primary-800 disabled:opacity-50"
-																>
-																	<Wrench className="h-3 w-3" />
-																	{patchingHostId === host.hostId
-																		? "Queuing…"
-																		: "Patch"}
-																</button>
-															)}
+														{canManageHosts() && isHostPatchable(host) && (
+															<button
+																type="button"
+																onClick={(e) => {
+																	e.stopPropagation();
+																	setPatchConfirmTarget({
+																		hostId: host.hostId,
+																		hostName:
+																			host.friendlyName || host.hostname,
+																		packageName: pkg.name,
+																	});
+																}}
+																disabled={patchingHostId === host.hostId}
+																className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-primary-100 text-primary-800 hover:bg-primary-200 dark:bg-primary-900 dark:text-primary-200 dark:hover:bg-primary-800 disabled:opacity-50"
+															>
+																<Wrench className="h-3 w-3" />
+																{patchingHostId === host.hostId
+																	? "Queuing…"
+																	: "Patch"}
+															</button>
+														)}
 														{host.needsReboot && (
 															<span
 																className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
@@ -817,10 +812,7 @@ const PackageDetail = () => {
 																className="px-6 py-4 whitespace-nowrap"
 																onClick={(e) => e.stopPropagation()}
 															>
-																{host.needsUpdate &&
-																!(host.osType || host.os_type || "")
-																	.toLowerCase()
-																	.includes("windows") ? (
+																{isHostPatchable(host) ? (
 																	<button
 																		type="button"
 																		onClick={() =>

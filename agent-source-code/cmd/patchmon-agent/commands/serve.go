@@ -1740,7 +1740,7 @@ func connectOnce(out chan<- wsMsg, dockerEvents <-chan interface{}, backoff *tim
 			var packageNames []string
 			if len(payload.PackageNames) > 0 {
 				for _, n := range payload.PackageNames {
-					if validAptPackagePattern.MatchString(n) {
+					if validPatchPackageName(n) {
 						packageNames = append(packageNames, n)
 					} else {
 						logger.WithError(fmt.Errorf("invalid package name")).WithField("package_name", logutil.Sanitize(n)).Warn("Invalid package name in run_patch package_names")
@@ -1751,7 +1751,7 @@ func connectOnce(out chan<- wsMsg, dockerEvents <-chan interface{}, backoff *tim
 					continue
 				}
 			} else if payload.PackageName != "" {
-				if validAptPackagePattern.MatchString(payload.PackageName) {
+				if validPatchPackageName(payload.PackageName) {
 					packageNames = []string{payload.PackageName}
 				} else {
 					logger.WithError(fmt.Errorf("invalid package name")).WithField("package_name", logutil.Sanitize(payload.PackageName)).Warn("Invalid package_name in run_patch")
@@ -2127,9 +2127,6 @@ func splitFreeBSDPatchTargets(packageNames []string) ([]string, bool) {
 	return filtered, includeBase
 }
 
-// runPatch runs package manager update and upgrade (patch_all) or install (patch_package).
-// Supports apt-get (Debian/Ubuntu), dnf, yum (RHEL-based), pkg (FreeBSD), pacman (Arch),
-// and windows (WinGet for applications + WUA COM API for OS updates).
 // formatCmd returns a shell-style "$ command args..." line for display in output.
 func formatCmd(name string, args ...string) string {
 	parts := append([]string{name}, args...)
@@ -2146,7 +2143,10 @@ type streamSink struct {
 	client     *client.Client
 	patchRunID string
 
-	mu         sync.Mutex
+	mu sync.Mutex
+	// sendMu serialises Flush so chunks reach the server in the order they
+	// were written, when a writer and a ticker flush at the same time.
+	sendMu     sync.Mutex
 	full       *strings.Builder
 	pending    strings.Builder
 	lastFlush  time.Time
@@ -2188,6 +2188,8 @@ func (s *streamSink) WriteString(str string) {
 // Uses a background context so a cancelled parent ctx does not prevent the
 // final chunk from being sent.
 func (s *streamSink) Flush() {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
 	s.mu.Lock()
 	if s.pending.Len() == 0 {
 		s.lastFlush = time.Now()
@@ -2322,9 +2324,12 @@ func aptOnlyUpgradeArgs(dryRun bool, packageNames []string) []string {
 	return append(args, packageNames...)
 }
 
+// runPatch runs package manager update and upgrade (patch_all) or install (patch_package).
+// Supports apt-get (Debian/Ubuntu), dnf, yum (RHEL-based), pkg (FreeBSD), pacman (Arch),
+// and Windows (WinGet for applications + WUA COM API for OS updates, see serve_windows_patch.go).
 // When dryRun is true, simulates and sends dry_run_completed instead of completed.
 func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), patchRunTimeout())
 	defer cancel()
 
 	// Register cancel fn so the server can request an interrupt via "patch_run_stop".
@@ -2649,160 +2654,6 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool) 
 		return fmt.Errorf("patch run stopped by user")
 	}
 	return nil
-}
-
-// runPatchWindows handles patching on Windows hosts.
-// For patch_all: installs all approved WUA updates (by GUID from server) + upgrades all WinGet apps.
-// For patch_package: routes by package name - "KB..." prefix -> WUA, otherwise -> WinGet upgrade.
-func runPatchWindows(ctx context.Context, httpClient *client.Client, patchRunID, patchType string, packageNames []string, dryRun bool) error {
-	patcher := packages.NewWindowsPatcher()
-	var fullOutput strings.Builder
-
-	if err := httpClient.SendPatchOutput(ctx, patchRunID, "started", "", ""); err != nil {
-		logger.WithError(err).Warn("Failed to send patch started to server")
-	}
-
-	if patchType == "patch_all" {
-		// Step 1: WUA - install approved OS/KB updates
-		guids, err := httpClient.GetApprovedWindowsUpdateGUIDs(ctx)
-		if err != nil {
-			logger.WithError(err).Warn("Could not fetch approved Windows Update GUIDs; skipping WUA step")
-		}
-		if len(guids) > 0 {
-			fmt.Fprintf(&fullOutput, "[Windows Update] Installing %d approved update(s)...\n", len(guids))
-			_ = httpClient.SendPatchOutput(ctx, patchRunID, "progress", fullOutput.String(), "")
-			for _, guid := range guids {
-				out, err := patcher.InstallWindowsUpdate(ctx, guid)
-				fmt.Fprintf(&fullOutput, "  [%s] %s\n", guid, out)
-				success := err == nil && !packages.IsSuperseded(out)
-				result := client.WindowsUpdateResult{GUID: guid, Success: success}
-				if err != nil {
-					result.Error = err.Error()
-				}
-				_ = httpClient.SendWindowsUpdateResult(ctx, patchRunID, result)
-				_ = httpClient.SendPatchOutput(ctx, patchRunID, "progress", fullOutput.String(), "")
-			}
-		}
-
-		// Step 2: WinGet - upgrade all applications
-		fullOutput.WriteString("\n[WinGet] Upgrading applications...\n")
-		_ = httpClient.SendPatchOutput(ctx, patchRunID, "progress", fullOutput.String(), "")
-		wingetOut, wingetErr := patcher.WinGetUpgradeAll(ctx, dryRun)
-		fullOutput.WriteString(wingetOut)
-		fullOutput.WriteString("\n")
-		if wingetErr != nil {
-			logger.WithError(wingetErr).Warn("winget upgrade --all had errors (non-fatal)")
-		}
-
-		// Step 3: report reboot status
-		needsReboot := packages.RebootRequired()
-		_ = httpClient.SendWindowsRebootStatus(ctx, patchRunID, needsReboot)
-		if needsReboot {
-			fullOutput.WriteString("\n[Reboot Required] A system restart is needed to complete the update installation.\n")
-		}
-	} else {
-		// patch_package: each name is either a KB/GUID (WUA) or a WinGet package ID
-		if len(packageNames) == 0 {
-			_ = httpClient.SendPatchOutput(ctx, patchRunID, "failed", "", "package_names required for patch_package")
-			return fmt.Errorf("package_names required for patch_package")
-		}
-		for _, name := range packageNames {
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			// Treat as WUA GUID if it looks like a UUID (36 chars with dashes), or KB prefix
-			isWUA := isWindowsUpdateIdentifier(name)
-			if isWUA {
-				fmt.Fprintf(&fullOutput, "[Windows Update] Installing %s...\n", name)
-				out, err := patcher.InstallWindowsUpdate(ctx, name)
-				fullOutput.WriteString(out + "\n")
-				success := err == nil && !packages.IsSuperseded(out)
-				result := client.WindowsUpdateResult{GUID: name, Success: success}
-				if err != nil {
-					result.Error = err.Error()
-				}
-				_ = httpClient.SendWindowsUpdateResult(ctx, patchRunID, result)
-			} else {
-				fmt.Fprintf(&fullOutput, "[WinGet] Upgrading %s...\n", name)
-				out, err := patcher.WinGetUpgradePackage(ctx, name, dryRun)
-				fullOutput.WriteString(out + "\n")
-				if err != nil {
-					logger.WithError(err).WithField("package", name).Warn("winget upgrade failed (non-fatal)")
-				}
-			}
-			_ = httpClient.SendPatchOutput(ctx, patchRunID, "progress", fullOutput.String(), "")
-		}
-
-		needsReboot := packages.RebootRequired()
-		_ = httpClient.SendWindowsRebootStatus(ctx, patchRunID, needsReboot)
-		if needsReboot {
-			fullOutput.WriteString("\n[Reboot Required] A system restart is needed.\n")
-		}
-	}
-
-	_, wasStopped := patchRunStopped.LoadAndDelete(patchRunID)
-
-	// Use a background context for the final status send so a cancelled
-	// ctx still allows the final record to reach the server.
-	finalCtx, finalCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer finalCancel()
-
-	stage := "completed"
-	if wasStopped {
-		stage = "cancelled"
-	} else if dryRun {
-		stage = "dry_run_completed"
-	}
-	errMsg := ""
-	if wasStopped {
-		errMsg = "stopped by user"
-	}
-
-	// Human-readable trailer so the browser's live terminal has a clear
-	// "this is the end" marker. Streamed as a progress chunk first so it
-	// reaches the WS hub, then folded into the authoritative terminal blob.
-	trailer := patchRunTrailer(wasStopped, nil, dryRun)
-	fullOutput.WriteString(trailer)
-	_ = httpClient.SendPatchOutput(ctx, patchRunID, "progress", trailer, "")
-
-	if err := httpClient.SendPatchOutput(finalCtx, patchRunID, stage, fullOutput.String(), errMsg); err != nil {
-		logger.WithError(err).Warn("Failed to send Windows patch output to server")
-		return err
-	}
-
-	if !dryRun {
-		logger.Info("Sending post-patch report to refresh package lists...")
-		reportDone := make(chan error, 1)
-		go func() { reportDone <- sendReport(false) }()
-		select {
-		case err := <-reportDone:
-			if err != nil {
-				logger.WithError(err).Warn("Post-patch report failed")
-			} else {
-				logger.Info("Post-patch report sent successfully")
-			}
-		case <-time.After(2 * time.Minute):
-			logger.Warn("Post-patch report timed out after 2 minutes; will retry on next scheduled report")
-		}
-	}
-
-	if wasStopped {
-		return fmt.Errorf("patch run stopped by user")
-	}
-	return nil
-}
-
-// isWindowsUpdateIdentifier returns true if the name looks like a WUA GUID (UUID format) or KB article ID.
-func isWindowsUpdateIdentifier(name string) bool {
-	if strings.HasPrefix(strings.ToUpper(name), "KB") {
-		return true
-	}
-	// UUID format: 8-4-4-4-12 hex digits
-	if len(name) == 36 && name[8] == '-' && name[13] == '-' && name[18] == '-' && name[23] == '-' {
-		return true
-	}
-	return false
 }
 
 // applyConfig applies a full config update from the server and restarts the service.

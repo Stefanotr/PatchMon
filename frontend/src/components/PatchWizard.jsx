@@ -28,7 +28,10 @@ import { patchingAPI, pollDryRunUntilDone } from "../utils/patchingApi";
 import { extraDependencies } from "../utils/patchRun";
 
 const DRY_RUN_PACKAGE_LIMIT = 5;
+// Dry runs triggered at once, then dry runs polled at once (one request every
+// two seconds each). The hosts all run their dry runs in parallel either way.
 const VALIDATION_CONCURRENCY = 5;
+const VALIDATION_POLL_CONCURRENCY = 20;
 
 // Verb used across the outcome UI so approval and patch flows read right.
 const submitVerbFor = (mode) => (mode === "approval" ? "submitted" : "queued");
@@ -285,8 +288,6 @@ export default function PatchWizard({
 		for (const q of hostQueries) {
 			const list = q.data || [];
 			for (const h of list) {
-				const osType = (h.os_type || h.osType || "").toLowerCase();
-				if (osType.includes("windows")) continue;
 				const id = h.hostId || h.host_id || h.id;
 				if (!id) continue;
 				if (restrictSet && !restrictSet.has(id)) continue;
@@ -659,6 +660,21 @@ export default function PatchWizard({
 		}
 		setValidationByTarget(seeded);
 
+		const markFailed = (target, error) =>
+			setValidationByTarget((prev) => ({
+				...prev,
+				[target.id]: {
+					status: "failed",
+					packages_affected: [],
+					shell_output: "",
+					error,
+				},
+			}));
+
+		// Every dry run is triggered before any is waited on, so all hosts
+		// validate at the same time: a Windows dry run can take minutes and
+		// must not hold back the hosts queued behind it.
+		const runIdByTarget = {};
 		await runWithConcurrency(
 			selectedTargets,
 			VALIDATION_CONCURRENCY,
@@ -684,32 +700,29 @@ export default function PatchWizard({
 					);
 					const runId = res?.patch_run_id;
 					if (!runId) {
-						setValidationByTarget((prev) => ({
-							...prev,
-							[target.id]: {
-								status: "failed",
-								packages_affected: [],
-								shell_output: "",
-								error: "No run ID returned",
-							},
-						}));
+						markFailed(target, "No run ID returned");
 						return;
 					}
+					runIdByTarget[target.id] = runId;
+				} catch (err) {
+					markFailed(target, err.response?.data?.error || err.message);
+				}
+			},
+		);
+
+		await runWithConcurrency(
+			selectedTargets.filter((target) => runIdByTarget[target.id]),
+			VALIDATION_POLL_CONCURRENCY,
+			async (target) => {
+				const runId = runIdByTarget[target.id];
+				try {
 					const result = await pollDryRunUntilDone(runId);
 					setValidationByTarget((prev) => ({
 						...prev,
 						[target.id]: { ...result, patch_run_id: runId },
 					}));
 				} catch (err) {
-					setValidationByTarget((prev) => ({
-						...prev,
-						[target.id]: {
-							status: "failed",
-							packages_affected: [],
-							shell_output: "",
-							error: err.response?.data?.error || err.message,
-						},
-					}));
+					markFailed(target, err.response?.data?.error || err.message);
 				}
 			},
 		);
@@ -730,11 +743,15 @@ export default function PatchWizard({
 		// action.
 		const userChoseSubmit = !isApprove && approvalDecision === "submit";
 		const nextSubmitMode = userChoseSubmit ? "approval" : "patch";
+		// A validation still running on the host counts: it becomes a
+		// validated run waiting for approval once it finishes.
 		const targetHasPendingRun = (id) => {
 			const v = validationByTarget[id];
 			return (
 				!!v?.patch_run_id &&
-				(v.status === "validated" || v.status === "pending_validation")
+				(v.status === "validated" ||
+					v.status === "pending_validation" ||
+					!!v.still_running)
 			);
 		};
 
@@ -811,6 +828,13 @@ export default function PatchWizard({
 				// a fresh trigger.
 				const validation = validationByTarget[target.id];
 				const validationRunId = validation?.patch_run_id;
+				if (validationRunId && validation.still_running) {
+					// A second run now would collide with the dry run on the
+					// host; the validation run is approved once it finishes.
+					throw new Error(
+						"Validation is still running on this host; approve it from Patching once it finishes",
+					);
+				}
 				if (
 					validationRunId &&
 					(validation.status === "validated" ||
@@ -1123,9 +1147,7 @@ export default function PatchWizard({
 							<p className="text-sm text-secondary-600 dark:text-secondary-400 py-4">
 								{restrictSet
 									? "None of the selected hosts have a pending update for these packages."
-									: hostQueries.some((q) => (q.data || []).length > 0)
-										? "These packages are only pending on Windows hosts. Patching is not supported for Windows."
-										: "No hosts have a pending update for these packages."}
+									: "No hosts have a pending update for these packages."}
 							</p>
 						) : (
 							<>
@@ -1412,7 +1434,7 @@ export default function PatchWizard({
 													)}
 													{v.status === "timeout" && (
 														<span className="text-xs px-2 py-0.5 rounded bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-secondary-300">
-															Offline
+															{v.still_running ? "Still running" : "Offline"}
 														</span>
 													)}
 												</div>
@@ -1862,7 +1884,9 @@ export default function PatchWizard({
 							{!isApprove &&
 								(() => {
 									const offline = selectedTargets.filter(
-										(t) => validationByTarget[t.id]?.status === "timeout",
+										(t) =>
+											validationByTarget[t.id]?.status === "timeout" &&
+											!validationByTarget[t.id]?.still_running,
 									);
 									if (offline.length === 0) return null;
 									return (
@@ -1987,7 +2011,9 @@ export default function PatchWizard({
 											)}
 											{v?.status === "timeout" && (
 												<span className="text-xs px-2 py-0.5 rounded bg-secondary-100 text-secondary-600 dark:bg-secondary-600 dark:text-secondary-300">
-													Host offline
+													{v.still_running
+														? "Validation still running"
+														: "Host offline"}
 												</span>
 											)}
 											{submitResult?.status === "success" && (

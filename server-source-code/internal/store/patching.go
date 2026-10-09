@@ -31,6 +31,9 @@ func isFreeBSD(osType string) bool {
 }
 
 func parsePackagesAffectedFromDryRunOutput(osType, output string) []string {
+	if IsWindowsOSType(osType) {
+		return parseWindowsPatchStatusLines(output, windowsStatusPlan)
+	}
 	var pkgs []string
 	seen := make(map[string]bool)
 	addPkg := func(name string) {
@@ -92,7 +95,11 @@ func parsePackagesAffectedFromDryRunOutput(osType, output string) []string {
 //   - dnf/yum: "Upgrading  : pkgname.arch" / "Installing : pkgname.arch" or transaction summary sections
 //   - FreeBSD pkg: transaction summary lines and "[1/3] Upgrading pkgname ..." execution lines
 //   - freebsd-update: base-system updates are recorded as the synthetic "freebsd-base" package (FreeBSD hosts only)
+//   - Windows: "[ok] <name>" status lines (see windows_patch_output.go)
 func parsePackagesAffectedFromRealOutput(osType, output string) []string {
+	if IsWindowsOSType(osType) {
+		return parseWindowsPatchStatusLines(output, windowsStatusOK)
+	}
 	seen := make(map[string]bool)
 	var pkgs []string
 	addPkg := func(name string) {
@@ -350,11 +357,22 @@ func (s *PatchRunsStore) UpdateOutput(ctx context.Context, id, osType, stage, ou
 		}
 		return d.Queries.UpdatePatchRunValidated(ctx, db.UpdatePatchRunValidatedParams{ID: id, ShellOutput: output, PackagesAffected: b})
 	case "failed":
-		return d.Queries.UpdatePatchRunFailed(ctx, db.UpdatePatchRunFailedParams{
+		if err := d.Queries.UpdatePatchRunFailed(ctx, db.UpdatePatchRunFailedParams{
 			ID:           id,
 			ShellOutput:  output,
 			ErrorMessage: &errorMessage,
-		})
+		}); err != nil {
+			return err
+		}
+		// A Windows run installs item by item, so a run that failed on one
+		// item has usually installed others. Record those, as for a stop.
+		if IsWindowsOSType(osType) {
+			if pkgs := parsePackagesAffectedFromRealOutput(osType, output); len(pkgs) > 0 {
+				b, _ := json.Marshal(pkgs)
+				_ = d.Queries.UpdatePatchRunPackagesAffected(ctx, db.UpdatePatchRunPackagesAffectedParams{ID: id, PackagesAffected: b})
+			}
+		}
+		return nil
 	case "cancelled":
 		errPtr := &errorMessage
 		if errorMessage == "" {

@@ -1,7 +1,18 @@
 import api from "./api";
 
 const DRY_RUN_POLL_INTERVAL_MS = 2000;
-const DRY_RUN_TIMEOUT_MS = 30000;
+// How long a dry run may wait for the agent to pick it up before the host is
+// reported offline.
+const DRY_RUN_PICKUP_TIMEOUT_MS = 30000;
+// How long to wait for a dry run the agent is working on. A Windows host runs
+// an online Windows Update search first, which commonly takes minutes.
+const DRY_RUN_MAX_WAIT_MS = 15 * 60 * 1000;
+// Terminal statuses that end a dry run without a validation result.
+const DRY_RUN_ABORTED_STATUSES = {
+	cancelled: "Dry run cancelled",
+	timed_out: "Dry run timed out on the host",
+	agent_disconnected: "Agent disconnected during the dry run",
+};
 
 /**
  * Build the absolute WebSocket URL for the live patch-run output stream.
@@ -17,12 +28,23 @@ export function buildRunStreamURL(runId) {
 }
 
 /**
- * Poll a patch run until it reaches a terminal state (validated, completed, failed) or timeout.
- * Returns { status, packages_affected, error }.
+ * Poll a patch run until it reaches a terminal state (validated, completed,
+ * failed, cancelled, timed out) or the wait runs out.
+ *
+ * A run the agent never picks up times out after pickupTimeoutMs as "host
+ * offline". Once the agent is running it, the wait extends to maxWaitMs; if
+ * that runs out too, the result is a timeout flagged still_running, since the
+ * run carries on and its result lands on the run itself.
+ *
+ * Returns { status, packages_affected, shell_output, error, still_running? }.
  */
-export async function pollDryRunUntilDone(runId) {
+export async function pollDryRunUntilDone(runId, opts = {}) {
+	const pickupTimeoutMs = opts.pickupTimeoutMs ?? DRY_RUN_PICKUP_TIMEOUT_MS;
+	const maxWaitMs = opts.maxWaitMs ?? DRY_RUN_MAX_WAIT_MS;
+	const intervalMs = opts.intervalMs ?? DRY_RUN_POLL_INTERVAL_MS;
 	const start = Date.now();
-	while (Date.now() - start < DRY_RUN_TIMEOUT_MS) {
+	let pickedUp = false;
+	for (;;) {
 		const run = await api.get(`/patching/runs/${runId}`).then((r) => r.data);
 		const status = run?.status;
 		if (status === "validated" || status === "completed") {
@@ -33,22 +55,43 @@ export async function pollDryRunUntilDone(runId) {
 				error: null,
 			};
 		}
-		if (status === "failed") {
+		if (
+			status === "failed" ||
+			Object.hasOwn(DRY_RUN_ABORTED_STATUSES, status)
+		) {
 			return {
 				status: "failed",
 				packages_affected: [],
 				shell_output: run.shell_output || "",
-				error: run.error_message || "Dry run failed",
+				error:
+					run.error_message ||
+					DRY_RUN_ABORTED_STATUSES[status] ||
+					"Dry run failed",
 			};
 		}
-		await new Promise((r) => setTimeout(r, DRY_RUN_POLL_INTERVAL_MS));
+		if (status === "running") pickedUp = true;
+
+		const elapsed = Date.now() - start;
+		if (!pickedUp && elapsed >= pickupTimeoutMs) {
+			return {
+				status: "timeout",
+				packages_affected: [],
+				shell_output: "",
+				error: "Validation skipped (host offline)",
+			};
+		}
+		if (elapsed >= maxWaitMs) {
+			return {
+				status: "timeout",
+				still_running: true,
+				packages_affected: [],
+				shell_output: run?.shell_output || "",
+				error:
+					"Validation is still running on the host; its result will appear on the run in Patching",
+			};
+		}
+		await new Promise((r) => setTimeout(r, intervalMs));
 	}
-	return {
-		status: "timeout",
-		packages_affected: [],
-		shell_output: "",
-		error: "Validation skipped (host offline)",
-	};
 }
 
 export const patchingAPI = {

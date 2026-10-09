@@ -910,33 +910,35 @@ func (h *PatchingHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	host, err := h.hosts.GetByID(r.Context(), body.HostID)
+	if err != nil || host == nil {
+		JSON(w, http.StatusNotFound, map[string]string{"error": "Host not found"})
+		return
+	}
+
+	// Package names are validated against the host's platform: Windows names
+	// are display names with spaces and parentheses (see windows_patch_names.go).
 	var pkgName *string
 	var pkgNames []string
 	if body.PatchType == "patch_package" {
 		if len(body.PackageNames) > 0 {
-			for _, n := range body.PackageNames {
-				if !isValidPackageName(n) {
-					JSON(w, http.StatusBadRequest, map[string]string{"error": "Every package_names entry must be a valid package name"})
-					return
-				}
-			}
 			if len(body.PackageNames) > 100 {
 				JSON(w, http.StatusBadRequest, map[string]string{"error": "package_names limited to 100 packages per run"})
 				return
 			}
+			for _, n := range body.PackageNames {
+				if !isValidPackageNameForHost(host.OSType, n) {
+					JSON(w, http.StatusBadRequest, map[string]string{"error": "Every package_names entry must be a valid package name"})
+					return
+				}
+			}
 			pkgNames = body.PackageNames
-		} else if body.PackageName != "" && isValidPackageName(body.PackageName) {
+		} else if body.PackageName != "" && isValidPackageNameForHost(host.OSType, body.PackageName) {
 			pkgName = &body.PackageName
 		} else {
 			JSON(w, http.StatusBadRequest, map[string]string{"error": "Valid package_name or non-empty package_names is required for patch_package"})
 			return
 		}
-	}
-
-	host, err := h.hosts.GetByID(r.Context(), body.HostID)
-	if err != nil || host == nil {
-		JSON(w, http.StatusNotFound, map[string]string{"error": "Host not found"})
-		return
 	}
 
 	orgTZ := h.resolveOrgTimezone(r.Context())

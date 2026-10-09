@@ -46,7 +46,8 @@ vi.mock("../../utils/patchingApi", () => ({
 }));
 
 import PatchWizard from "../../components/PatchWizard";
-import { patchingAPI } from "../../utils/patchingApi";
+import { packagesAPI } from "../../utils/api";
+import { patchingAPI, pollDryRunUntilDone } from "../../utils/patchingApi";
 import { extraDependencies, hasExtraDependencies } from "../../utils/patchRun";
 
 const HOSTS = [
@@ -461,5 +462,98 @@ describe("hasExtraDependencies", () => {
 				packages_affected: ["foo"],
 			}),
 		).toBe(false);
+	});
+});
+
+describe("PatchWizard host discovery", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		patchingAPI.getPreviewRun.mockResolvedValue({});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("offers Windows hosts alongside Linux ones", async () => {
+		packagesAPI.getHosts.mockResolvedValue({
+			data: {
+				hosts: [
+					{ hostId: "w1", friendly_name: "win-01", os_type: "Windows" },
+					{ hostId: "l1", friendly_name: "lin-01", os_type: "Ubuntu" },
+				],
+			},
+		});
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		render(
+			<QueryClientProvider client={queryClient}>
+				<PatchWizard
+					isOpen
+					onClose={vi.fn()}
+					onSuccess={vi.fn()}
+					mode="trigger"
+					patchType="patch_package"
+					packageNames={["Mozilla Firefox (x64 en-US)"]}
+					lockPackages
+				/>
+			</QueryClientProvider>,
+		);
+
+		expect(await screen.findByText("win-01")).toBeTruthy();
+		expect(screen.getByText("lin-01")).toBeTruthy();
+		expect(screen.queryByText(/not supported for Windows/)).toBeNull();
+	});
+});
+
+describe("PatchWizard validation", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		patchingAPI.getPreviewRun.mockResolvedValue({});
+	});
+
+	// A Windows dry run can take minutes; hosts queued behind it must not
+	// wait for it before their own dry run even starts.
+	it("triggers every dry run before waiting on any", async () => {
+		const events = [];
+		patchingAPI.trigger.mockImplementation(async (hostId) => {
+			events.push(`trigger ${hostId}`);
+			return { patch_run_id: `run-${hostId}` };
+		});
+		pollDryRunUntilDone.mockImplementation(async (runId) => {
+			events.push(`poll ${runId}`);
+			return {
+				status: "validated",
+				packages_affected: ["pkg"],
+				shell_output: "",
+			};
+		});
+		const hosts = Array.from({ length: 7 }, (_, i) => ({
+			id: `h${i}`,
+			friendly_name: `host-${i}`,
+			hostname: `host-${i}.local`,
+		}));
+
+		renderWizard(hosts, {
+			patchType: "patch_package",
+			packageNames: ["pkg"],
+			lockPackages: true,
+			initialStep: 0,
+		});
+		await clickAndSettle(
+			screen.getByRole("button", { name: /Run validation/ }),
+		);
+
+		await waitFor(() => expect(pollDryRunUntilDone).toHaveBeenCalledTimes(7));
+		const firstPoll = events.findIndex((e) => e.startsWith("poll"));
+		expect(events.slice(0, firstPoll)).toHaveLength(7);
+		expect(patchingAPI.trigger).toHaveBeenCalledWith(
+			"h0",
+			"patch_package",
+			null,
+			["pkg"],
+			{ dry_run: true },
+		);
 	});
 });
