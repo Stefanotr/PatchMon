@@ -436,7 +436,9 @@ const HostDetail = () => {
 		? "Agent must be connected to patch"
 		: isFreeBSDHost
 			? "Run FreeBSD base-system and pkg updates on this host"
-			: "Run system package updates on this host";
+			: isWindowsHost
+				? "Install the pending Windows Updates PatchMon lists for this host and upgrade its WinGet apps"
+				: "Run system package updates on this host";
 
 	const deleteHostMutation = useMutation({
 		mutationFn: (hostId) => adminHostsAPI.delete(hostId),
@@ -1427,7 +1429,7 @@ const HostDetail = () => {
 							<span className="hidden sm:inline">Fetch Report</span>
 							<span className="sm:hidden">Fetch</span>
 						</button>
-						{canManageHosts() && !isWindowsHost && (
+						{canManageHosts() && (
 							<button
 								type="button"
 								onClick={() => setShowPatchConfirmModal(true)}

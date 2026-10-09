@@ -660,7 +660,7 @@ If there's a pending patch run awaiting a fresh post-patch report, you'll see an
 |--------|--------------|:---:|
 | **Apply** | Appears only when pending config changes (e.g. integration toggles) need to be pushed to the agent. | Yes |
 | **Fetch Report** | Sends a WebSocket command asking the agent to collect and submit a fresh report now. | Yes |
-| **Patch all** | Opens the Patching wizard pre-scoped to this host. Hidden on Windows hosts. | Yes |
+| **Patch all** | Opens the Patching wizard pre-scoped to this host. On Windows it installs the pending Windows Updates and WinGet upgrades (see Windows patching). | Yes |
 | **Deploy Agent** (key icon) | Opens the Credentials modal with the install command and API credentials. | No |
 | **Refresh** (circular arrow) | Re-fetches host data from the PatchMon server (UI only). | No |
 | **Delete host** (trash icon) | Opens a confirmation dialog and then removes the host record. | No |
@@ -1172,7 +1172,7 @@ Lists every host where the package is installed. Key elements:
 - **Description** panel: the package description as reported by the host's package manager.
 - **Only pending** filter: ticked by default; untick to see every host, including ones already up to date.
 - **Search**: filters the host list.
-- Per-row actions: for Linux/FreeBSD hosts, you can trigger a targeted patch of this one package. Windows hosts are marked as managed via Windows Update / WinGet.
+- Per-row actions: you can trigger a targeted patch of this one package on any host that has it pending, Windows included.
 - Select multiple rows and use **Patch selected** to run the same upgrade across many hosts in one patch run.
 
 #### Activity tab
@@ -1193,7 +1193,7 @@ Two flows produce a patch run from the Packages page:
 #### Patch all on a single host
 
 1. Set the **Host** filter to one host.
-2. Click **Patch all** (top right, only appears when a single non-Windows host is filtered).
+2. Click **Patch all** (top right, only appears when a single host is filtered).
 3. Confirm in the wizard to upgrade every outdated package on that host.
 
 Both flows route you into the Patching chapter. See the patch-run pages there for what happens next.
@@ -1214,7 +1214,7 @@ From there, you can drill into individual packages, set up a patch run, or narro
 
 - **Live list, periodic backing data.** Rows are fetched from the PatchMon server and reflect the most recent reports submitted by each host. To refresh a host's data immediately, open the host's detail page and click **Fetch Report**. The Packages list picks up the new state on its next refetch (or click **Refresh** on the Packages page).
 - **Drilling down into patch state.** The **Hosts** page is the better starting point when you care about which *hosts* are behind on updates. Use the Packages page when you care about which *packages* expose the fleet.
-- **Windows hosts.** Package reporting works for Windows (via `winget`, `chocolatey`, and MSI inventory), but the **Patch all** / **Patch selected** actions do not target Windows. Patching on Windows is managed via Windows Update or WinGet directly on the host.
+- **Windows hosts.** **Patch all** and **Patch selected** work on Windows hosts: pending Windows Updates go through the Windows Update Agent and applications through WinGet, with the same dry-run validation as Linux. See Windows patching in the Patching chapter.
 
 ### Related Pages
 
@@ -1507,13 +1507,16 @@ The agent chooses the patching back-end by detecting the host's package manager.
 
 #### Windows patching
 
-When the agent detects it is running on Windows, patch runs are handled by the WUA + WinGet path rather than the Linux package-manager path:
+When the agent detects it is running on Windows, patch runs are handled by the WUA + WinGet path rather than the Linux package-manager path. Every run, dry or real, starts with a fresh inventory on the host (an online Windows Update search and `winget list --upgrade-available`) and maps the requested names onto it. Nothing the server sends reaches a command line: the agent only acts on the update GUIDs and WinGet IDs its own inventory produced. The WinGet listing is read strictly: a line that does not fit the table's columns is never taken for an app, and if one sits among the rows (or the "N upgrades available." footer announces more rows than could be read), the listing is reported as unreadable and the run fails instead of silently leaving apps out.
 
-- **Patch all** installs every Windows Update currently marked `approved` for that host by the server, plus runs `winget upgrade --all` for WinGet-managed applications.
-- **Patch package** routes by name: strings that look like a `KB...` / GUID update are sent via WUA, anything else is treated as a WinGet package ID.
-- Reboot state, superseded-update cleanup, and approved-GUID sync all go through dedicated `/patching/windows-updates/*` endpoints used by the beta Windows agent.
+- **Patch all** installs every pending Windows Update that PatchMon also lists as pending for the host (anything newer is held back until the next report shows it), and upgrades every WinGet app with an upgrade available, one by one with `winget upgrade --id <id> --exact`. Apps WinGet only upgrades when they are named (pinned by their manifest, listed under "require explicit targeting") are skipped, as `winget upgrade --all` would; patch them by name to upgrade them.
+- **Patch package** accepts the names shown in PatchMon: an update's display name (`Title (KB...)`), a bare `KB...` number or update GUID, an app's display name, or its WinGet ID. A name that is no longer pending is reported as skipped, like apt's "already the newest version". An ambiguous name, or one whose inventory source failed, fails the run rather than being guessed. So does a name winget shortened with an ellipsis, in the inventory or in the run's own listing (older winget versions cut columns to 120 characters): the match would not be certain, so the item fails and names the candidate WinGet IDs, which the API accepts as package names.
+- **Dry run** (Validate step) takes the same inventory and prints the plan without installing anything: one `[plan]` line per item with its size, version change and whether a restart is expected. Items the real run could not install (Windows waiting for a restart, a WinGet ID winget shortened, ...) fail the dry run the same way, so a clean dry run is worth approving. Because of the Windows Update search, a Windows dry run takes minutes rather than seconds; the wizard starts every host's dry run first and then waits for them (up to 15 minutes), so hosts validate in parallel.
+- **Order and stop.** WinGet apps install before Windows Updates (an update can leave a restart pending that blocks app installers). **Stop** lets the item being installed finish and starts nothing else, since killing a Windows installer midway can leave it half applied. A heartbeat line every two minutes keeps long silent installs from tripping the stall timeout. A run is bounded to four hours; an item started near the end gets at least ten minutes. Installer progress redraws and escape sequences are filtered out of the output.
+- Each item ends with a status line, `[ok]`, `[fail]` or `[skip]`, followed by indented details and installer output; **Packages affected** lists the `[plan]` items for a dry run and the `[ok]` items for a real run, including on a run that ended `failed` partway.
+- Reboot state and per-update results go through dedicated `/patching/windows-updates/*` endpoints.
 
-Windows patching is flagged **beta** in 2.0 and the Run Detail page renders the same way regardless of OS. The terminal pane simply shows PowerShell / `winget` output instead of `apt-get` output.
+Windows patching is flagged **beta** and needs an agent that includes the dry-run support above: older Windows agents reject display names in `patch_package` runs. The Run Detail page renders the same way regardless of OS.
 
 ---
 

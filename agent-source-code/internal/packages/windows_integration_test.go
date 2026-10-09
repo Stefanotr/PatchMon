@@ -4,6 +4,7 @@ package packages
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -130,7 +131,7 @@ func TestWindowsUpdatesCollectorLive(t *testing.T) {
 			}
 			if p.WUAGuid == "" {
 				missingGUID++
-				t.Logf("update %d (%s) has no WUA GUID, so InstallWindowsUpdate cannot act on it", i, p.Name)
+				t.Logf("update %d (%s) has no WUA GUID, so a patch run cannot target it", i, p.Name)
 			}
 		}
 		// Logged rather than failed: a hosted runner has a constrained Windows
@@ -153,31 +154,70 @@ func TestWSUSCheckLive(t *testing.T) {
 	t.Logf("isWSUSActive() = %v", newTestWindowsManager().isWSUSActive())
 }
 
-func TestRebootRequiredLive(t *testing.T) {
-	requireWindowsIntegration(t)
-
-	t.Logf("RebootRequired() = %v", RebootRequired())
+func newTestWindowsPatcher() *WindowsPatcher {
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	return NewWindowsPatcher(logger)
 }
 
-// The dry run lists upgrades without installing anything, which is enough to
-// prove wingetResolveBlock and the surrounding script parse and execute.
-func TestWinGetUpgradeAllDryRunLive(t *testing.T) {
+func TestPatcherRebootPendingLive(t *testing.T) {
+	requireWindowsIntegration(t)
+
+	pending, reason := newTestWindowsPatcher().RebootPending()
+	t.Logf("RebootPending() = %v, %q", pending, reason)
+}
+
+// The patch run's own Windows Update search is read-only, so it runs against
+// the real WUA here. It must parse, finish in time, and return the same kind
+// of GUIDs the collector reports.
+func TestPatcherScanWUALive(t *testing.T) {
+	requireWindowsIntegration(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	defer cancel()
+
+	scan, err := newTestWindowsPatcher().ScanWUA(ctx)
+	if ctx.Err() != nil {
+		t.Fatalf("Windows Update scan exceeded its deadline: %v", ctx.Err())
+	}
+	if err != nil {
+		// A hosted runner can have Windows Update locked down; a script error
+		// still surfaces as a PowerShell parse error in the message.
+		assertNoPowerShellParseError(t, err.Error())
+		t.Logf("Windows Update scan failed (acceptable on a locked-down runner): %v", err)
+		return
+	}
+	for i, u := range scan.Updates {
+		if !IsWUAGUID(u.GUID) {
+			t.Errorf("update %d (%s) has an invalid GUID %q", i, u.Title, u.GUID)
+		}
+	}
+	t.Logf("scan: %d pending, busy=%v, reboot_before=%v", len(scan.Updates), scan.InstallerBusy, scan.RebootBeforeInstall)
+}
+
+// Listing upgradable apps installs nothing, which is enough to prove the
+// winget.exe resolution and the listing script parse and execute.
+func TestPatcherListWinGetUpgradesLive(t *testing.T) {
 	requireWindowsIntegration(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
-	out, err := NewWindowsPatcher().WinGetUpgradeAll(ctx, true)
+	listing, err := newTestWindowsPatcher().ListWinGetUpgrades(ctx)
 	if ctx.Err() != nil {
-		t.Fatalf("winget dry run exceeded its deadline: %v", ctx.Err())
+		t.Fatalf("winget listing exceeded its deadline: %v", ctx.Err())
 	}
-	// A non-zero exit is acceptable (winget may be absent); a PowerShell parse
-	// error is not, and it surfaces in the output rather than as a Go error.
-	assertNoPowerShellParseError(t, out)
+	if errors.Is(err, ErrWinGetNotInstalled) {
+		t.Skip("winget is not installed on this runner")
+	}
 	if err != nil {
-		t.Logf("winget dry run exited non-zero (acceptable if winget is absent): %v", err)
+		assertNoPowerShellParseError(t, err.Error())
+		t.Fatalf("winget listing failed: %v", err)
 	}
-	t.Logf("winget dry run output:\n%s", out)
+	if listing.Unreadable > 0 {
+		t.Errorf("%d line(s) of the live winget listing could not be read", listing.Unreadable)
+	}
+	t.Logf("winget at %s: %d upgradable app(s)", listing.Path, len(listing.Apps))
 }
 
 // The full merge path, which is what serve actually calls.

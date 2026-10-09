@@ -694,50 +694,38 @@ const Packages = () => {
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
-					{selectedPackages.length > 0 &&
-						canManageHosts() &&
-						!isWindowsHostFilter && (
-							<button
-								type="button"
-								onClick={() => setShowPatchPackageMultiHostModal(true)}
-								className="btn-primary flex items-center gap-2"
-								title={
-									hostFilter && hostFilter !== "all"
-										? `Patch ${selectedPackages.length} selected package(s) on ${
-												patchModalHostName || "this host"
-											}`
-										: `Patch ${selectedPackages.length} selected package(s) on chosen hosts`
-								}
-							>
-								<Wrench className="h-4 w-4" />
-								Patch selected ({selectedPackages.length})
-							</button>
-						)}
-					{hostFilter &&
-						hostFilter !== "all" &&
-						canManageHosts() &&
-						!isWindowsHostFilter && (
-							<button
-								type="button"
-								onClick={() => setShowPatchConfirmModal(true)}
-								className="btn-primary flex items-center gap-2"
-								title="Run system package updates on this host"
-							>
-								<Wrench className="h-4 w-4" />
-								Patch all
-							</button>
-						)}
-					{hostFilter &&
-						hostFilter !== "all" &&
-						canManageHosts() &&
-						isWindowsHostFilter && (
-							<span
-								className="text-xs text-secondary-400 dark:text-secondary-300 italic"
-								title="Windows patching is managed through Windows Update or WinGet on the host"
-							>
-								Patching managed via Windows Update
-							</span>
-						)}
+					{selectedPackages.length > 0 && canManageHosts() && (
+						<button
+							type="button"
+							onClick={() => setShowPatchPackageMultiHostModal(true)}
+							className="btn-primary flex items-center gap-2"
+							title={
+								hostFilter && hostFilter !== "all"
+									? `Patch ${selectedPackages.length} selected package(s) on ${
+											patchModalHostName || "this host"
+										}`
+									: `Patch ${selectedPackages.length} selected package(s) on chosen hosts`
+							}
+						>
+							<Wrench className="h-4 w-4" />
+							Patch selected ({selectedPackages.length})
+						</button>
+					)}
+					{hostFilter && hostFilter !== "all" && canManageHosts() && (
+						<button
+							type="button"
+							onClick={() => setShowPatchConfirmModal(true)}
+							className="btn-primary flex items-center gap-2"
+							title={
+								isWindowsHostFilter
+									? "Install the pending Windows Updates PatchMon lists for this host and upgrade its WinGet apps"
+									: "Run system package updates on this host"
+							}
+						>
+							<Wrench className="h-4 w-4" />
+							Patch all
+						</button>
+					)}
 					<button
 						type="button"
 						onClick={() => handleRefresh()}
