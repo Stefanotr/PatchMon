@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -32,6 +33,10 @@ type fakeWindowsBackend struct {
 	onInstall func(ctx context.Context, out io.Writer)
 	// onScan runs inside ScanWUA, before it returns.
 	onScan func(ctx context.Context) error
+	// stateFile stands in for the state file on the host; stateErr fails
+	// reading it.
+	stateFile []byte
+	stateErr  error
 }
 
 func (f *fakeWindowsBackend) record(c string) {
@@ -84,6 +89,27 @@ func (f *fakeWindowsBackend) UpgradeWinGet(ctx context.Context, _ string, app pa
 		return r, nil
 	}
 	return packages.ItemResult{Status: packages.StatusOK, Detail: "upgraded"}, nil
+}
+
+func (f *fakeWindowsBackend) LoadWinGetRefusals() (*packages.WinGetRefusals, error) {
+	f.record("load-refusals")
+	if f.stateErr != nil {
+		return nil, f.stateErr
+	}
+	if f.stateFile == nil {
+		return packages.NewWinGetRefusals(), nil
+	}
+	return packages.ReadWinGetRefusals(bytes.NewReader(f.stateFile))
+}
+
+func (f *fakeWindowsBackend) SaveWinGetRefusals(r *packages.WinGetRefusals) error {
+	f.record("save-refusals")
+	var b bytes.Buffer
+	if err := r.Encode(&b); err != nil {
+		return err
+	}
+	f.stateFile = b.Bytes()
+	return nil
 }
 
 func (f *fakeWindowsBackend) RebootPending() (bool, string) {
@@ -557,6 +583,73 @@ func TestCapToRunBudget(t *testing.T) {
 	}
 	if got := capToRunBudget(short, 5*time.Minute); got != 5*time.Minute {
 		t.Errorf("a timeout under the floor is kept: %s", got)
+	}
+}
+
+// Once winget has refused an upgrade in place, later runs and dry runs skip
+// it up front with the reason, until a version moves.
+func TestWindowsRememberedRefusal(t *testing.T) {
+	edge := packages.WinGetUpgrade{Name: "Microsoft Edge", ID: "Microsoft.Edge", Version: "154.0.4258.62", Available: "155.0.4283.45", Source: "winget"}
+	be := newFakeHost()
+	be.apps = []packages.WinGetUpgrade{edge, test7zip}
+	be.wingetRes = map[string]packages.ItemResult{"Microsoft.Edge": packages.ClassifyWinGetExit(0x8A15008E)}
+	srv := &fakeWindowsServer{known: []string{testCU.GUID, testDefender.GUID}}
+	edgeRun := windowsPatchRequest{patchType: "patch_package", names: []string{"Microsoft Edge"}}
+
+	// 1. The first run asks winget, which refuses: a skip, remembered.
+	outcome, out := runWindows(context.Background(), t, edgeRun, be, srv, fastWindowsOpts())
+	if outcome.err != nil || !strings.Contains(out, "[skip] Microsoft Edge\n") || !slices.Contains(be.recorded(), "save-refusals") {
+		t.Fatalf("first run: outcome %+v, calls %v\n%s", outcome, be.recorded(), out)
+	}
+
+	// 2. A dry run now predicts it, and saves nothing.
+	be.calls = nil
+	dry := edgeRun
+	dry.dryRun = true
+	outcome, out = runWindows(context.Background(), t, dry, be, srv, fastWindowsOpts())
+	if outcome.err != nil || strings.Contains(out, "[plan] Microsoft Edge") ||
+		!strings.Contains(out, "[skip] Microsoft Edge\n") || !strings.Contains(out, "winget refused this upgrade (154.0.4258.62 -> 155.0.4283.45)") {
+		t.Fatalf("dry run did not predict the refusal:\n%s", out)
+	}
+	if slices.Contains(be.recorded(), "save-refusals") {
+		t.Error("a dry run wrote the state file")
+	}
+
+	// 3. patch_all leaves Edge alone and upgrades the rest.
+	be.calls = nil
+	_, out = runWindows(context.Background(), t, windowsPatchRequest{patchType: "patch_all"}, be, srv, fastWindowsOpts())
+	if slices.Contains(be.recorded(), "upgrade-winget Microsoft.Edge") || !slices.Contains(be.recorded(), "upgrade-winget 7zip.7zip") {
+		t.Fatalf("patch_all calls %v\n%s", be.recorded(), out)
+	}
+
+	// 4. Edge updated itself to 155 and 156 is out: winget is asked again.
+	be.calls = nil
+	moved := edge
+	moved.Version, moved.Available = "155.0.4283.45", "156.0.1"
+	be.apps = []packages.WinGetUpgrade{moved}
+	be.wingetRes = nil
+	_, out = runWindows(context.Background(), t, edgeRun, be, srv, fastWindowsOpts())
+	if !slices.Contains(be.recorded(), "upgrade-winget Microsoft.Edge") || !strings.Contains(out, "[ok] Microsoft Edge\n") {
+		t.Fatalf("refusal outlived a version change: calls %v\n%s", be.recorded(), out)
+	}
+	if refusals, _ := be.LoadWinGetRefusals(); refusals.Len() != 0 {
+		t.Errorf("%d refusal(s) left after the upgrade went through", refusals.Len())
+	}
+}
+
+// A state file that cannot be read costs a retry, never the run.
+func TestWindowsUnreadableStateFileRetries(t *testing.T) {
+	be := newFakeHost()
+	be.stateErr = errors.New("not owned by SYSTEM or Administrators")
+	req := windowsPatchRequest{patchType: "patch_package", names: []string{"7zip.7zip"}}
+
+	outcome, out := runWindows(context.Background(), t, req, be, &fakeWindowsServer{}, fastWindowsOpts())
+
+	if outcome.err != nil || !slices.Contains(be.recorded(), "upgrade-winget 7zip.7zip") {
+		t.Fatalf("outcome %+v, calls %v", outcome, be.recorded())
+	}
+	if !strings.Contains(out, "could not read the upgrades winget refused before (not owned by SYSTEM or Administrators)") {
+		t.Errorf("warning missing:\n%s", out)
 	}
 }
 
