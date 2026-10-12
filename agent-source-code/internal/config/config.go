@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -494,9 +495,39 @@ func (m *Manager) saveConfigLocked() error {
 		}
 	}
 
+	// Only editing the file changes a local-only switch, so the file holds
+	// its current value: an administrator may have turned one off since it
+	// was loaded, and a save for an unrelated setting must not turn it back
+	// on.
+	if onDisk, ok := localOnlyOnDisk(m.configFile); ok {
+		maps.Copy(m.config.Integrations, onDisk)
+	}
+
 	configViper.Set("integrations", m.config.Integrations)
 
 	return writeConfigAtomically(configViper, m.configFile)
+}
+
+// localOnlyOnDisk reads the local-only switches from the config file as it
+// is now: a switch the file does not set is off. ok is false when the file
+// cannot be read, and the values loaded earlier are kept.
+func localOnlyOnDisk(path string) (map[string]interface{}, bool) {
+	v := viper.New()
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+	if err := v.ReadInConfig(); err != nil {
+		return nil, false
+	}
+	integrations, _ := v.Get("integrations").(map[string]interface{})
+	out := make(map[string]interface{}, len(LocalOnlyIntegrations))
+	for _, name := range LocalOnlyIntegrations {
+		val, ok := integrations[name]
+		if !ok {
+			val = false
+		}
+		out[name] = val
+	}
+	return out, true
 }
 
 // writeConfigAtomically stages the config to a sibling temp file and renames it
