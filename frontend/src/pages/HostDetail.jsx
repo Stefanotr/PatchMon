@@ -1386,6 +1386,11 @@ const HostDetail = () => {
 								wsStatus={wsStatus}
 								hostDownThresholdSeconds={hostDownThresholdSeconds}
 								updateIntervalMinutes={updateIntervalMinutes}
+								onRebootClick={
+									canManagePatching() && hasModule("patching")
+										? () => setShowRestartModal(true)
+										: undefined
+								}
 							/>
 							{host.awaiting_post_patch_report_run_id && (
 								<Link
@@ -5753,6 +5758,8 @@ const HostDetail = () => {
 				hostName={host?.friendly_name || host?.hostname}
 				isOpen={showRestartModal}
 				onClose={() => setShowRestartModal(false)}
+				needsReboot={host?.needs_reboot}
+				rebootReason={host?.reboot_reason}
 			/>
 
 			{/* Credentials Modal */}

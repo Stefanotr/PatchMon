@@ -1754,6 +1754,8 @@ Runs submitted for approval ignore the restart option chosen at submission: the 
 
 The **Restart** button in the Host Detail header opens a dialog to schedule a restart (delay or time of day, message), or to cancel a scheduled one. It needs the `can_manage_patching` permission, the Patching module, and a connected agent: the command is not queued for later.
 
+The same dialog opens from the **Reboot pending** pill on Host Detail and from the **Required** badge of the Hosts list's *Reboot* column. It shows the host's last reported state: why a restart is pending, or that none is and restarting is optional.
+
 The server waits up to 20 seconds for the agent's answer:
 
 - **Scheduled / cancelled**: the agent did it; the toast shows the restart time.
@@ -1761,6 +1763,15 @@ The server waits up to 20 seconds for the agent's answer:
 - **Sent to the agent, which did not answer in time**: nothing is confirmed; check the host. Agents older than this feature ignore restart commands; update the agent. With several PatchMon server instances behind Redis, the answer reaches the instance the agent is connected to, so a command relayed from another instance always ends here even though the agent carried it out.
 
 A cancel stops any pending restart or shutdown on the host, whoever scheduled it (`shutdown -c` on Linux, the pending `shutdown` process on FreeBSD, `AbortSystemShutdown` on Windows), and is only reported done once the system no longer has one pending. While a restart or shutdown is pending, the agent refuses a real patch run that could not finish before it, or one whose time the system does not tell (SysV init, FreeBSD); dry runs still start.
+
+#### Restart history
+
+Every restart is recorded in the host's **Agent Activity** tab, as an outbound job named *Restart* or *Restart Cancel*; the dialog's **Restart history** link opens the tab filtered on them. A record says:
+
+- the outcome: completed, or failed with the reason (agent not connected, refused by the agent and why, no answer in time);
+- in its output: the source (`manual` for the Restart button, `patch_run` with the run ID for a restart a patch run scheduled), who asked (`requested_by`), the delay or time and message chosen, and the time the host restarts (`reboot_at`).
+
+After the restart, the host's uptime starts again and the **Reboot pending** pill disappears with the next report.
 
 ---
 

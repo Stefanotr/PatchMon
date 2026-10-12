@@ -58,6 +58,9 @@ var (
 	// scheduled, whoever asked for it, including one this agent scheduled
 	// before it was restarted itself.
 	osPendingRestart = reboot.Pending
+	// reportRunRestart tells the server about a restart a patch run
+	// scheduled, or failed to schedule, for the host's activity history.
+	reportRunRestart = sendRunRestartEvent
 )
 
 // pendingRestartLocked returns the restart this agent scheduled, if it is
@@ -156,6 +159,14 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 		return nil
 	}
 
+	// The report goes to the server over the network: send it once the lock
+	// is released (deferred first, so it runs after the unlock).
+	var report func()
+	defer func() {
+		if report != nil {
+			report()
+		}
+	}()
 	restartGate.Lock()
 	defer restartGate.Unlock()
 	now := time.Now()
@@ -170,6 +181,7 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 	at, err := opts.When(now)
 	if err != nil {
 		_, _ = fmt.Fprintf(out, "Restart: not scheduled, %s\n", packages.OneLine(err.Error()))
+		report = func() { reportRunRestart(runID, time.Time{}, err) }
 		return fmt.Errorf("restart not scheduled: %w", err)
 	}
 	switch err := schedule(at.Sub(now), opts.ShutdownMessage()); {
@@ -178,11 +190,13 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 		return nil
 	case err != nil:
 		_, _ = fmt.Fprintf(out, "Restart: could not be scheduled: %s\n", packages.OneLine(err.Error()))
+		report = func() { reportRunRestart(runID, time.Time{}, err) }
 		return fmt.Errorf("restart could not be scheduled: %w", err)
 	}
 	restartGate.pendingAt = at
 	_, _ = fmt.Fprintf(out, "Restart: scheduled for %s (in %s); signed-in users are warned\n",
 		formatRestartTime(at), at.Sub(now).Round(time.Minute))
+	report = func() { reportRunRestart(runID, at, nil) }
 	return nil
 }
 
@@ -230,10 +244,13 @@ func cancelRestartCommand() error {
 // so the reply can be matched to it.
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
-// restartReply is the agent's answer to a restart or cancel command.
+// restartReply is the agent's answer to a restart or cancel command
+// (RequestID set), or its report of a restart a patch run scheduled
+// (Action "run", RunID set).
 type restartReply struct {
 	Type      string `json:"type"`
-	RequestID string `json:"request_id"`
+	RequestID string `json:"request_id,omitempty"`
+	RunID     string `json:"run_id,omitempty"`
 	Action    string `json:"action"`
 	OK        bool   `json:"ok"`
 	Error     string `json:"error,omitempty"`
@@ -244,6 +261,22 @@ func sendRestartReply(r restartReply) {
 	if r.RequestID == "" {
 		return
 	}
+	writeRestartMessage(r)
+}
+
+// sendRunRestartEvent reports a patch run's restart. Best effort: without a
+// connection the run's output still says what happened.
+func sendRunRestartEvent(runID string, at time.Time, err error) {
+	r := restartReply{RunID: runID, Action: "run"}
+	if err != nil {
+		r.Error = packages.OneLine(err.Error())
+	} else {
+		r.OK, r.RebootAt = true, at.UTC().Format(time.RFC3339)
+	}
+	writeRestartMessage(r)
+}
+
+func writeRestartMessage(r restartReply) {
 	r.Type = "reboot_result"
 	b, err := json.Marshal(r)
 	if err != nil {
@@ -256,7 +289,7 @@ func sendRestartReply(r restartReply) {
 		return
 	}
 	if err := writeWebSocketTextMessage(conn, b); err != nil {
-		logger.WithError(err).Debug("Failed to send the restart reply")
+		logger.WithError(err).Debug("Failed to send a restart message")
 	}
 }
 

@@ -9,6 +9,10 @@ LIMIT $2;
 INSERT INTO job_history (id, job_id, queue_name, job_name, host_id, api_id, status, attempt_number, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW());
 
+-- name: InsertJobHistoryOutcome :exec
+INSERT INTO job_history (id, job_id, queue_name, job_name, host_id, api_id, status, attempt_number, error_message, output, created_at, updated_at, completed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9, NOW(), NOW(), NOW());
+
 -- name: UpdateJobHistoryCompleted :exec
 UPDATE job_history
 SET status = 'completed', completed_at = NOW(), updated_at = NOW()

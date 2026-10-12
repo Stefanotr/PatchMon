@@ -459,6 +459,7 @@ type Querier interface {
 	InsertHostGroupMembership(ctx context.Context, arg InsertHostGroupMembershipParams) error
 	InsertHostRepository(ctx context.Context, arg InsertHostRepositoryParams) error
 	InsertJobHistory(ctx context.Context, arg InsertJobHistoryParams) error
+	InsertJobHistoryOutcome(ctx context.Context, arg InsertJobHistoryOutcomeParams) error
 	InsertNotificationDeliveryLog(ctx context.Context, arg InsertNotificationDeliveryLogParams) (NotificationDeliveryLog, error)
 	InsertReleaseNotesAcceptance(ctx context.Context, arg InsertReleaseNotesAcceptanceParams) (string, error)
 	InsertScheduledReportRun(ctx context.Context, arg InsertScheduledReportRunParams) (ScheduledReportRun, error)

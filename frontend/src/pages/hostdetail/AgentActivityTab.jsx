@@ -50,6 +50,8 @@ const COMMON_JOB_OPTIONS = [
 	{ value: "install_compliance_tools", label: "Install Compliance Scanner" },
 	{ value: "ssg_upgrade", label: "SSG Content Upgrade" },
 	{ value: "run_patch", label: "Run Patch" },
+	{ value: "reboot", label: "Restart" },
+	{ value: "reboot_cancel", label: "Restart Cancel" },
 	{ value: "scheduled_reports_dispatch", label: "Scheduled Reports Dispatch" },
 	{ value: "scheduled_report_run", label: "Scheduled Report Run" },
 	{ value: "update-threshold-monitor", label: "Update Threshold Monitor" },

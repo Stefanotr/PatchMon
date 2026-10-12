@@ -35,7 +35,20 @@ type AgentWSHandler struct {
 	onRDPProxyMessage OnRDPProxyMessage
 	onDisconnect      OnAgentDisconnect
 	onConnect         OnAgentConnect
+	onRestartEvent    OnAgentRestartEvent
 	upgrader          websocket.Upgrader
+}
+
+// OnAgentRestartEvent receives the reboot_result messages that answer no
+// command (a restart a patch run scheduled, say).
+type OnAgentRestartEvent func(ctx context.Context, apiID string, message []byte)
+
+// WithOnRestartEvent sets the callback for reboot_result messages that no
+// restart command is waiting for.
+func WithOnRestartEvent(f OnAgentRestartEvent) AgentWSHandlerOption {
+	return func(h *AgentWSHandler) {
+		h.onRestartEvent = f
+	}
 }
 
 // AgentWSHandlerOption configures AgentWSHandler.
@@ -201,7 +214,10 @@ func (h *AgentWSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 			Type string `json:"type"`
 		}
 		if err := json.Unmarshal(message, &reply); err == nil && reply.Type == "reboot_result" {
-			agentReplies.deliver(apiID, message)
+			if !agentReplies.deliver(apiID, message) && h.onRestartEvent != nil {
+				// Off the read loop: recording writes to the database.
+				go h.onRestartEvent(r.Context(), apiID, message)
+			}
 			continue
 		}
 
