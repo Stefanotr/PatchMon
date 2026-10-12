@@ -9,9 +9,11 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import AgentActivityTable from "../../components/host/AgentActivityTable";
 import QueueStatCards from "../../components/host/QueueStatCards";
+import { tk } from "../../i18n";
 import { dashboardAPI } from "../../utils/api";
 
 const PAGE_SIZE = 50;
@@ -21,62 +23,71 @@ const PAGE_SIZE = 50;
 const PARAM_KEYS = ["direction", "type", "status", "since", "q", "page"];
 
 const DIRECTION_OPTIONS = [
-	{ value: "", label: "All directions" },
-	{ value: "in", label: "Inbound (reports)" },
-	{ value: "out", label: "Outbound (jobs)" },
+	{ value: "", label: tk("All directions") },
+	{ value: "in", label: tk("Inbound (reports)") },
+	{ value: "out", label: tk("Outbound (jobs)") },
 ];
 
 const TIME_RANGE_OPTIONS = [
-	{ value: "24h", label: "Last 24 hours" },
-	{ value: "7d", label: "Last 7 days" },
-	{ value: "30d", label: "Last 30 days" },
-	{ value: "all", label: "All time" },
+	{ value: "24h", label: tk("Last 24 hours") },
+	{ value: "7d", label: tk("Last 7 days") },
+	{ value: "30d", label: tk("Last 30 days") },
+	{ value: "all", label: tk("All time") },
 ];
 
 const REPORT_TYPE_OPTIONS = [
-	{ value: "ping", label: "Ping" },
-	{ value: "full", label: "Full" },
-	{ value: "partial", label: "Partial" },
-	{ value: "docker", label: "Docker" },
-	{ value: "compliance", label: "Compliance" },
+	{ value: "ping", label: tk("Ping") },
+	{ value: "full", label: tk("Full") },
+	{ value: "partial", label: tk("Partial") },
+	{ value: "docker", label: tk("Docker") },
+	{ value: "compliance", label: tk("Compliance") },
 ];
 
 const COMMON_JOB_OPTIONS = [
-	{ value: "report_now", label: "Report Now" },
-	{ value: "refresh_integration_status", label: "Refresh Integration Status" },
-	{ value: "docker_inventory_refresh", label: "Docker Inventory Refresh" },
-	{ value: "update_agent", label: "Agent Update" },
-	{ value: "run_scan", label: "Compliance Scan" },
-	{ value: "install_compliance_tools", label: "Install Compliance Scanner" },
-	{ value: "ssg_upgrade", label: "SSG Content Upgrade" },
-	{ value: "run_patch", label: "Run Patch" },
-	{ value: "reboot", label: "Restart" },
-	{ value: "reboot_cancel", label: "Restart Cancel" },
-	{ value: "scheduled_reports_dispatch", label: "Scheduled Reports Dispatch" },
-	{ value: "scheduled_report_run", label: "Scheduled Report Run" },
-	{ value: "update-threshold-monitor", label: "Update Threshold Monitor" },
-	{ value: "host-status-monitor", label: "Host Status Monitor" },
-	{ value: "metrics-send", label: "Metrics Send" },
-	{ value: "agent-reports-cleanup", label: "Agent Reports Cleanup" },
-	{ value: "patch-run-cleanup", label: "Patch Run Cleanup" },
-	{ value: "compliance-scan-cleanup", label: "Compliance Scan Cleanup" },
-	{ value: "ssg-update-check", label: "SSG Update Check" },
-	{ value: "version-update-check", label: "Version Update Check" },
-	{ value: "system-statistics", label: "System Statistics" },
-	{ value: "docker-inventory-cleanup", label: "Docker Inventory Cleanup" },
-	{ value: "orphaned-package-cleanup", label: "Orphaned Package Cleanup" },
-	{ value: "orphaned-repo-cleanup", label: "Orphaned Repo Cleanup" },
-	{ value: "session-cleanup", label: "Session Cleanup" },
+	{ value: "report_now", label: tk("Report Now") },
+	{
+		value: "refresh_integration_status",
+		label: tk("Refresh Integration Status"),
+	},
+	{ value: "docker_inventory_refresh", label: tk("Docker Inventory Refresh") },
+	{ value: "update_agent", label: tk("Agent Update") },
+	{ value: "run_scan", label: tk("Compliance Scan") },
+	{
+		value: "install_compliance_tools",
+		label: tk("Install Compliance Scanner"),
+	},
+	{ value: "ssg_upgrade", label: tk("SSG Content Upgrade") },
+	{ value: "run_patch", label: tk("Run Patch") },
+	{ value: "reboot", label: tk("Restart") },
+	{ value: "reboot_cancel", label: tk("Restart Cancel") },
+	{
+		value: "scheduled_reports_dispatch",
+		label: tk("Scheduled Reports Dispatch"),
+	},
+	{ value: "scheduled_report_run", label: tk("Scheduled Report Run") },
+	{ value: "update-threshold-monitor", label: tk("Update Threshold Monitor") },
+	{ value: "host-status-monitor", label: tk("Host Status Monitor") },
+	{ value: "metrics-send", label: tk("Metrics Send") },
+	{ value: "agent-reports-cleanup", label: tk("Agent Reports Cleanup") },
+	{ value: "patch-run-cleanup", label: tk("Patch Run Cleanup") },
+	{ value: "compliance-scan-cleanup", label: tk("Compliance Scan Cleanup") },
+	{ value: "ssg-update-check", label: tk("SSG Update Check") },
+	{ value: "version-update-check", label: tk("Version Update Check") },
+	{ value: "system-statistics", label: tk("System Statistics") },
+	{ value: "docker-inventory-cleanup", label: tk("Docker Inventory Cleanup") },
+	{ value: "orphaned-package-cleanup", label: tk("Orphaned Package Cleanup") },
+	{ value: "orphaned-repo-cleanup", label: tk("Orphaned Repo Cleanup") },
+	{ value: "session-cleanup", label: tk("Session Cleanup") },
 ];
 
 const STATUS_OPTIONS = [
-	{ value: "success", label: "Success" },
-	{ value: "completed", label: "Completed" },
-	{ value: "active", label: "Active" },
-	{ value: "waiting", label: "Waiting" },
-	{ value: "delayed", label: "Delayed" },
-	{ value: "failed", label: "Failed" },
-	{ value: "error", label: "Error" },
+	{ value: "success", label: tk("Success") },
+	{ value: "completed", label: tk("Completed") },
+	{ value: "active", label: tk("Active") },
+	{ value: "waiting", label: tk("Waiting") },
+	{ value: "delayed", label: tk("Delayed") },
+	{ value: "failed", label: tk("Failed") },
+	{ value: "error", label: tk("Error") },
 ];
 
 const DEFAULT_TIME_RANGE = "7d";
@@ -104,6 +115,7 @@ const parseList = (value) =>
 
 // Multiselect rendered as toggleable chips. Cheap, accessible, no extra deps.
 const ChipMultiSelect = ({ label, options, values, onChange }) => {
+	const { t } = useTranslation();
 	const toggle = (value) => {
 		if (values.includes(value)) {
 			onChange(values.filter((v) => v !== value));
@@ -130,7 +142,7 @@ const ChipMultiSelect = ({ label, options, values, onChange }) => {
 									: "bg-white border-secondary-300 text-secondary-600 hover:border-primary-400 dark:bg-secondary-800 dark:border-secondary-600 dark:text-secondary-200"
 							}`}
 						>
-							{opt.label}
+							{t(opt.label)}
 						</button>
 					);
 				})}
@@ -140,6 +152,7 @@ const ChipMultiSelect = ({ label, options, values, onChange }) => {
 };
 
 const AgentActivityTab = ({ hostId }) => {
+	const { t } = useTranslation();
 	const [searchParams, setSearchParams] = useSearchParams();
 
 	// Read filter values straight off the URL — single source of truth so deep
@@ -318,7 +331,7 @@ const AgentActivityTab = ({ hostId }) => {
 							<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-secondary-400 dark:text-white" />
 							<input
 								type="text"
-								placeholder="Search errors and output..."
+								placeholder={t("Search errors and output...")}
 								value={searchTerm}
 								onChange={(e) => setSearchTerm(e.target.value)}
 								className="pl-10 pr-4 py-2 w-full border border-secondary-300 dark:border-secondary-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white placeholder-secondary-500 dark:placeholder-secondary-400 min-h-[44px] sm:min-h-0"
@@ -336,7 +349,7 @@ const AgentActivityTab = ({ hostId }) => {
 							}`}
 						>
 							{showFilters ? <X className="h-4 w-4 flex-shrink-0" /> : null}
-							<span>Filters</span>
+							<span>{t("Filters")}</span>
 							{hasActiveFilters && !showFilters && (
 								<span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-primary-600 text-white text-[10px] font-semibold">
 									{
@@ -356,12 +369,12 @@ const AgentActivityTab = ({ hostId }) => {
 							onClick={() => refetch()}
 							disabled={isFetching}
 							className="btn-outline flex items-center gap-2 px-3 py-2 min-h-[44px] text-xs sm:text-sm"
-							title="Refresh activity"
+							title={t("Refresh activity")}
 						>
 							<RefreshCw
 								className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
 							/>
-							<span className="hidden sm:inline">Refresh</span>
+							<span className="hidden sm:inline">{t("Refresh")}</span>
 						</button>
 					</div>
 				</div>
@@ -371,7 +384,7 @@ const AgentActivityTab = ({ hostId }) => {
 						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
 							<div>
 								<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1">
-									Direction
+									{t("Direction")}
 								</span>
 								<select
 									value={direction}
@@ -380,14 +393,14 @@ const AgentActivityTab = ({ hostId }) => {
 								>
 									{DIRECTION_OPTIONS.map((opt) => (
 										<option key={opt.value} value={opt.value}>
-											{opt.label}
+											{t(opt.label)}
 										</option>
 									))}
 								</select>
 							</div>
 							<div>
 								<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1">
-									Time range
+									{t("Time range")}
 								</span>
 								<select
 									value={timeRange}
@@ -396,7 +409,7 @@ const AgentActivityTab = ({ hostId }) => {
 								>
 									{TIME_RANGE_OPTIONS.map((opt) => (
 										<option key={opt.value} value={opt.value}>
-											{opt.label}
+											{t(opt.label)}
 										</option>
 									))}
 								</select>
@@ -408,18 +421,18 @@ const AgentActivityTab = ({ hostId }) => {
 									disabled={!hasActiveFilters}
 									className="btn-outline w-full min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
 								>
-									Clear filters
+									{t("Clear filters")}
 								</button>
 							</div>
 						</div>
 						<ChipMultiSelect
-							label="Type"
+							label={t("Type")}
 							options={typeOptions}
 							values={typeFilter}
 							onChange={setTypeFilter}
 						/>
 						<ChipMultiSelect
-							label="Status"
+							label={t("Status")}
 							options={STATUS_OPTIONS}
 							values={statusFilter}
 							onChange={setStatusFilter}
@@ -433,19 +446,19 @@ const AgentActivityTab = ({ hostId }) => {
 							<AlertTriangle className="h-5 w-5 text-danger-500 dark:text-danger-400 flex-shrink-0" />
 							<div className="ml-3">
 								<h3 className="text-sm font-medium text-danger-800 dark:text-danger-200">
-									Failed to load agent activity
+									{t("Failed to load agent activity")}
 								</h3>
 								<p className="text-sm text-danger-700 dark:text-danger-300 mt-1">
 									{error?.response?.data?.error ||
 										error?.message ||
-										"Unknown error"}
+										t("Unknown error")}
 								</p>
 								<button
 									type="button"
 									onClick={() => refetch()}
 									className="mt-2 btn-danger text-xs"
 								>
-									Try again
+									{t("Try again")}
 								</button>
 							</div>
 						</div>
@@ -458,12 +471,12 @@ const AgentActivityTab = ({ hostId }) => {
 					<div className="text-center py-8">
 						<Server className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 						<p className="text-secondary-500 dark:text-white">
-							No activity to show
+							{t("No activity to show")}
 						</p>
 						<p className="text-sm text-secondary-400 dark:text-white mt-2">
 							{hasActiveFilters
-								? "Try adjusting your search terms or filters"
-								: "The agent has not reported in this time range yet"}
+								? t("Try adjusting your search terms or filters")
+								: t("The agent has not reported in this time range yet")}
 						</p>
 					</div>
 				) : (
@@ -471,7 +484,9 @@ const AgentActivityTab = ({ hostId }) => {
 						<AgentActivityTable items={items} />
 						<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-secondary-200 dark:border-secondary-600">
 							<p className="text-sm text-secondary-700 dark:text-white">
-								{total > 0 ? `${start}-${end} of ${total}` : "0 of 0"}
+								{total > 0
+									? t("{{start}}-{{end}} of {{total}}", { start, end, total })
+									: t("0 of 0")}
 							</p>
 							<div className="flex items-center gap-2">
 								<button
@@ -479,19 +494,19 @@ const AgentActivityTab = ({ hostId }) => {
 									onClick={() => setPage(page - 1)}
 									disabled={page === 1 || isFetching}
 									className="p-2 rounded hover:bg-secondary-100 dark:hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] min-w-[44px] flex items-center justify-center"
-									title="Previous page"
+									title={t("Previous page")}
 								>
 									<ChevronLeft className="h-4 w-4" />
 								</button>
 								<span className="text-sm text-secondary-700 dark:text-white whitespace-nowrap">
-									Page {page} of {totalPages}
+									{t("Page {{page}} of {{totalPages}}", { page, totalPages })}
 								</span>
 								<button
 									type="button"
 									onClick={() => setPage(page + 1)}
 									disabled={page >= totalPages || isFetching}
 									className="p-2 rounded hover:bg-secondary-100 dark:hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] min-w-[44px] flex items-center justify-center"
-									title="Next page"
+									title={t("Next page")}
 								>
 									<ChevronRight className="h-4 w-4" />
 								</button>

@@ -26,6 +26,7 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FaLinkedin, FaYoutube } from "react-icons/fa";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { getRequiredTier } from "../constants/tiers";
@@ -35,6 +36,7 @@ import { useSettings } from "../contexts/SettingsContext";
 import SidebarContext from "../contexts/SidebarContext";
 import { useUpdateNotification } from "../contexts/UpdateNotificationContext";
 import { useGlobalRefresh } from "../hooks/usePageRefresh";
+import { tk } from "../i18n";
 import { alertsAPI, dashboardAPI, settingsAPI, versionAPI } from "../utils/api";
 import { isRenderableAvatarSrc } from "../utils/avatar";
 import { resolveLogoPath } from "../utils/logoPaths";
@@ -53,6 +55,7 @@ import UpgradeNotificationIcon from "./UpgradeNotificationIcon";
 // red offline once WS status has loaded, and falls back to a neutral total
 // while it is still in flight so the badge never disappears between paints.
 const HostsNavBadge = ({ total, connected }) => {
+	const { t } = useTranslation();
 	if (!(total > 0)) return null;
 
 	if (connected === undefined || connected === null) {
@@ -75,7 +78,7 @@ const HostsNavBadge = ({ total, connected }) => {
 			{online > 0 && (
 				<span
 					className="inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-					title={`${online} host${online === 1 ? "" : "s"} connected`}
+					title={t("{{count}} host connected", { count: online })}
 				>
 					{online}
 				</span>
@@ -83,7 +86,7 @@ const HostsNavBadge = ({ total, connected }) => {
 			{offline > 0 && (
 				<span
 					className="inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-					title={`${offline} host${offline === 1 ? "" : "s"} offline`}
+					title={t("{{count}} host offline", { count: offline })}
 				>
 					{offline}
 				</span>
@@ -122,6 +125,7 @@ const usesFullWidthSearch = (pathname) =>
 	FULL_WIDTH_SEARCH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
 const Layout = ({ children }) => {
+	const { t } = useTranslation();
 	// When used as a layout route, render Outlet; otherwise render children (backwards compat)
 	const content = children ?? <Outlet />;
 	const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -269,7 +273,7 @@ const Layout = ({ children }) => {
 
 		// Dashboard - only show if user can view dashboard
 		if (canViewDashboard()) {
-			nav.push({ name: "Dashboard", href: "/", icon: LayoutDashboard });
+			nav.push({ name: tk("Dashboard"), href: "/", icon: LayoutDashboard });
 		}
 
 		// Assets section
@@ -277,9 +281,9 @@ const Layout = ({ children }) => {
 			const assetItems = [];
 
 			if (canViewHosts()) {
-				assetItems.push({ name: "Hosts", href: "/hosts", icon: Server });
+				assetItems.push({ name: tk("Hosts"), href: "/hosts", icon: Server });
 				assetItems.push({
-					name: "Repos",
+					name: tk("Repos"),
 					href: "/repositories",
 					icon: GitBranch,
 				});
@@ -287,7 +291,7 @@ const Layout = ({ children }) => {
 
 			if (canViewPackages()) {
 				assetItems.push({
-					name: "Packages",
+					name: tk("Packages"),
 					href: "/packages",
 					icon: Package,
 				});
@@ -295,7 +299,7 @@ const Layout = ({ children }) => {
 
 			if (assetItems.length > 0) {
 				nav.push({
-					section: "ASSETS",
+					section: tk("ASSETS"),
 					items: assetItems,
 				});
 			}
@@ -313,10 +317,10 @@ const Layout = ({ children }) => {
 				const patchingLocked = !hasModule("patching");
 				const policiesLocked = !hasModule("patching_policies");
 				const patchingChildren = [
-					{ name: "Overview", href: "/patching?tab=overview" },
-					{ name: "Runs & History", href: "/patching?tab=runs" },
+					{ name: tk("Overview"), href: "/patching?tab=overview" },
+					{ name: tk("Runs & History"), href: "/patching?tab=runs" },
 					{
-						name: "Policies",
+						name: tk("Policies"),
 						href: "/patching?tab=policies",
 						lockedModule: policiesLocked ? "patching_policies" : null,
 						lockedTier: policiesLocked
@@ -325,7 +329,7 @@ const Layout = ({ children }) => {
 					},
 				];
 				opsItems.push({
-					name: "Patching",
+					name: tk("Patching"),
 					href: "/patching",
 					icon: Wrench,
 					lockedModule: patchingLocked ? "patching" : null,
@@ -338,17 +342,17 @@ const Layout = ({ children }) => {
 			if (canViewReports()) {
 				const complianceLocked = !hasModule("compliance");
 				opsItems.push({
-					name: "Compliance",
+					name: tk("Compliance"),
 					href: "/compliance",
 					icon: Shield,
 					lockedModule: complianceLocked ? "compliance" : null,
 					lockedTier: complianceLocked ? getRequiredTier("compliance") : null,
 					children: [
-						{ name: "Overview", href: "/compliance?tab=overview" },
-						{ name: "Hosts", href: "/compliance?tab=hosts" },
-						{ name: "Scan Results", href: "/compliance?tab=scan-results" },
-						{ name: "History", href: "/compliance?tab=history" },
-						{ name: "Settings", href: "/compliance?tab=settings" },
+						{ name: tk("Overview"), href: "/compliance?tab=overview" },
+						{ name: tk("Hosts"), href: "/compliance?tab=hosts" },
+						{ name: tk("Scan Results"), href: "/compliance?tab=scan-results" },
+						{ name: tk("History"), href: "/compliance?tab=history" },
+						{ name: tk("Settings"), href: "/compliance?tab=settings" },
 					],
 				});
 			}
@@ -358,23 +362,23 @@ const Layout = ({ children }) => {
 				// which require the alerts_advanced module (Plus tier).
 				const alertLifecycleLocked = !hasModule("alerts_advanced");
 				const reportingChildren = [
-					{ name: "Overview", href: "/reporting?tab=overview" },
-					{ name: "Alerts", href: "/reporting?tab=alerts" },
+					{ name: tk("Overview"), href: "/reporting?tab=overview" },
+					{ name: tk("Alerts"), href: "/reporting?tab=alerts" },
 					{
-						name: "Alert Lifecycle",
+						name: tk("Alert Lifecycle"),
 						href: "/reporting?tab=alert-settings",
 						lockedModule: alertLifecycleLocked ? "alerts_advanced" : null,
 						lockedTier: alertLifecycleLocked
 							? getRequiredTier("alerts_advanced")
 							: null,
 					},
-					{ name: "Destinations", href: "/reporting?tab=destinations" },
-					{ name: "Event Rules", href: "/reporting?tab=rules" },
-					{ name: "Scheduled Reports", href: "/reporting?tab=reports" },
-					{ name: "Delivery Log", href: "/reporting?tab=log" },
+					{ name: tk("Destinations"), href: "/reporting?tab=destinations" },
+					{ name: tk("Event Rules"), href: "/reporting?tab=rules" },
+					{ name: tk("Scheduled Reports"), href: "/reporting?tab=reports" },
+					{ name: tk("Delivery Log"), href: "/reporting?tab=log" },
 				];
 				opsItems.push({
-					name: "Reporting",
+					name: tk("Reporting"),
 					href: "/reporting",
 					icon: AlertTriangle,
 					children: reportingChildren,
@@ -385,26 +389,26 @@ const Layout = ({ children }) => {
 			if (canViewReports()) {
 				const dockerLocked = !hasModule("docker");
 				opsItems.push({
-					name: "Docker",
+					name: tk("Docker"),
 					href: "/docker",
 					icon: Container,
 					beta: !dockerLocked,
 					lockedModule: dockerLocked ? "docker" : null,
 					lockedTier: dockerLocked ? getRequiredTier("docker") : null,
 					children: [
-						{ name: "Stacks", href: "/docker?tab=stacks" },
-						{ name: "Containers", href: "/docker?tab=containers" },
-						{ name: "Images", href: "/docker?tab=images" },
-						{ name: "Volumes", href: "/docker?tab=volumes" },
-						{ name: "Networks", href: "/docker?tab=networks" },
-						{ name: "Hosts", href: "/docker?tab=hosts" },
+						{ name: tk("Stacks"), href: "/docker?tab=stacks" },
+						{ name: tk("Containers"), href: "/docker?tab=containers" },
+						{ name: tk("Images"), href: "/docker?tab=images" },
+						{ name: tk("Volumes"), href: "/docker?tab=volumes" },
+						{ name: tk("Networks"), href: "/docker?tab=networks" },
+						{ name: tk("Hosts"), href: "/docker?tab=hosts" },
 					],
 				});
 			}
 
 			if (opsItems.length > 0) {
 				nav.push({
-					section: "OPERATIONS",
+					section: tk("OPERATIONS"),
 					items: opsItems,
 				});
 			}
@@ -419,7 +423,7 @@ const Layout = ({ children }) => {
 			// Metrics and Server Version are.
 			if (publicSettings?.admin_mode !== true) {
 				systemItems.push({
-					name: "Automation",
+					name: tk("Automation"),
 					href: "/automation",
 					icon: RefreshCw,
 				});
@@ -430,7 +434,7 @@ const Layout = ({ children }) => {
 			// installs (admin_mode === false) this item stays hidden entirely.
 			if (canManageBilling) {
 				systemItems.push({
-					name: "Billing",
+					name: tk("Billing"),
 					href: "/billing",
 					icon: CreditCard,
 				});
@@ -444,7 +448,7 @@ const Layout = ({ children }) => {
 				canExportData()
 			) {
 				systemItems.push({
-					name: "Settings",
+					name: tk("Settings"),
 					href: "/settings/users",
 					icon: Settings,
 					showUpgradeIcon: updateAvailable,
@@ -467,7 +471,7 @@ const Layout = ({ children }) => {
 					external: true,
 				}));
 			systemItems.push({
-				name: "Links",
+				name: tk("Links"),
 				href: "#links",
 				icon: BookOpen,
 				children: linkChildren,
@@ -475,7 +479,7 @@ const Layout = ({ children }) => {
 
 			if (systemItems.length > 0) {
 				nav.push({
-					section: "SYSTEM",
+					section: tk("SYSTEM"),
 					items: systemItems,
 				});
 			}
@@ -528,29 +532,29 @@ const Layout = ({ children }) => {
 	const getPageTitle = () => {
 		const path = location.pathname;
 
-		if (path === "/") return "Dashboard";
-		if (path === "/hosts") return "Hosts";
-		if (path === "/packages") return "Packages";
-		if (path === "/reporting") return "Reporting";
+		if (path === "/") return t("Dashboard");
+		if (path === "/hosts") return t("Hosts");
+		if (path === "/packages") return t("Packages");
+		if (path === "/reporting") return t("Reporting");
 		if (path === "/repositories" || path.startsWith("/repositories/"))
-			return "Repositories";
-		if (path === "/services") return "Services";
-		if (path === "/docker") return "Docker";
-		if (path === "/pro-action") return "Pro-Action";
-		if (path === "/automation") return "Automation";
+			return t("Repositories");
+		if (path === "/services") return t("Services");
+		if (path === "/docker") return t("Docker");
+		if (path === "/pro-action") return t("Pro-Action");
+		if (path === "/automation") return t("Automation");
 		if (path === "/patching" || path.startsWith("/patching/"))
-			return "Patching";
+			return t("Patching");
 		if (path === "/compliance" || path.startsWith("/compliance/"))
-			return "Compliance";
-		if (path === "/users") return "Users";
-		if (path === "/permissions") return "Permissions";
-		if (path === "/settings") return "Settings";
-		if (path === "/options") return "PatchMon Options";
-		if (path === "/audit-log") return "Audit Log";
-		if (path === "/settings/profile") return "My Profile";
-		if (path.startsWith("/hosts/")) return "Host Details";
-		if (path.startsWith("/packages/")) return "Package Details";
-		if (path.startsWith("/settings/")) return "Settings";
+			return t("Compliance");
+		if (path === "/users") return t("Users");
+		if (path === "/permissions") return t("Permissions");
+		if (path === "/settings") return t("Settings");
+		if (path === "/options") return t("PatchMon Options");
+		if (path === "/audit-log") return t("Audit Log");
+		if (path === "/settings/profile") return t("My Profile");
+		if (path.startsWith("/hosts/")) return t("Host Details");
+		if (path.startsWith("/packages/")) return t("Package Details");
+		if (path.startsWith("/settings/")) return t("Settings");
 
 		return "PatchMon";
 	};
@@ -566,13 +570,13 @@ const Layout = ({ children }) => {
 
 	// Short format for navigation area
 	const formatRelativeTimeShort = (date) => {
-		if (!date) return "Never";
+		if (!date) return t("Never");
 
 		const now = new Date();
 		const dateObj = new Date(date);
 
 		// Check if date is valid
-		if (Number.isNaN(dateObj.getTime())) return "Invalid date";
+		if (Number.isNaN(dateObj.getTime())) return t("Invalid date");
 
 		const diff = now - dateObj;
 		const seconds = Math.floor(diff / 1000);
@@ -580,10 +584,10 @@ const Layout = ({ children }) => {
 		const hours = Math.floor(minutes / 60);
 		const days = Math.floor(hours / 24);
 
-		if (days > 0) return `${days}d ago`;
-		if (hours > 0) return `${hours}h ago`;
-		if (minutes > 0) return `${minutes}m ago`;
-		return `${seconds}s ago`;
+		if (days > 0) return t("{{days}}d ago", { days });
+		if (hours > 0) return t("{{hours}}h ago", { hours });
+		if (minutes > 0) return t("{{minutes}}m ago", { minutes });
+		return t("{{seconds}}s ago", { seconds });
 	};
 
 	// Auto-collapse main sidebar on settings pages, restore when leaving
@@ -722,7 +726,7 @@ const Layout = ({ children }) => {
 						type="button"
 						className="fixed inset-0 bg-secondary-600 bg-opacity-75 cursor-default"
 						onClick={() => setSidebarOpen(false)}
-						aria-label="Close sidebar"
+						aria-label={t("Close sidebar")}
 					/>
 					<div
 						className="relative flex w-full max-w-[280px] flex-col bg-white dark:border-r dark:border-white/10 pb-4 pt-5 shadow-xl"
@@ -737,14 +741,14 @@ const Layout = ({ children }) => {
 								type="button"
 								className="ml-1 flex h-11 w-11 min-w-[44px] min-h-[44px] items-center justify-center rounded-full bg-secondary-600/90 hover:bg-secondary-600 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors"
 								onClick={() => setSidebarOpen(false)}
-								aria-label="Close sidebar"
+								aria-label={t("Close sidebar")}
 							>
 								<X className="h-6 w-6 text-white" />
 							</button>
 						</div>
 						<div className="flex flex-shrink-0 items-center justify-center px-4">
 							<Link to="/" className="flex items-center">
-								<Logo className="h-10 w-auto" alt="PatchMon Logo" />
+								<Logo className="h-10 w-auto" alt={t("PatchMon Logo")} />
 							</Link>
 						</div>
 						<nav className="mt-8 flex-1 space-y-6 px-2">
@@ -752,9 +756,11 @@ const Layout = ({ children }) => {
 							{navigation.length === 0 && (
 								<div className="px-2 py-4 text-center">
 									<div className="text-sm text-secondary-500 dark:text-white/70">
-										<p className="mb-2">Limited access</p>
+										<p className="mb-2">{t("Limited access")}</p>
 										<p className="text-xs">
-											Contact your administrator for additional permissions
+											{t(
+												"Contact your administrator for additional permissions",
+											)}
 										</p>
 									</div>
 								</div>
@@ -775,7 +781,7 @@ const Layout = ({ children }) => {
 											onClick={() => setSidebarOpen(false)}
 										>
 											<item.icon className="mr-3 h-5 w-5" />
-											{item.name}
+											{t(item.name)}
 										</Link>
 									);
 								} else if (item.section) {
@@ -783,7 +789,7 @@ const Layout = ({ children }) => {
 									return (
 										<div key={item.section}>
 											<h3 className="text-xs font-semibold text-secondary-500 dark:text-white uppercase tracking-wider mb-2">
-												{item.section}
+												{t(item.section)}
 											</h3>
 											<div className="space-y-1">
 												{item.items
@@ -806,7 +812,7 @@ const Layout = ({ children }) => {
 																>
 																	<subItem.icon className="mr-3 h-5 w-5" />
 																	<span className="flex items-center gap-2 flex-1">
-																		{subItem.name}
+																		{t(subItem.name)}
 																		{subItem.name === "Hosts" && (
 																			<HostsNavBadge
 																				total={hostsBadgeTotal}
@@ -822,7 +828,7 @@ const Layout = ({ children }) => {
 																			handleAddHost();
 																		}}
 																		className="ml-auto flex items-center justify-center w-5 h-5 rounded-full border-2 border-current opacity-60 hover:opacity-100 transition-all duration-200 self-center"
-																		title="Add Host"
+																		title={t("Add Host")}
 																	>
 																		<Plus className="h-3 w-3" />
 																	</button>
@@ -862,7 +868,7 @@ const Layout = ({ children }) => {
 																	>
 																		<subItem.icon className="mr-3 h-5 w-5" />
 																		<span className="flex items-center gap-2 flex-1">
-																			{subItem.name}
+																			{t(subItem.name)}
 																			{subItem.name === "Hosts" && (
 																				<HostsNavBadge
 																					total={hostsBadgeTotal}
@@ -897,22 +903,22 @@ const Layout = ({ children }) => {
 																				)}
 																			{subItem.comingSoon && (
 																				<span className="text-xs bg-secondary-100 dark:bg-secondary-600 text-secondary-600 dark:text-secondary-200 px-1.5 py-0.5 rounded">
-																					Soon
+																					{t("Soon")}
 																				</span>
 																			)}
 																			{subItem.alpha && (
 																				<span className="text-[10px] bg-purple-50 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300 px-1 py-px rounded font-medium leading-tight">
-																					Alpha
+																					{t("Alpha")}
 																				</span>
 																			)}
 																			{subItem.beta && (
 																				<span className="text-[10px] bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 px-1 py-px rounded font-medium leading-tight">
-																					Beta
+																					{t("Beta")}
 																				</span>
 																			)}
 																			{subItem.new && (
 																				<span className="text-[10px] bg-green-50 dark:bg-green-900/50 text-green-600 dark:text-green-300 px-1 py-px rounded font-medium leading-tight">
-																					New
+																					{t("New")}
 																				</span>
 																			)}
 																			{subItem.lockedTier && (
@@ -967,7 +973,11 @@ const Layout = ({ children }) => {
 																									setSidebarOpen(false)
 																								}
 																							>
-																								<span>{child.name}</span>
+																								<span>
+																									{child.external
+																										? child.name
+																										: t(child.name)}
+																								</span>
 																								{child.lockedTier && (
 																									<TierBadge
 																										tier={child.lockedTier}
@@ -1024,8 +1034,8 @@ const Layout = ({ children }) => {
 												>
 													<Shield className="h-3 w-3 mr-1" />
 													{user?.role === "superadmin"
-														? "Super Admin"
-														: "Admin"}
+														? t("Super Admin")
+														: t("Admin")}
 												</span>
 											)}
 										</span>
@@ -1039,7 +1049,7 @@ const Layout = ({ children }) => {
 										className="w-full group flex items-center px-2 py-3 text-sm font-medium rounded-md text-secondary-600 dark:text-white hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white min-h-[44px]"
 									>
 										<LogOut className="mr-3 h-5 w-5" />
-										Sign out
+										{t("Sign out")}
 									</button>
 								</div>
 							</div>
@@ -1068,8 +1078,8 @@ const Layout = ({ children }) => {
 						}}
 						title={
 							pinnedCollapsed
-								? "Pin sidebar expanded"
-								: "Collapse sidebar (hover to peek)"
+								? t("Pin sidebar expanded")
+								: t("Collapse sidebar (hover to peek)")
 						}
 					>
 						{pinnedCollapsed ? (
@@ -1113,7 +1123,7 @@ const Layout = ({ children }) => {
 								</Link>
 							) : (
 								<Link to="/" className="flex items-center">
-									<Logo className="h-10 w-auto" alt="PatchMon Logo" />
+									<Logo className="h-10 w-auto" alt={t("PatchMon Logo")} />
 								</Link>
 							)}
 						</div>
@@ -1123,9 +1133,11 @@ const Layout = ({ children }) => {
 								{navigation.length === 0 && settingsNavigation.length === 0 && (
 									<li className="px-2 py-4 text-center">
 										<div className="text-sm text-secondary-500 dark:text-white/70">
-											<p className="mb-2">Limited access</p>
+											<p className="mb-2">{t("Limited access")}</p>
 											<p className="text-xs">
-												Contact your administrator for additional permissions
+												{t(
+													"Contact your administrator for additional permissions",
+												)}
 											</p>
 										</div>
 									</li>
@@ -1143,13 +1155,13 @@ const Layout = ({ children }) => {
 															: "text-secondary-700 dark:text-secondary-200 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700"
 													} ${sidebarCollapsed ? "justify-center px-2 py-1.5" : "px-2 py-2"}`}
 													onMouseEnter={() => prefetchRoute(item.href)}
-													title={sidebarCollapsed ? item.name : ""}
+													title={sidebarCollapsed ? t(item.name) : ""}
 												>
 													<item.icon
 														className={`h-5 w-5 shrink-0 ${sidebarCollapsed ? "mx-auto" : ""}`}
 													/>
 													{!sidebarCollapsed && (
-														<span className="truncate">{item.name}</span>
+														<span className="truncate">{t(item.name)}</span>
 													)}
 												</Link>
 											</li>
@@ -1161,7 +1173,7 @@ const Layout = ({ children }) => {
 												<li key={item.section} className="mt-4">
 													{!sidebarCollapsed && (
 														<h3 className="text-xs font-semibold text-secondary-500 dark:text-white uppercase tracking-wider mb-2">
-															{item.section}
+															{t(item.section)}
 														</h3>
 													)}
 													{!sidebarCollapsed ? (
@@ -1181,7 +1193,11 @@ const Layout = ({ children }) => {
 																			: undefined
 																	}
 																	className="flex items-center justify-center w-10 h-10 bg-secondary-50 dark:bg-secondary-800 text-secondary-600 dark:text-white hover:bg-secondary-100 dark:hover:bg-secondary-700 rounded-lg transition-colors"
-																	title={linkItem.name}
+																	title={
+																		linkItem.external
+																			? linkItem.name
+																			: t(linkItem.name)
+																	}
 																>
 																	<linkItem.icon className="h-5 w-5" />
 																</a>
@@ -1204,7 +1220,11 @@ const Layout = ({ children }) => {
 																			: undefined
 																	}
 																	className="flex items-center justify-center w-10 h-10 bg-secondary-50 dark:bg-secondary-800 text-secondary-600 dark:text-white hover:bg-secondary-100 dark:hover:bg-secondary-700 rounded-lg transition-colors"
-																	title={linkItem.name}
+																	title={
+																		linkItem.external
+																			? linkItem.name
+																			: t(linkItem.name)
+																	}
 																>
 																	<linkItem.icon className="h-5 w-5" />
 																</a>
@@ -1222,7 +1242,7 @@ const Layout = ({ children }) => {
 											>
 												{!sidebarCollapsed && (
 													<h3 className="text-[11px] font-medium text-secondary-400 dark:text-white/50 uppercase tracking-widest mb-1.5 px-2">
-														{item.section}
+														{t(item.section)}
 													</h3>
 												)}
 												<ul className="space-y-0.5">
@@ -1244,7 +1264,7 @@ const Layout = ({ children }) => {
 																				prefetchRoute(subItem.href)
 																			}
 																			title={
-																				sidebarCollapsed ? subItem.name : ""
+																				sidebarCollapsed ? t(subItem.name) : ""
 																			}
 																		>
 																			<subItem.icon
@@ -1252,7 +1272,7 @@ const Layout = ({ children }) => {
 																			/>
 																			{!sidebarCollapsed && (
 																				<span className="truncate flex items-center gap-2 flex-1">
-																					{subItem.name}
+																					{t(subItem.name)}
 																					{subItem.name === "Hosts" && (
 																						<HostsNavBadge
 																							total={hostsBadgeTotal}
@@ -1283,7 +1303,7 @@ const Layout = ({ children }) => {
 																						handleAddHost();
 																					}}
 																					className="ml-auto flex items-center justify-center w-5 h-5 rounded-full border-2 border-current opacity-60 hover:opacity-100 transition-all duration-200 self-center"
-																					title="Add Host"
+																					title={t("Add Host")}
 																				>
 																					<Plus className="h-3 w-3" />
 																				</button>
@@ -1305,7 +1325,7 @@ const Layout = ({ children }) => {
 																					: ""
 																			}`}
 																			title={
-																				sidebarCollapsed ? subItem.name : ""
+																				sidebarCollapsed ? t(subItem.name) : ""
 																			}
 																			onMouseEnter={() =>
 																				!subItem.comingSoon &&
@@ -1341,7 +1361,7 @@ const Layout = ({ children }) => {
 																			</div>
 																			{!sidebarCollapsed && (
 																				<span className="truncate flex items-center gap-2 flex-1">
-																					{subItem.name}
+																					{t(subItem.name)}
 																					{subItem.name === "Hosts" && (
 																						<HostsNavBadge
 																							total={hostsBadgeTotal}
@@ -1379,22 +1399,22 @@ const Layout = ({ children }) => {
 																						)}
 																					{subItem.comingSoon && (
 																						<span className="text-xs bg-secondary-100 text-secondary-600 px-1.5 py-0.5 rounded">
-																							Soon
+																							{t("Soon")}
 																						</span>
 																					)}
 																					{subItem.alpha && (
 																						<span className="text-[10px] bg-purple-50 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300 px-1 py-px rounded font-medium leading-tight">
-																							Alpha
+																							{t("Alpha")}
 																						</span>
 																					)}
 																					{subItem.beta && (
 																						<span className="text-[10px] bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 px-1 py-px rounded font-medium leading-tight">
-																							Beta
+																							{t("Beta")}
 																						</span>
 																					)}
 																					{subItem.new && (
 																						<span className="text-[10px] bg-green-50 dark:bg-green-900/50 text-green-600 dark:text-green-300 px-1 py-px rounded font-medium leading-tight">
-																							New
+																							{t("New")}
 																						</span>
 																					)}
 																					{subItem.lockedTier && (
@@ -1451,7 +1471,11 @@ const Layout = ({ children }) => {
 																											: "text-secondary-500 dark:text-white hover:text-secondary-900 dark:hover:text-primary-400"
 																									}`}
 																								>
-																									<span>{child.name}</span>
+																									<span>
+																										{child.external
+																											? child.name
+																											: t(child.name)}
+																									</span>
 																									{child.lockedTier && (
 																										<TierBadge
 																											tier={child.lockedTier}
@@ -1527,8 +1551,8 @@ const Layout = ({ children }) => {
 														>
 															<Shield className="h-3 w-3 mr-1" />
 															{user?.role === "superadmin"
-																? "Super Admin"
-																: "Admin"}
+																? t("Super Admin")
+																: t("Admin")}
 														</span>
 													)}
 												</div>
@@ -1538,7 +1562,7 @@ const Layout = ({ children }) => {
 											type="button"
 											onClick={handleLogout}
 											className="ml-2 p-2 text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-300 hover:bg-secondary-100 dark:hover:bg-secondary-700 rounded-md transition-colors"
-											title="Sign out"
+											title={t("Sign out")}
 										>
 											<LogOut className="h-4 w-4" />
 										</button>
@@ -1548,14 +1572,16 @@ const Layout = ({ children }) => {
 											<div className="flex items-center gap-x-1 text-[11px] text-secondary-400 dark:text-white/50">
 												<Clock className="h-3 w-3 flex-shrink-0" />
 												<span className="truncate">
-													Updated: {formatRelativeTimeShort(stats.lastUpdated)}
+													{t("Updated: {{time}}", {
+														time: formatRelativeTimeShort(stats.lastUpdated),
+													})}
 												</span>
 												<button
 													type="button"
 													onClick={() => refreshAll()}
 													disabled={isRefreshing}
 													className="p-1 hover:bg-secondary-100 dark:hover:bg-secondary-700 rounded flex-shrink-0 disabled:opacity-50"
-													title="Refresh all data"
+													title={t("Refresh all data")}
 												>
 													<RefreshCw
 														className={`h-3 w-3 ${isRefreshing ? "animate-spin" : ""}`}
@@ -1574,7 +1600,9 @@ const Layout = ({ children }) => {
 												? "bg-primary-50 dark:bg-primary-600 text-primary-700 dark:text-white"
 												: "text-secondary-700 dark:text-secondary-200 hover:bg-secondary-50 dark:hover:bg-secondary-700"
 										}`}
-										title={`My Profile (${user?.username})`}
+										title={t("My Profile ({{username}})", {
+											username: user?.username,
+										})}
 									>
 										{isRenderableAvatarSrc(user?.avatar_url) ? (
 											<img
@@ -1590,7 +1618,7 @@ const Layout = ({ children }) => {
 										type="button"
 										onClick={handleLogout}
 										className="flex items-center justify-center w-full p-2 text-secondary-400 hover:text-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-700 rounded-md transition-colors"
-										title="Sign out"
+										title={t("Sign out")}
 									>
 										<LogOut className="h-4 w-4" />
 									</button>
@@ -1602,7 +1630,9 @@ const Layout = ({ children }) => {
 												onClick={() => refreshAll()}
 												disabled={isRefreshing}
 												className="p-1 hover:bg-secondary-100 dark:hover:bg-secondary-700 rounded disabled:opacity-50"
-												title={`Refresh all data - Updated: ${formatRelativeTimeShort(stats.lastUpdated)}`}
+												title={t("Refresh all data - Updated: {{time}}", {
+													time: formatRelativeTimeShort(stats.lastUpdated),
+												})}
 											>
 												<RefreshCw
 													className={`h-3 w-3 ${isRefreshing ? "animate-spin" : ""}`}
@@ -1640,7 +1670,7 @@ const Layout = ({ children }) => {
 							type="button"
 							className="-m-2.5 p-2.5 text-secondary-700 dark:text-white lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center"
 							onClick={() => setSidebarOpen(true)}
-							aria-label="Open menu"
+							aria-label={t("Open menu")}
 						>
 							<Menu className="h-6 w-6" />
 						</button>
@@ -1681,7 +1711,7 @@ const Layout = ({ children }) => {
 											backdropFilter: "var(--button-blur, none)",
 											WebkitBackdropFilter: "var(--button-blur, none)",
 										}}
-										aria-label="External links"
+										aria-label={t("External links")}
 										aria-expanded={mobileLinksOpen}
 									>
 										<Globe className="h-5 w-5" />
@@ -1698,7 +1728,7 @@ const Layout = ({ children }) => {
 														setMobileLinksOpen(false);
 													}
 												}}
-												aria-label="Close mobile menu"
+												aria-label={t("Close mobile menu")}
 											/>
 											<div className="absolute right-0 mt-2 w-64 rounded-lg border border-secondary-200 dark:border-secondary-600 bg-white dark:bg-secondary-800 shadow-lg z-50 max-h-[80vh] overflow-y-auto">
 												<div className="p-2 space-y-1">
@@ -1773,7 +1803,7 @@ const Layout = ({ children }) => {
 											backdropFilter: "var(--button-blur, none)",
 											WebkitBackdropFilter: "var(--button-blur, none)",
 										}}
-										title="Donate a coffee"
+										title={t("Donate a coffee")}
 									>
 										<BuyMeACoffeeIcon className="h-5 w-5 text-yellow-500 flex-shrink-0" />
 									</button>

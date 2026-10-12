@@ -1,0 +1,6 @@
+{
+	"{{count}} security update available._one": "{{count}} security update available.",
+	"{{count}} security update available._other": "{{count}} security updates available.",
+	"{{count}} non-security update available._one": "{{count}} non-security update available.",
+	"{{count}} non-security update available._other": "{{count}} non-security updates available."
+}

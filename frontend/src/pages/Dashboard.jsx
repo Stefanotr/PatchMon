@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Bar, Doughnut, Line, Pie } from "react-chartjs-2";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
 	ALERTING_WIDGET_CARD_IDS,
@@ -84,6 +85,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useToast } from "../contexts/ToastContext";
 import { usePageRefresh } from "../hooks/usePageRefresh";
+import { tk } from "../i18n";
 import {
 	adminUsersAPI,
 	alertsAPI,
@@ -129,10 +131,29 @@ const DASHBOARD_REFRESH_KEYS = [
 	["alert-stats"],
 ];
 
+// Fixed chart labels the server sends (update status segments, package
+// priorities, package trends datasets). Only these are rendered through t():
+// any other label, such as an OS name, shows as the server sent it.
+const SERVER_CHART_LABELS = new Set([
+	tk("Up to date"),
+	tk("Needs updates"),
+	tk("Not reporting"),
+	tk("Awaiting data"),
+	tk("Security"),
+	tk("Regular"),
+	tk("Total Packages (All Hosts)"),
+	tk("Total Packages"),
+	tk("Total Outdated Packages"),
+	tk("Outdated Packages"),
+	tk("Total Security Packages"),
+	tk("Security Packages"),
+]);
+
 // Drag-to-resize handle on the right edge of a card in edit mode
 const CARD_RESIZE_PIXELS_PER_COLUMN = 40;
 
 const CardResizeHandle = ({ card_id, col_span, on_resize }) => {
+	const { t } = useTranslation();
 	const [dragging, set_dragging] = useState(false);
 	const [start_x, set_start_x] = useState(0);
 	const [start_span, set_start_span] = useState(1);
@@ -173,7 +194,7 @@ const CardResizeHandle = ({ card_id, col_span, on_resize }) => {
 	return (
 		<div
 			role="slider"
-			aria-label="Card width in columns"
+			aria-label={t("Card width in columns")}
 			aria-valuenow={span}
 			aria-valuemin={1}
 			aria-valuemax={3}
@@ -196,6 +217,7 @@ const CardResizeHandle = ({ card_id, col_span, on_resize }) => {
 
 // Wrapper for a dashboard card in edit mode: draggable with handle
 const SortableDashboardCard = ({ card_id, render_card }) => {
+	const { t } = useTranslation();
 	const {
 		attributes,
 		listeners,
@@ -232,7 +254,7 @@ const SortableDashboardCard = ({ card_id, render_card }) => {
 				{...attributes}
 				{...listeners}
 				className="absolute top-2 right-2 z-10 p-1.5 rounded bg-secondary-100 dark:bg-secondary-700 text-secondary-500 hover:text-secondary-700 dark:hover:text-secondary-300 cursor-grab active:cursor-grabbing"
-				aria-label="Drag to reorder"
+				aria-label={t("Drag to reorder")}
 			>
 				<GripVertical className="h-4 w-4" />
 			</button>
@@ -242,6 +264,7 @@ const SortableDashboardCard = ({ card_id, render_card }) => {
 };
 
 const Dashboard = () => {
+	const { t } = useTranslation();
 	const [dashboard_edit_mode, set_dashboard_edit_mode] = useState(false);
 	const [edit_mode_order, set_edit_mode_order] = useState(null);
 	const [edit_mode_layout, set_edit_mode_layout] = useState(null);
@@ -269,9 +292,9 @@ const Dashboard = () => {
 				spread: 70,
 				origin: { y: 0.6 },
 			});
-			toast.success("Welcome to PatchMon!");
+			toast.success(t("Welcome to PatchMon!"));
 		}
-	}, [toast]);
+	}, [toast, t]);
 
 	// Navigation handlers
 	const handleTotalHostsClick = () => {
@@ -387,29 +410,33 @@ const Dashboard = () => {
 	// Helper function to format the update interval threshold
 	// The server serialises this as update_interval, not updateInterval.
 	const formatUpdateIntervalThreshold = () => {
-		if (!settings?.update_interval) return "24 hours";
+		if (!settings?.update_interval) return t("{{count}} hour", { count: 24 });
 
 		const intervalMinutes = settings.update_interval;
 		const thresholdMinutes = intervalMinutes * 2; // 2x the update interval
 
 		if (thresholdMinutes < 60) {
-			return `${thresholdMinutes} minutes`;
+			return t("{{count}} minute", { count: thresholdMinutes });
 		} else if (thresholdMinutes < 1440) {
 			const hours = Math.floor(thresholdMinutes / 60);
 			const minutes = thresholdMinutes % 60;
 			if (minutes === 0) {
-				return `${hours} hour${hours > 1 ? "s" : ""}`;
+				return t("{{count}} hour", { count: hours });
 			}
-			return `${hours}h ${minutes}m`;
+			return t("{{hours}}h {{minutes}}m", { hours, minutes });
 		} else {
 			const days = Math.floor(thresholdMinutes / 1440);
 			const hours = Math.floor((thresholdMinutes % 1440) / 60);
 			if (hours === 0) {
-				return `${days} day${days > 1 ? "s" : ""}`;
+				return t("{{count}} day", { count: days });
 			}
-			return `${days}d ${hours}h`;
+			return t("{{days}}d {{hours}}h", { days, hours });
 		}
 	};
+
+	// Server chart labels: translate the known fixed ones, keep the rest as sent.
+	const chart_label = (name) =>
+		SERVER_CHART_LABELS.has(name) ? t(name) : name;
 
 	const {
 		data: stats,
@@ -932,7 +959,7 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Needs Reboots
+									{t("Needs Reboots")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.hostsNeedingReboot}
@@ -960,7 +987,7 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Total Hosts
+									{t("Total Hosts")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.totalHosts}
@@ -989,7 +1016,7 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Needs Updating
+									{t("Needs Updating")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.hostsNeedingUpdates}
@@ -1018,7 +1045,7 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Up to date
+									{t("Up to date")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.upToDateHosts}
@@ -1047,7 +1074,7 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Outdated Packages
+									{t("Outdated Packages")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.totalOutdatedPackages}
@@ -1076,7 +1103,7 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Security Updates
+									{t("Security Updates")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.securityUpdates}
@@ -1105,7 +1132,7 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Host Groups
+									{t("Host Groups")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.totalHostGroups}
@@ -1134,7 +1161,7 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Users
+									{t("Users")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.totalUsers}
@@ -1163,7 +1190,7 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Repositories
+									{t("Repositories")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.totalRepos}
@@ -1196,10 +1223,13 @@ const Dashboard = () => {
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Compliance
+									{t("Compliance")}
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-									{compliance_compliant}/{compliance_total} hosts
+									{t("{{compliant}}/{{total}} hosts", {
+										compliant: compliance_compliant,
+										total: compliance_total,
+									})}
 								</p>
 							</div>
 						</div>
@@ -1236,23 +1266,29 @@ const Dashboard = () => {
 								{stats.cards.erroredHosts > 0 ? (
 									<>
 										<h3 className="text-sm font-medium text-danger-800">
-											{stats.cards.erroredHosts} host
-											{stats.cards.erroredHosts > 1 ? "s" : ""} haven't reported
-											in {formatUpdateIntervalThreshold()}+
+											{t("{{count}} hosts haven't reported in {{threshold}}+", {
+												count: stats.cards.erroredHosts,
+												threshold: formatUpdateIntervalThreshold(),
+											})}
 										</h3>
 										<p className="text-sm text-danger-700 mt-1">
-											These hosts may be offline or experiencing connectivity
-											issues.
+											{t(
+												"These hosts may be offline or experiencing connectivity issues.",
+											)}
 										</p>
 									</>
 								) : (
 									<>
 										<h3 className="text-sm font-medium text-success-800">
-											All hosts are reporting normally
+											{t("All hosts are reporting normally")}
 										</h3>
 										<p className="text-sm text-success-700 mt-1">
-											No hosts have failed to report in the last{" "}
-											{formatUpdateIntervalThreshold()}.
+											{t(
+												"No hosts have failed to report in the last {{threshold}}.",
+												{
+													threshold: formatUpdateIntervalThreshold(),
+												},
+											)}
 										</p>
 									</>
 								)}
@@ -1290,21 +1326,26 @@ const Dashboard = () => {
 								{stats.cards.offlineHosts > 0 ? (
 									<>
 										<h3 className="text-sm font-medium text-warning-800">
-											{stats.cards.offlineHosts} stale host
-											{stats.cards.offlineHosts > 1 ? "s" : ""}
+											{t("{{count}} stale host", {
+												count: stats.cards.offlineHosts,
+											})}
 										</h3>
 										<p className="text-sm text-warning-700 mt-1">
-											These hosts haven't reported in over{" "}
-											{formatUpdateIntervalThreshold()}.
+											{t(
+												"These hosts haven't reported in over {{threshold}}.",
+												{
+													threshold: formatUpdateIntervalThreshold(),
+												},
+											)}
 										</p>
 									</>
 								) : (
 									<>
 										<h3 className="text-sm font-medium text-success-800">
-											All hosts are reporting
+											{t("All hosts are reporting")}
 										</h3>
 										<p className="text-sm text-success-700 mt-1">
-											No hosts are stale.
+											{t("No hosts are stale.")}
 										</p>
 									</>
 								)}
@@ -1317,7 +1358,7 @@ const Dashboard = () => {
 				return (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-							OS Distribution
+							{t("OS Distribution")}
 						</h3>
 						<div className="h-56 w-full flex items-center justify-center flex-1 min-h-0">
 							<div className="w-full h-full max-w-sm">
@@ -1331,7 +1372,7 @@ const Dashboard = () => {
 				return (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-							OS Distribution
+							{t("OS Distribution")}
 						</h3>
 						<div className="h-56 w-full flex items-center justify-center flex-1 min-h-0">
 							<div className="w-full h-full max-w-sm">
@@ -1345,7 +1386,7 @@ const Dashboard = () => {
 				return (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							OS Distribution
+							{t("OS Distribution")}
 						</h3>
 						<div className="h-64 flex-1 min-h-0">
 							<Bar data={osBarChartData} options={barChartOptions} />
@@ -1357,7 +1398,7 @@ const Dashboard = () => {
 				return (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-							Update Status
+							{t("Update Status")}
 						</h3>
 						<div className="h-56 w-full flex items-center justify-center flex-1 min-h-0">
 							<div className="w-full h-full max-w-sm">
@@ -1372,7 +1413,7 @@ const Dashboard = () => {
 							onClick={handleUpdateStatusClick}
 							className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 min-h-[44px] sm:min-h-0 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:underline flex-shrink-0"
 						>
-							View hosts needing updates
+							{t("View hosts needing updates")}
 							<ChevronRight className="h-4 w-4" />
 						</button>
 					</div>
@@ -1382,7 +1423,7 @@ const Dashboard = () => {
 				return (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-							Outdated Packages by Priority
+							{t("Outdated Packages by Priority")}
 						</h3>
 						<div className="h-56 w-full flex items-center justify-center flex-1 min-h-0">
 							<div className="w-full h-full max-w-sm">
@@ -1401,7 +1442,7 @@ const Dashboard = () => {
 				) : (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							Host Compliance Status
+							{t("Host Compliance Status")}
 						</h3>
 						<div className="h-64 flex items-center justify-center flex-1 min-h-0">
 							<RefreshCw className="h-6 w-6 animate-spin text-secondary-400" />
@@ -1415,7 +1456,7 @@ const Dashboard = () => {
 				) : (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							OpenSCAP Benchmark Distribution
+							{t("OpenSCAP Benchmark Distribution")}
 						</h3>
 						<div className="h-64 flex items-center justify-center flex-1 min-h-0">
 							<RefreshCw className="h-6 w-6 animate-spin text-secondary-400" />
@@ -1429,7 +1470,7 @@ const Dashboard = () => {
 				) : (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							Failures by Severity
+							{t("Failures by Severity")}
 						</h3>
 						<div className="h-64 flex items-center justify-center flex-1 min-h-0">
 							<RefreshCw className="h-6 w-6 animate-spin text-secondary-400" />
@@ -1443,7 +1484,7 @@ const Dashboard = () => {
 				) : (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							Compliance Profiles in Use
+							{t("Compliance Profiles in Use")}
 						</h3>
 						<div className="h-64 flex items-center justify-center flex-1 min-h-0">
 							<RefreshCw className="h-6 w-6 animate-spin text-secondary-400" />
@@ -1457,7 +1498,7 @@ const Dashboard = () => {
 				) : (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							Last Scan Age
+							{t("Last Scan Age")}
 						</h3>
 						<div className="h-64 flex items-center justify-center flex-1 min-h-0">
 							<RefreshCw className="h-6 w-6 animate-spin text-secondary-400" />
@@ -1522,7 +1563,7 @@ const Dashboard = () => {
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 flex-shrink-0">
 							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-								Package Trends Over Time
+								{t("Package Trends Over Time")}
 							</h3>
 							<div className="flex flex-col gap-2">
 								<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
@@ -1566,8 +1607,8 @@ const Dashboard = () => {
 										className="px-3 py-2.5 sm:py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white hover:bg-secondary-50 dark:hover:bg-secondary-700 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
 										title={
 											packageTrendsHost === "all"
-												? "Trigger system statistics collection"
-												: "Refresh data"
+												? t("Trigger system statistics collection")
+												: t("Refresh data")
 										}
 									>
 										<RefreshCw
@@ -1577,7 +1618,7 @@ const Dashboard = () => {
 													: ""
 											}`}
 										/>
-										Refresh
+										{t("Refresh")}
 									</button>
 
 									{/* Period Selector */}
@@ -1586,12 +1627,12 @@ const Dashboard = () => {
 										onChange={(e) => setPackageTrendsPeriod(e.target.value)}
 										className="px-3 py-2.5 sm:py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 min-h-[44px]"
 									>
-										<option value="1">Last 24 hours</option>
-										<option value="7">Last 7 days</option>
-										<option value="30">Last 30 days</option>
-										<option value="90">Last 90 days</option>
-										<option value="180">Last 6 months</option>
-										<option value="365">Last year</option>
+										<option value="1">{t("Last 24 hours")}</option>
+										<option value="7">{t("Last 7 days")}</option>
+										<option value="30">{t("Last 30 days")}</option>
+										<option value="90">{t("Last 90 days")}</option>
+										<option value="180">{t("Last 6 months")}</option>
+										<option value="365">{t("Last year")}</option>
 									</select>
 
 									{/* Host Selector */}
@@ -1604,7 +1645,7 @@ const Dashboard = () => {
 										}}
 										className="px-3 py-2.5 sm:py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 min-h-[44px]"
 									>
-										<option value="all">All Hosts</option>
+										<option value="all">{t("All Hosts")}</option>
 										{packageTrendsData?.hosts?.length > 0 ? (
 											packageTrendsData.hosts.map((host) => (
 												<option key={host.id} value={host.id}>
@@ -1614,8 +1655,8 @@ const Dashboard = () => {
 										) : (
 											<option disabled>
 												{packageTrendsLoading
-													? "Loading hosts..."
-													: "No hosts available"}
+													? t("Loading hosts...")
+													: t("No hosts available")}
 											</option>
 										)}
 									</select>
@@ -1623,7 +1664,7 @@ const Dashboard = () => {
 								{/* Job ID Message */}
 								{systemStatsJobId && packageTrendsHost === "all" && (
 									<p className="text-xs text-secondary-600 dark:text-white/70 ml-1">
-										Ran collection job #{systemStatsJobId}
+										{t("Ran collection job #{{id}}", { id: systemStatsJobId })}
 									</p>
 								)}
 							</div>
@@ -1637,12 +1678,20 @@ const Dashboard = () => {
 							) : packageTrendsData?.chartData ? (
 								<Line
 									key={`${packageTrendsPeriod}-${packageTrendsHost}`}
-									data={packageTrendsData.chartData}
+									data={{
+										...packageTrendsData.chartData,
+										datasets: (packageTrendsData.chartData.datasets || []).map(
+											(dataset) => ({
+												...dataset,
+												label: chart_label(dataset.label),
+											}),
+										),
+									}}
 									options={packageTrendsChartOptions}
 								/>
 							) : (
 								<div className="flex items-center justify-center h-full text-secondary-500 dark:text-white/70">
-									No data available
+									{t("No data available")}
 								</div>
 							)}
 						</div>
@@ -1690,9 +1739,9 @@ const Dashboard = () => {
 								</div>
 								<div
 									className="text-xs text-secondary-500 dark:text-white/70 truncate"
-									title="Need Updates"
+									title={t("Need Updates")}
 								>
-									Need Updates
+									{t("Need Updates")}
 								</div>
 								<div className="text-[10px] sm:text-xs text-secondary-400 dark:text-white/60 truncate">
 									{stats.cards.hostsNeedingUpdates}/{stats.cards.totalHosts}
@@ -1704,9 +1753,9 @@ const Dashboard = () => {
 								</div>
 								<div
 									className="text-xs text-secondary-500 dark:text-white/70 truncate"
-									title="Security Issues"
+									title={t("Security Issues")}
 								>
-									Security
+									{t("Security")}
 								</div>
 								<div className="text-[10px] sm:text-xs text-secondary-400 dark:text-white/60 truncate">
 									{securityPercentage}%
@@ -1718,9 +1767,9 @@ const Dashboard = () => {
 								</div>
 								<div
 									className="text-xs text-secondary-500 dark:text-white/70 truncate"
-									title="Reporting"
+									title={t("Reporting", { context: "status" })}
 								>
-									Reporting
+									{t("Reporting", { context: "status" })}
 								</div>
 								<div className="text-[10px] sm:text-xs text-secondary-400 dark:text-white/60 truncate">
 									{onlineHosts}/{stats.cards.totalHosts}
@@ -1732,12 +1781,12 @@ const Dashboard = () => {
 								</div>
 								<div
 									className="text-xs text-secondary-500 dark:text-white/70 truncate"
-									title="Avg per Host"
+									title={t("Avg per Host")}
 								>
-									Avg/Host
+									{t("Avg/Host")}
 								</div>
 								<div className="text-[10px] sm:text-xs text-secondary-400 dark:text-white/60 truncate">
-									outdated
+									{t("outdated")}
 								</div>
 							</div>
 						</div>
@@ -1750,19 +1799,19 @@ const Dashboard = () => {
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<div className="flex items-center justify-between mb-4 flex-shrink-0">
 							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-								Recent Users Logged in
+								{t("Recent Users Logged in")}
 							</h3>
 							{recentUsers?.length > 0 && (
 								<span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
 									<Users className="h-3 w-3" />
-									{recentUsers.length} users
+									{t("{{count}} user", { count: recentUsers.length })}
 								</span>
 							)}
 						</div>
 						{!recentUsers || recentUsers.length === 0 ? (
 							<div className="flex flex-col items-center justify-center py-6 text-secondary-400 dark:text-white flex-1">
 								<Users className="h-8 w-8 mb-2" />
-								<p className="text-sm">No users found</p>
+								<p className="text-sm">{t("No users found")}</p>
 							</div>
 						) : (
 							<div className="overflow-hidden rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0 flex flex-col">
@@ -1770,10 +1819,10 @@ const Dashboard = () => {
 									<thead className="bg-secondary-50 dark:bg-secondary-700/50">
 										<tr>
 											<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-												Username
+												{t("Username")}
 											</th>
 											<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-												Last Login
+												{t("Last Login")}
 											</th>
 										</tr>
 									</thead>
@@ -1791,7 +1840,7 @@ const Dashboard = () => {
 												<td className="px-3 py-1.5 whitespace-nowrap text-secondary-500 dark:text-white text-xs">
 													{u.last_login
 														? formatRelativeTime(u.last_login)
-														: "Never"}
+														: t("Never")}
 												</td>
 											</tr>
 										))}
@@ -1807,19 +1856,19 @@ const Dashboard = () => {
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 						<div className="flex items-center justify-between mb-4 flex-shrink-0">
 							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-								Recent Collection
+								{t("Recent Collection")}
 							</h3>
 							{recentCollection?.length > 0 && (
 								<span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
 									<Server className="h-3 w-3" />
-									{recentCollection.length} hosts
+									{t("{{count}} host", { count: recentCollection.length })}
 								</span>
 							)}
 						</div>
 						{!recentCollection || recentCollection.length === 0 ? (
 							<div className="flex flex-col items-center justify-center py-6 text-secondary-400 dark:text-white flex-1">
 								<Server className="h-8 w-8 mb-2" />
-								<p className="text-sm">No hosts found</p>
+								<p className="text-sm">{t("No hosts found")}</p>
 							</div>
 						) : (
 							<div className="overflow-hidden rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0 flex flex-col">
@@ -1827,10 +1876,10 @@ const Dashboard = () => {
 									<thead className="bg-secondary-50 dark:bg-secondary-700/50">
 										<tr>
 											<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-												Host
+												{t("Host")}
 											</th>
 											<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-												Last Update
+												{t("Last Update")}
 											</th>
 										</tr>
 									</thead>
@@ -1852,7 +1901,7 @@ const Dashboard = () => {
 												<td className="px-3 py-1.5 whitespace-nowrap text-secondary-500 dark:text-white text-xs">
 													{host.last_update
 														? formatRelativeTime(host.last_update)
-														: "Never"}
+														: t("Never")}
 												</td>
 											</tr>
 										))}
@@ -1883,17 +1932,17 @@ const Dashboard = () => {
 					<AlertTriangle className="h-5 w-5 text-danger-400" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-danger-800">
-							Error loading dashboard
+							{t("Error loading dashboard")}
 						</h3>
 						<p className="text-sm text-danger-700 mt-1">
-							{error.message || "Failed to load dashboard statistics"}
+							{error.message || t("Failed to load dashboard statistics")}
 						</p>
 						<button
 							type="button"
 							onClick={() => refetch()}
 							className="mt-2 btn-danger text-xs"
 						>
-							Try again
+							{t("Try again")}
 						</button>
 					</div>
 				</div>
@@ -2050,12 +2099,12 @@ const Dashboard = () => {
 
 						// Handle "Now" label
 						if (label === "Now") {
-							return "Now";
+							return t("Now");
 						}
 
 						// Handle empty or invalid labels
 						if (!label || typeof label !== "string") {
-							return "Unknown Date";
+							return t("Unknown Date");
 						}
 
 						// Check if it's a full ISO timestamp (for "Last 24 hours")
@@ -2118,9 +2167,12 @@ const Dashboard = () => {
 					label: (context) => {
 						const value = context.parsed.y;
 						if (value === null || value === undefined) {
-							return `${context.dataset.label}: No data`;
+							return t("{{label}}: No data", { label: context.dataset.label });
 						}
-						return `${context.dataset.label}: ${value}`;
+						return t("{{label}}: {{value}}", {
+							label: context.dataset.label,
+							value,
+						});
 					},
 				},
 			},
@@ -2130,7 +2182,7 @@ const Dashboard = () => {
 				display: true,
 				title: {
 					display: true,
-					text: packageTrendsPeriod === "1" ? "Time (Hours)" : "Date",
+					text: packageTrendsPeriod === "1" ? t("Time (Hours)") : t("Date"),
 					color: isDark ? "#ffffff" : "#374151",
 				},
 				ticks: {
@@ -2143,12 +2195,12 @@ const Dashboard = () => {
 
 						// Handle "Now" label
 						if (label === "Now") {
-							return "Now";
+							return t("Now");
 						}
 
 						// Handle empty or invalid labels
 						if (!label || typeof label !== "string") {
-							return "Unknown";
+							return t("Unknown");
 						}
 
 						// Check if it's a full ISO timestamp (for "Last 24 hours")
@@ -2221,7 +2273,7 @@ const Dashboard = () => {
 				display: true,
 				title: {
 					display: true,
-					text: "Number of Packages",
+					text: t("Number of Packages"),
 					color: isDark ? "#ffffff" : "#374151",
 				},
 				ticks: {
@@ -2300,7 +2352,7 @@ const Dashboard = () => {
 		labels: stats.charts.osDistribution.map((item) => item.name),
 		datasets: [
 			{
-				label: "Hosts",
+				label: t("Hosts"),
 				data: stats.charts.osDistribution.map((item) => item.count),
 				backgroundColor: [
 					"#3B82F6", // Blue
@@ -2318,7 +2370,9 @@ const Dashboard = () => {
 	};
 
 	const updateStatusChartData = {
-		labels: stats.charts.updateStatusDistribution.map((item) => item.name),
+		labels: stats.charts.updateStatusDistribution.map((item) =>
+			chart_label(item.name),
+		),
 		datasets: [
 			{
 				data: stats.charts.updateStatusDistribution.map((item) => item.count),
@@ -2333,7 +2387,9 @@ const Dashboard = () => {
 	};
 
 	const packagePriorityChartData = {
-		labels: stats.charts.packageUpdateDistribution.map((item) => item.name),
+		labels: stats.charts.packageUpdateDistribution.map((item) =>
+			chart_label(item.name),
+		),
 		datasets: [
 			{
 				data: stats.charts.packageUpdateDistribution.map((item) => item.count),
@@ -2352,10 +2408,12 @@ const Dashboard = () => {
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-xl sm:text-2xl font-semibold text-secondary-900 dark:text-white">
-						Welcome back, {user?.first_name || user?.username || "User"} 👋
+						{t("Welcome back, {{name}} 👋", {
+							name: user?.first_name || user?.username || t("User"),
+						})}
 					</h1>
 					<p className="text-sm text-secondary-600 dark:text-white/80 mt-1">
-						Overview of your PatchMon infrastructure
+						{t("Overview of your PatchMon infrastructure")}
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
@@ -2363,17 +2421,17 @@ const Dashboard = () => {
 						type="button"
 						onClick={handle_enter_edit_mode}
 						className="hidden md:flex btn-outline items-center gap-2 min-h-[44px] px-3 justify-center"
-						title="Customize dashboard layout"
+						title={t("Customize dashboard layout")}
 					>
 						<Settings className="h-4 w-4" />
-						<span>Edit dashboard</span>
+						<span>{t("Edit dashboard")}</span>
 					</button>
 					<button
 						type="button"
 						onClick={() => refreshDashboard()}
 						disabled={isRefreshing}
 						className="btn-outline flex items-center gap-2 min-h-[44px] min-w-[44px] justify-center"
-						title="Refresh dashboard data"
+						title={t("Refresh dashboard data")}
 					>
 						<RefreshCw
 							className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
@@ -2387,9 +2445,9 @@ const Dashboard = () => {
 				<div className="p-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 space-y-3">
 					<div className="flex flex-wrap items-center justify-between gap-3">
 						<p className="text-sm text-primary-800 dark:text-primary-200">
-							Drag cards to reorder. Drag the right edge of a card to make it
-							wider or narrower. Change row columns below if needed, then Save
-							order to apply.
+							{t(
+								"Drag cards to reorder. Drag the right edge of a card to make it wider or narrower. Change row columns below if needed, then Save order to apply.",
+							)}
 						</p>
 						<div className="flex items-center gap-2">
 							<button
@@ -2405,12 +2463,12 @@ const Dashboard = () => {
 								update_layout_mutation.isPending ? (
 									<>
 										<span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
-										Saving...
+										{t("Saving...")}
 									</>
 								) : (
 									<>
 										<Save className="h-4 w-4" />
-										Save order
+										{t("Save order")}
 									</>
 								)}
 							</button>
@@ -2425,7 +2483,7 @@ const Dashboard = () => {
 								className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-white dark:bg-secondary-800 border border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-50"
 							>
 								<RotateCcw className="h-4 w-4" />
-								Reset to Defaults
+								{t("Reset to Defaults")}
 							</button>
 							<button
 								type="button"
@@ -2437,7 +2495,7 @@ const Dashboard = () => {
 								className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-white dark:bg-secondary-800 border border-secondary-300 dark:border-secondary-600 text-secondary-700 dark:text-secondary-200 hover:bg-secondary-50 dark:hover:bg-secondary-700 disabled:opacity-50"
 							>
 								<X className="h-4 w-4" />
-								Cancel
+								{t("Cancel")}
 							</button>
 						</div>
 					</div>
@@ -2445,7 +2503,7 @@ const Dashboard = () => {
 					{edit_mode_layout && (
 						<div className="flex flex-wrap items-center gap-4 pt-2 border-t border-primary-200 dark:border-primary-800">
 							<span className="text-xs font-medium text-primary-800 dark:text-primary-200">
-								Row layout:
+								{t("Row layout:")}
 							</span>
 							<div className="flex flex-wrap items-center gap-3">
 								<div className="flex items-center gap-2">
@@ -2453,7 +2511,7 @@ const Dashboard = () => {
 										htmlFor="edit-stats-columns"
 										className="text-xs text-primary-700 dark:text-primary-300"
 									>
-										Stats row
+										{t("Stats row")}
 									</label>
 									<select
 										id="edit-stats-columns"
@@ -2468,7 +2526,7 @@ const Dashboard = () => {
 									>
 										{[2, 3, 4, 5, 6].map((n) => (
 											<option key={n} value={n}>
-												{n} columns
+												{t("{{count}} columns", { count: n })}
 											</option>
 										))}
 									</select>
@@ -2478,7 +2536,7 @@ const Dashboard = () => {
 										htmlFor="edit-charts-columns"
 										className="text-xs text-primary-700 dark:text-primary-300"
 									>
-										Charts row
+										{t("Charts row")}
 									</label>
 									<select
 										id="edit-charts-columns"
@@ -2493,7 +2551,7 @@ const Dashboard = () => {
 									>
 										{[2, 3, 4].map((n) => (
 											<option key={n} value={n}>
-												{n} columns
+												{t("{{count}} columns", { count: n })}
 											</option>
 										))}
 									</select>
@@ -2633,8 +2691,8 @@ const Dashboard = () => {
 																		handle_toggle_visibility(card.cardId)
 																	}
 																	className="absolute top-2 left-2 z-10 p-1.5 rounded bg-green-100 dark:bg-green-900/80 text-green-800 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-800 cursor-pointer"
-																	title="Hide card"
-																	aria-label="Hide card"
+																	title={t("Hide card")}
+																	aria-label={t("Hide card")}
 																>
 																	<Eye className="h-4 w-4" />
 																</button>
@@ -2650,8 +2708,8 @@ const Dashboard = () => {
 																		handle_toggle_visibility(card.cardId)
 																	}
 																	className="absolute top-2 left-2 z-10 p-1.5 rounded bg-secondary-200 dark:bg-secondary-600 text-secondary-700 dark:text-secondary-200 hover:bg-secondary-300 dark:hover:bg-secondary-500 cursor-pointer"
-																	title="Show card"
-																	aria-label="Show card"
+																	title={t("Show card")}
+																	aria-label={t("Show card")}
 																>
 																	<EyeOff className="h-4 w-4" />
 																</button>

@@ -1,4 +1,6 @@
 import { Activity, Package, RotateCcw, Wifi, WifiOff } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { formatRelativeTime } from "../utils/api";
 import { deriveReportingState } from "../utils/hostStatus";
 import Tooltip from "./ui/Tooltip";
@@ -85,11 +87,15 @@ const Pill = ({
 };
 
 const formatSecondsAgo = (seconds) => {
-	if (!Number.isFinite(seconds) || seconds < 0) return "unknown duration";
-	if (seconds < 60) return `${Math.round(seconds)}s`;
-	if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-	if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
-	return `${Math.round(seconds / 86400)}d`;
+	if (!Number.isFinite(seconds) || seconds < 0) {
+		return i18n.t("unknown duration");
+	}
+	if (seconds < 60) return i18n.t("{{n}}s", { n: Math.round(seconds) });
+	if (seconds < 3600) return i18n.t("{{n}}m", { n: Math.round(seconds / 60) });
+	if (seconds < 86400) {
+		return i18n.t("{{n}}h", { n: Math.round(seconds / 3600) });
+	}
+	return i18n.t("{{n}}d", { n: Math.round(seconds / 86400) });
 };
 
 const HostStatusPills = ({
@@ -100,6 +106,7 @@ const HostStatusPills = ({
 	compact = false,
 	onRebootClick,
 }) => {
+	const { t } = useTranslation();
 	if (!host) return null;
 
 	const threshold = Number.isFinite(hostDownThresholdSeconds)
@@ -108,7 +115,7 @@ const HostStatusPills = ({
 
 	const lastUpdateRel = host.last_update
 		? formatRelativeTime(host.last_update)
-		: "never";
+		: t("never");
 
 	const wsLoaded = wsStatus !== undefined && wsStatus !== null;
 	const wsConnectedOrUnknown = !wsLoaded || wsStatus.connected === true;
@@ -133,8 +140,14 @@ const HostStatusPills = ({
 					variant="success"
 					icon={Wifi}
 					label={compact ? null : protocol}
-					srLabel="WebSocket connected"
-					tooltip={`WebSocket connected${secure ? " (secure)" : ""}. Real-time control channel is active.`}
+					srLabel={t("WebSocket connected")}
+					tooltip={
+						secure
+							? t(
+									"WebSocket connected (secure). Real-time control channel is active.",
+								)
+							: t("WebSocket connected. Real-time control channel is active.")
+					}
 				/>
 			);
 		} else {
@@ -149,11 +162,20 @@ const HostStatusPills = ({
 			const variant = withinGrace ? "warning" : "danger";
 			let tooltip;
 			if (withinGrace) {
-				tooltip = `WebSocket disconnected (${formatSecondsAgo(seconds)}). Within the ${threshold}s grace window, the agent may be reconnecting.`;
+				tooltip = t(
+					"WebSocket disconnected ({{duration}}). Within the {{threshold}}s grace window, the agent may be reconnecting.",
+					{ duration: formatSecondsAgo(seconds), threshold },
+				);
 			} else if (seconds !== null) {
-				tooltip = `WebSocket disconnected for ${formatSecondsAgo(seconds)} (threshold: ${threshold}s).`;
+				tooltip = t(
+					"WebSocket disconnected for {{duration}} (threshold: {{threshold}}s).",
+					{ duration: formatSecondsAgo(seconds), threshold },
+				);
 			} else {
-				tooltip = `WebSocket disconnected, duration unknown (likely past the ${threshold}s threshold). The server may have restarted while the agent was already offline.`;
+				tooltip = t(
+					"WebSocket disconnected, duration unknown (likely past the {{threshold}}s threshold). The server may have restarted while the agent was already offline.",
+					{ threshold },
+				);
 			}
 			// Disconnected state must not be conveyed by colour alone (WCAG
 			// 1.4.1). The struck-through WifiOff glyph carries it in compact
@@ -167,12 +189,14 @@ const HostStatusPills = ({
 					label={
 						compact
 							? null
-							: `${protocol} ${withinGrace ? "reconnecting" : "offline"}`
+							: withinGrace
+								? t("{{protocol}} reconnecting", { protocol })
+								: t("{{protocol}} offline", { protocol })
 					}
 					srLabel={
 						withinGrace
-							? "WebSocket disconnected, within grace window"
-							: "WebSocket disconnected"
+							? t("WebSocket disconnected, within grace window")
+							: t("WebSocket disconnected")
 					}
 					tooltip={tooltip}
 				/>
@@ -203,21 +227,33 @@ const HostStatusPills = ({
 	const neverReported = reportingState === "awaiting";
 
 	let reportingVariant = "success";
-	let reportingLabel = "Reporting";
-	let reportingTooltip = `Agent reported recently. Last update: ${lastUpdateRel}.`;
+	// "Reporting" is also the Reporting page: the status context tells them
+	// apart in French.
+	let reportingLabel = t("Reporting", { context: "status" });
+	let reportingTooltip = t(
+		"Agent reported recently. Last update: {{lastUpdate}}.",
+		{ lastUpdate: lastUpdateRel },
+	);
 	if (neverReported) {
 		reportingVariant = "neutral";
-		reportingLabel = "Awaiting report";
-		reportingTooltip =
-			"This host has been added but its agent has not sent a report yet. Install and start the agent on the host to begin monitoring.";
+		reportingLabel = t("Awaiting report");
+		reportingTooltip = t(
+			"This host has been added but its agent has not sent a report yet. Install and start the agent on the host to begin monitoring.",
+		);
 	} else if (reportingState === "overdue") {
 		reportingVariant = "warning";
-		reportingLabel = "Overdue";
-		reportingTooltip = `Agent has not pushed a report yet but the WebSocket is still connected, so this is likely transient. Last update: ${lastUpdateRel}.`;
+		reportingLabel = t("Overdue");
+		reportingTooltip = t(
+			"Agent has not pushed a report yet but the WebSocket is still connected, so this is likely transient. Last update: {{lastUpdate}}.",
+			{ lastUpdate: lastUpdateRel },
+		);
 	} else if (reportingState === "stale") {
 		reportingVariant = "danger";
-		reportingLabel = "Stale";
-		reportingTooltip = `Agent has not reported and the WebSocket is disconnected. Last update: ${lastUpdateRel}.`;
+		reportingLabel = t("Stale");
+		reportingTooltip = t(
+			"Agent has not reported and the WebSocket is disconnected. Last update: {{lastUpdate}}.",
+			{ lastUpdate: lastUpdateRel },
+		);
 	}
 	const reportingPill = (
 		<Pill
@@ -225,7 +261,7 @@ const HostStatusPills = ({
 			variant={reportingVariant}
 			icon={Activity}
 			label={compact ? null : reportingLabel}
-			srLabel={`Reporting status: ${reportingLabel}`}
+			srLabel={t("Reporting status: {{label}}", { label: reportingLabel })}
 			tooltip={reportingTooltip}
 		/>
 	);
@@ -236,11 +272,22 @@ const HostStatusPills = ({
 			key="reboot"
 			variant="warning"
 			icon={RotateCcw}
-			label={compact ? null : "Reboot pending"}
+			label={compact ? null : t("Reboot pending")}
 			srLabel={
-				onRebootClick ? "Reboot pending: restart the host" : "Reboot pending"
+				onRebootClick
+					? t("Reboot pending: restart the host")
+					: t("Reboot pending")
 			}
-			tooltip={`${host.reboot_reason || "Host requires a reboot to apply pending updates."}${onRebootClick ? " Click to restart the host." : ""}`}
+			tooltip={
+				onRebootClick
+					? t("{{reason}} Click to restart the host.", {
+							reason:
+								host.reboot_reason ||
+								t("Host requires a reboot to apply pending updates."),
+						})
+					: host.reboot_reason ||
+						t("Host requires a reboot to apply pending updates.")
+			}
 			onClick={onRebootClick}
 		/>
 	) : null;
@@ -257,24 +304,29 @@ const HostStatusPills = ({
 				: "up_to_date");
 
 	let updatesVariant = "success";
-	let updatesLabel = "Up to date";
-	let updatesTooltip = "All packages up to date.";
+	let updatesLabel = t("Up to date");
+	let updatesTooltip = t("All packages up to date.");
 	if (neverReported && securityCount === 0 && updatesCount === 0) {
 		// Zero packages known is not the same as zero updates outstanding.
 		// Claiming "Up to date" for a host that has never sent an inventory
 		// would be the most misleading pill on the page.
 		updatesVariant = "neutral";
-		updatesLabel = "No package data";
-		updatesTooltip =
-			"Package data will appear once the agent sends its first report.";
+		updatesLabel = t("No package data");
+		updatesTooltip = t(
+			"Package data will appear once the agent sends its first report.",
+		);
 	} else if (updateState === "security_required" || securityCount > 0) {
 		updatesVariant = "danger";
-		updatesLabel = "Security patches required";
-		updatesTooltip = `${securityCount} security update${securityCount === 1 ? "" : "s"} available.`;
+		updatesLabel = t("Security patches required");
+		updatesTooltip = t("{{count}} security update available.", {
+			count: securityCount,
+		});
 	} else if (updateState === "updates_pending" || updatesCount > 0) {
 		updatesVariant = "warning";
-		updatesLabel = "Updates pending";
-		updatesTooltip = `${updatesCount} non-security update${updatesCount === 1 ? "" : "s"} available.`;
+		updatesLabel = t("Updates pending");
+		updatesTooltip = t("{{count}} non-security update available.", {
+			count: updatesCount,
+		});
 	}
 	const updatesPill = (
 		<Pill

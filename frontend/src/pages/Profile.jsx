@@ -29,6 +29,7 @@ import {
 import { useEffect, useId, useState } from "react";
 import DiscordIcon from "../components/DiscordIcon";
 import { FORM_INPUT_CLASS } from "../components/FormInput";
+import LanguageSelect from "../components/LanguageSelect";
 import { useAuth } from "../contexts/AuthContext";
 import { THEME_PRESETS, useColorTheme } from "../contexts/ColorThemeContext";
 import { useConfirm } from "../contexts/ConfirmContext";
@@ -531,6 +532,8 @@ const Profile = () => {
 										</div>
 									</div>
 								</div>
+
+								<LanguageSelect />
 
 								{/* Theme Settings */}
 								<div className="border-t border-secondary-200 dark:border-secondary-600 pt-4 md:pt-6">

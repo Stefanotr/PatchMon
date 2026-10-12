@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n, { tk } from "../../i18n";
 import { formatDate, formatRelativeTime } from "../../utils/api";
 import ActivityTypeBadge from "./ActivityTypeBadge";
 import SectionChips from "./SectionChips";
@@ -20,6 +22,17 @@ const STATUS_STYLE = {
 	active: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
 };
 
+// Display labels of the queue statuses above. Keys are API values.
+const STATUS_LABELS = {
+	success: tk("Success"),
+	completed: tk("Completed"),
+	error: tk("Error"),
+	failed: tk("Failed"),
+	waiting: tk("Waiting"),
+	delayed: tk("Delayed"),
+	active: tk("Active"),
+};
+
 const titleCase = (value) => {
 	if (!value) return "";
 	const str = value.toString();
@@ -27,6 +40,7 @@ const titleCase = (value) => {
 };
 
 const StatusBadge = ({ status }) => {
+	const { t } = useTranslation();
 	if (!status) {
 		return (
 			<span className="text-xs text-secondary-500 dark:text-secondary-300">
@@ -41,7 +55,9 @@ const StatusBadge = ({ status }) => {
 		<span
 			className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${cls}`}
 		>
-			{titleCase(status)}
+			{Object.hasOwn(STATUS_LABELS, status)
+				? t(STATUS_LABELS[status])
+				: titleCase(status)}
 		</span>
 	);
 };
@@ -49,10 +65,11 @@ const StatusBadge = ({ status }) => {
 const formatKb = (kb) => {
 	if (kb == null || Number.isNaN(Number(kb))) return PLACEHOLDER;
 	const value = Number(kb);
-	if (value >= 1024) return `${(value / 1024).toFixed(1)} MB`;
-	if (value >= 100) return `${value.toFixed(0)} KB`;
-	if (value > 0) return `${value.toFixed(1)} KB`;
-	return `${value.toFixed(0)} KB`;
+	if (value >= 1024)
+		return i18n.t("{{size}} MB", { size: (value / 1024).toFixed(1) });
+	if (value >= 100) return i18n.t("{{size}} KB", { size: value.toFixed(0) });
+	if (value > 0) return i18n.t("{{size}} KB", { size: value.toFixed(1) });
+	return i18n.t("{{size}} KB", { size: value.toFixed(0) });
 };
 
 const formatDurationMs = (ms) => {
@@ -67,11 +84,17 @@ const buildDurationTooltip = (item) => {
 	const parts = [];
 	if (item.server_processing_ms != null) {
 		parts.push(
-			`Server processing: ${formatDurationMs(item.server_processing_ms)}`,
+			i18n.t("Server processing: {{duration}}", {
+				duration: formatDurationMs(item.server_processing_ms),
+			}),
 		);
 	}
 	if (item.agent_execution_ms != null) {
-		parts.push(`Agent execution: ${formatDurationMs(item.agent_execution_ms)}`);
+		parts.push(
+			i18n.t("Agent execution: {{duration}}", {
+				duration: formatDurationMs(item.agent_execution_ms),
+			}),
+		);
 	}
 	return parts.join("\n");
 };
@@ -96,15 +119,17 @@ const formatOutputPreview = (output) => {
 };
 
 const AttemptPill = ({ attempt }) => {
+	const { t } = useTranslation();
 	if (attempt == null) return null;
 	return (
 		<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-700 dark:bg-secondary-700 dark:text-secondary-200 whitespace-nowrap">
-			Attempt {attempt}
+			{t("Attempt {{attempt}}", { attempt })}
 		</span>
 	);
 };
 
 const ExpandableText = ({ text, expanded, onToggle, tone = "neutral" }) => {
+	const { t } = useTranslation();
 	if (!text) return null;
 	const toneClasses =
 		tone === "error"
@@ -122,7 +147,7 @@ const ExpandableText = ({ text, expanded, onToggle, tone = "neutral" }) => {
 			type="button"
 			onClick={onToggle}
 			className={`text-left text-xs ${toneClasses} hover:underline focus:outline-none focus:ring-2 focus:ring-primary-500 rounded`}
-			title={expanded ? "Click to collapse" : "Click to expand"}
+			title={expanded ? t("Click to collapse") : t("Click to expand")}
 		>
 			{expanded ? (
 				<span className="break-words whitespace-pre-wrap">{str}</span>
@@ -180,6 +205,7 @@ const ErrorCell = ({ message, expanded, onToggle }) => {
 };
 
 const AgentActivityTable = ({ items = [] }) => {
+	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState({});
 
 	const toggle = (key) => {
@@ -223,13 +249,13 @@ const AgentActivityTable = ({ items = [] }) => {
 							<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-secondary-600 dark:text-secondary-200">
 								<div>
 									<span className="text-secondary-500 dark:text-secondary-400">
-										Size:
+										{t("Size:")}
 									</span>{" "}
 									{formatKb(item.payload_size_kb)}
 								</div>
 								<div title={buildDurationTooltip(item)}>
 									<span className="text-secondary-500 dark:text-secondary-400">
-										Duration:
+										{t("Duration:")}
 									</span>{" "}
 									{formatDurationMs(item.server_processing_ms)}
 								</div>
@@ -254,25 +280,25 @@ const AgentActivityTable = ({ items = [] }) => {
 					<thead className="bg-secondary-50 dark:bg-secondary-700 sticky top-0 z-10">
 						<tr>
 							<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-								When
+								{t("When")}
 							</th>
 							<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-								Type
+								{t("Type")}
 							</th>
 							<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-								Details
+								{t("Details")}
 							</th>
 							<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-								Size
+								{t("Size")}
 							</th>
 							<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-								Duration
+								{t("Duration")}
 							</th>
 							<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-								Status
+								{t("Status")}
 							</th>
 							<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-								Error
+								{t("Error")}
 							</th>
 						</tr>
 					</thead>

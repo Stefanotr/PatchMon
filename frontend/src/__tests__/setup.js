@@ -1,6 +1,10 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import "@testing-library/jest-dom";
+import i18n from "../i18n";
+
+// Tests find the English text, whatever the language of the machine.
+i18n.changeLanguage("en");
 
 // Cleanup after each test
 afterEach(() => {

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { formatDate } from "../utils/api";
 
 /**
@@ -9,22 +11,23 @@ import { formatDate } from "../utils/api";
 function formatTimeUntil(target) {
 	const now = Date.now();
 	const ms = target - now;
-	if (ms <= 0) return "soon";
+	if (ms <= 0) return i18n.t("soon");
 
 	const sec = Math.floor(ms / 1000);
 	const min = Math.floor(sec / 60);
 	const h = Math.floor(min / 60);
 
-	if (sec < 60) return `in ${sec} s`;
-	if (min < 60) return `in ${min} min`;
-	if (h < 24) return `in ${h} h`;
-	return `in ${Math.floor(h / 24)} d`;
+	if (sec < 60) return i18n.t("in {{seconds}} s", { seconds: sec });
+	if (min < 60) return i18n.t("in {{minutes}} min", { minutes: min });
+	if (h < 24) return i18n.t("in {{hours}} h", { hours: h });
+	return i18n.t("in {{days}} d", { days: Math.floor(h / 24) });
 }
 
 /**
  * Badge for queued patch runs. Shows "Queued" and a countdown timer when scheduled_at is set.
  */
 export function QueuedStatusBadge({ scheduledAt, className = "" }) {
+	const { t } = useTranslation();
 	const [countdown, setCountdown] = useState(null);
 
 	useEffect(() => {
@@ -36,7 +39,7 @@ export function QueuedStatusBadge({ scheduledAt, className = "" }) {
 		const tick = () => {
 			const now = Date.now();
 			if (target <= now) {
-				setCountdown("soon");
+				setCountdown(i18n.t("soon"));
 				return;
 			}
 			setCountdown(formatTimeUntil(new Date(target)));
@@ -52,9 +55,13 @@ export function QueuedStatusBadge({ scheduledAt, className = "" }) {
 	return (
 		<span
 			className={`${baseClass} ${className}`}
-			title={scheduledAt ? `Runs at ${formatDate(scheduledAt)}` : "Queued"}
+			title={
+				scheduledAt
+					? t("Runs at {{date}}", { date: formatDate(scheduledAt) })
+					: t("Queued")
+			}
 		>
-			Queued
+			{t("Queued")}
 			{scheduledAt && countdown && (
 				<span className="opacity-90 font-normal">({countdown})</span>
 			)}

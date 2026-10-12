@@ -23,7 +23,9 @@ import {
 	Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { useToast } from "../contexts/ToastContext";
+import { tk } from "../i18n";
 import { formatDate, packagesAPI } from "../utils/api";
 import {
 	buildRebootRequest,
@@ -42,12 +44,46 @@ const DRY_RUN_PACKAGE_LIMIT = 5;
 const VALIDATION_CONCURRENCY = 5;
 const VALIDATION_POLL_CONCURRENCY = 20;
 
-// Verb used across the outcome UI so approval and patch flows read right.
-const submitVerbFor = (mode) => (mode === "approval" ? "submitted" : "queued");
+// Outcome sentences, worded so approval and patch flows read right. Approve
+// mode submits one existing run at a time and always queues it; trigger mode
+// submits one host, queued or submitted for approval.
+const OUTCOME_TEXT = {
+	run: {
+		toast: tk(
+			"{{count}} run queued, {{failed}} failed. Review the wizard to retry.",
+		),
+		failed: tk("<strong>{{count}} run</strong> could not be queued."),
+		succeeded: tk(
+			"{{count}} run was queued successfully and now appears in Runs & History.",
+		),
+		retry: tk("Retrying only re-submits the failed run."),
+	},
+	host: {
+		toast: tk(
+			"{{count}} host queued, {{failed}} failed. Review the wizard to retry.",
+		),
+		failed: tk("<strong>{{count}} host</strong> could not be queued."),
+		succeeded: tk(
+			"{{count}} host was queued successfully and now appears in Runs & History.",
+		),
+		retry: tk("Retrying only re-submits the failed host."),
+	},
+	hostForApproval: {
+		toast: tk(
+			"{{count}} host submitted, {{failed}} failed. Review the wizard to retry.",
+		),
+		failed: tk("<strong>{{count}} host</strong> could not be submitted."),
+		succeeded: tk(
+			"{{count}} host was submitted successfully and now appears in Runs & History.",
+		),
+		retry: tk("Retrying only re-submits the failed host."),
+	},
+};
 
-// Approve mode submits one existing run at a time, trigger mode one host.
-const pluraliseTarget = (n, isApprove) =>
-	isApprove ? (n === 1 ? "run" : "runs") : n === 1 ? "host" : "hosts";
+const outcomeTextFor = (isApprove, mode) => {
+	if (isApprove) return OUTCOME_TEXT.run;
+	return mode === "approval" ? OUTCOME_TEXT.hostForApproval : OUTCOME_TEXT.host;
+};
 
 // Run an async worker over items with a bounded concurrency pool so large
 // batches don't serialize (one-at-a-time) or fan out uncapped (stampede).
@@ -139,6 +175,7 @@ export default function PatchWizard({
 	packagesByRun,
 	patchTypeByRun,
 }) {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const { warning: toastWarning } = useToast();
 	const isApprove = mode === "approve";
@@ -185,20 +222,20 @@ export default function PatchWizard({
 	// while navigation only advances through the visible ones.
 	const allSteps = useMemo(
 		() => [
-			{ id: "hosts", label: "Hosts", hidden: lockHosts },
-			{ id: "packages", label: "Packages", hidden: packagesAreFixed },
+			{ id: "hosts", label: tk("Hosts"), hidden: lockHosts },
+			{ id: "packages", label: tk("Packages"), hidden: packagesAreFixed },
 			{
 				id: "validate",
-				label: "Validate",
+				label: tk("Validate"),
 				// Validate only makes sense for a fresh trigger of a package
 				// patch. patch_all cannot dry-run (backend rejects it) and
 				// approve mode already has a validation result on file.
 				hidden: isApprove || isPatchAll,
 			},
-			{ id: "timing", label: "Timing", hidden: false },
+			{ id: "timing", label: tk("Timing"), hidden: false },
 			{
 				id: "approval",
-				label: "Approval",
+				label: tk("Approval"),
 				// Approval is a real decision for any fresh trigger: the user
 				// can run it now, or submit it for a second approver to
 				// release later. In approve mode the user already chose to
@@ -206,7 +243,7 @@ export default function PatchWizard({
 				// indicator so the 6-step mental model stays consistent).
 				hidden: isApprove,
 			},
-			{ id: "submit", label: "Submit", hidden: false },
+			{ id: "submit", label: tk("Submit"), hidden: false },
 		],
 		[lockHosts, isApprove, isPatchAll, packagesAreFixed],
 	);
@@ -714,7 +751,7 @@ export default function PatchWizard({
 					);
 					const runId = res?.patch_run_id;
 					if (!runId) {
-						markFailed(target, "No run ID returned");
+						markFailed(target, t("No run ID returned"));
 						return;
 					}
 					runIdByTarget[target.id] = runId;
@@ -746,7 +783,7 @@ export default function PatchWizard({
 
 	const handleConfirm = async () => {
 		if (selectedTargets.length === 0) {
-			setError("Select at least one host");
+			setError(t("Select at least one host"));
 			return;
 		}
 		// "Submit for approval" is available in any fresh-trigger flow. The
@@ -807,7 +844,7 @@ export default function PatchWizard({
 					{ pending_approval: true },
 				);
 				if (!response?.patch_run_id) {
-					throw new Error("The server did not return a run for this host");
+					throw new Error(t("The server did not return a run for this host"));
 				}
 				return { runId: response.patch_run_id, immediate: false };
 			}
@@ -828,7 +865,7 @@ export default function PatchWizard({
 				// Approve mode: the target *is* an existing validation run.
 				// Approving creates a linked execution run on the backend.
 				if (!target.runId) {
-					throw new Error("No validation run on file for this host");
+					throw new Error(t("No validation run on file for this host"));
 				}
 				response = await patchingAPI.approveRun(target.runId, overrideBody);
 			} else if (isPatchAll) {
@@ -850,7 +887,9 @@ export default function PatchWizard({
 					// A second run now would collide with the dry run on the
 					// host; the validation run is approved once it finishes.
 					throw new Error(
-						"Validation is still running on this host; approve it from Patching once it finishes",
+						t(
+							"Validation is still running on this host; approve it from Patching once it finishes",
+						),
 					);
 				}
 				if (
@@ -874,7 +913,7 @@ export default function PatchWizard({
 			}
 
 			if (!response?.patch_run_id) {
-				throw new Error("The server did not return a run for this host");
+				throw new Error(t("The server did not return a run for this host"));
 			}
 
 			// Derive "immediate" from the server's run_at: the backend is the
@@ -908,7 +947,8 @@ export default function PatchWizard({
 				attempt[target.id] = {
 					status: "failed",
 					hostId: target.hostId,
-					error: err?.response?.data?.error || err?.message || "Request failed",
+					error:
+						err?.response?.data?.error || err?.message || t("Request failed"),
 				};
 			}
 		}
@@ -935,9 +975,11 @@ export default function PatchWizard({
 			return;
 		}
 		if (createdCount > 0) {
-			const verb = submitVerbFor(nextSubmitMode);
 			toastWarning(
-				`${createdCount} ${pluraliseTarget(createdCount, isApprove)} ${verb}, ${failedCount} failed. Review the wizard to retry.`,
+				t(outcomeTextFor(isApprove, nextSubmitMode).toast, {
+					count: createdCount,
+					failed: failedCount,
+				}),
 			);
 		}
 	};
@@ -1021,39 +1063,43 @@ export default function PatchWizard({
 			: null;
 	const headerTitle = isApprove
 		? selectedTargetIds.size > 1
-			? `Approve ${selectedTargetIds.size} patch runs`
+			? t("Approve {{n}} patch runs", { n: selectedTargetIds.size })
 			: singleLockedHostLabel
-				? `Approve patch run on ${singleLockedHostLabel}`
-				: "Approve patch run"
+				? t("Approve patch run on {{host}}", { host: singleLockedHostLabel })
+				: t("Approve patch run")
 		: isPatchAll
 			? singleLockedHostLabel
-				? `Patch all packages on ${singleLockedHostLabel}`
-				: "Patch all packages"
+				? t("Patch all packages on {{host}}", { host: singleLockedHostLabel })
+				: t("Patch all packages")
 			: singleLockedHostLabel && selectedPkgs.length > 0
-				? `Patch ${selectedPkgs.length} package${
-						selectedPkgs.length === 1 ? "" : "s"
-					} on ${singleLockedHostLabel}`
-				: "Patch packages on hosts";
+				? t("Patch {{count}} package on {{host}}", {
+						count: selectedPkgs.length,
+						host: singleLockedHostLabel,
+					})
+				: t("Patch packages on hosts");
 
-	const submitVerb = submitVerbFor(submitMode);
+	const outcomeText = outcomeTextFor(isApprove, submitMode);
 
 	// Submit-step button label varies with mode + approval decision.
 	const confirmButtonLabel = () => {
-		if (isPatching) return "Working…";
+		if (isPatching) return t("Working…");
 		if (failedTargetIds.length > 0) {
-			return `Retry ${failedTargetIds.length} failed ${pluraliseTarget(
-				failedTargetIds.length,
-				isApprove,
-			)}`;
+			return isApprove
+				? t("Retry {{count}} failed run", { count: failedTargetIds.length })
+				: t("Retry {{count}} failed host", { count: failedTargetIds.length });
 		}
 		const n = selectedTargetIds.size;
 		if (isApprove) {
-			return n === 1 ? "Approve & patch" : `Approve & patch ${n} runs`;
+			return n === 1
+				? t("Approve & patch")
+				: t("Approve & patch {{n}} runs", { n });
 		}
 		if (approvalDecision === "submit") {
-			return n === 1 ? "Submit for approval" : `Submit ${n} hosts for approval`;
+			return n === 1
+				? t("Submit for approval")
+				: t("Submit {{n}} hosts for approval", { n });
 		}
-		return `Queue & patch ${n} host${n !== 1 ? "s" : ""}`;
+		return t("Queue & patch {{count}} host", { count: n });
 	};
 
 	// Step-indicator visibility. We render the full canonical 6-step sequence
@@ -1069,7 +1115,7 @@ export default function PatchWizard({
 				type="button"
 				onClick={() => !isPatching && !isValidating && handleClose()}
 				className="fixed inset-0 cursor-default"
-				aria-label="Close modal"
+				aria-label={t("Close modal")}
 			/>
 			<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[92vh] flex flex-col relative z-10">
 				{/* Header */}
@@ -1114,7 +1160,11 @@ export default function PatchWizard({
 										key={s.id}
 										className="flex items-center gap-1"
 										title={
-											isHidden ? `${s.label} — not required here` : s.label
+											isHidden
+												? t("{{step}} — not required here", {
+														step: t(s.label),
+													})
+												: t(s.label)
 										}
 									>
 										<div
@@ -1125,7 +1175,7 @@ export default function PatchWizard({
 											) : (
 												<span>{i + 1}</span>
 											)}
-											{s.label}
+											{t(s.label)}
 										</div>
 										{i < allSteps.length - 1 && (
 											<ChevronRight className="h-3 w-3 text-secondary-400" />
@@ -1147,9 +1197,14 @@ export default function PatchWizard({
 						<div className="mb-3 flex items-start gap-2 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 px-3 py-2">
 							<Check className="h-4 w-4 text-primary-600 dark:text-primary-300 mt-0.5 shrink-0" />
 							<p className="text-xs text-primary-700 dark:text-primary-200">
-								Approving {selectedTargetIds.size || "existing"} validated run
-								{selectedTargetIds.size !== 1 ? "s" : ""}. Packages and hosts
-								are fixed from the validation; you can still adjust timing.
+								{selectedTargetIds.size > 0
+									? t(
+											"Approving {{count}} validated run. Packages and hosts are fixed from the validation; you can still adjust timing.",
+											{ count: selectedTargetIds.size },
+										)
+									: t(
+											"Approving existing validated runs. Packages and hosts are fixed from the validation; you can still adjust timing.",
+										)}
 							</p>
 						</div>
 					)}
@@ -1159,20 +1214,25 @@ export default function PatchWizard({
 						(isLoading ? (
 							<div className="flex items-center gap-2 text-secondary-600 dark:text-secondary-400 py-8">
 								<RefreshCw className="h-4 w-4 animate-spin shrink-0" />
-								Loading hosts…
+								{t("Loading hosts…")}
 							</div>
 						) : targets.length === 0 ? (
 							<p className="text-sm text-secondary-600 dark:text-secondary-400 py-4">
 								{restrictSet
-									? "None of the selected hosts have a pending update for these packages."
-									: "No hosts have a pending update for these packages."}
+									? t(
+											"None of the selected hosts have a pending update for these packages.",
+										)
+									: t("No hosts have a pending update for these packages.")}
 							</p>
 						) : (
 							<>
 								<p className="text-sm text-secondary-600 dark:text-secondary-400 mb-3">
-									Select the hosts you want to deploy{" "}
-									<strong>{packageNames?.length || 0}</strong> package
-									{packageNames?.length !== 1 ? "s" : ""} to.
+									<Trans
+										t={t}
+										i18nKey="Select the hosts you want to deploy <strong>{{count}}</strong> package to."
+										count={packageNames?.length || 0}
+										components={{ strong: <strong /> }}
+									/>
 								</p>
 								<div className="flex items-center gap-2 mb-3">
 									{/* Select all/none only earn their keep when there's
@@ -1185,7 +1245,7 @@ export default function PatchWizard({
 												onClick={selectAll}
 												className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
 											>
-												Select all
+												{t("Select all")}
 											</button>
 											<span className="text-secondary-400">|</span>
 											<button
@@ -1193,12 +1253,15 @@ export default function PatchWizard({
 												onClick={selectNone}
 												className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
 											>
-												Select none
+												{t("Select none")}
 											</button>
 										</>
 									)}
 									<span className="text-sm text-secondary-500 dark:text-secondary-400 ml-auto">
-										{selectedTargetIds.size} of {targets.length} selected
+										{t("{{count}} of {{total}} selected", {
+											count: selectedTargetIds.size,
+											total: targets.length,
+										})}
 									</span>
 								</div>
 								<div className="border border-secondary-200 dark:border-secondary-600 rounded-lg overflow-hidden max-h-64 overflow-y-auto mb-4">
@@ -1207,7 +1270,7 @@ export default function PatchWizard({
 											<tr>
 												<th className="w-10 px-3 py-2" />
 												<th className="px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-													Host
+													{t("Host")}
 												</th>
 											</tr>
 										</thead>
@@ -1244,7 +1307,7 @@ export default function PatchWizard({
 								{packageNames?.length > 0 && (
 									<div className="border-t border-secondary-200 dark:border-secondary-600 pt-3">
 										<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-1.5">
-											Packages to patch:
+											{t("Packages to patch:")}
 										</p>
 										<ul className="text-sm text-secondary-600 dark:text-secondary-400 list-disc list-inside space-y-0.5 max-h-16 overflow-y-auto">
 											{packageNames.map((name) => (
@@ -1260,8 +1323,9 @@ export default function PatchWizard({
 					{currentStepId === "validate" && (
 						<>
 							<p className="text-sm text-secondary-600 dark:text-secondary-400 mb-4">
-								Run a dry-run validation to see exactly which packages will be
-								updated on each host before committing.
+								{t(
+									"Run a dry-run validation to see exactly which packages will be updated on each host before committing.",
+								)}
 							</p>
 							{!isValidating &&
 								Object.keys(validationByTarget).length === 0 && (
@@ -1273,7 +1337,7 @@ export default function PatchWizard({
 											className="btn-primary inline-flex items-center gap-2"
 										>
 											<Eye className="h-4 w-4" />
-											Run validation
+											{t("Run validation")}
 										</button>
 									</div>
 								)}
@@ -1288,14 +1352,18 @@ export default function PatchWizard({
 												<Check className="h-4 w-4 text-green-600 shrink-0" />
 											)}
 											<span className="font-medium text-secondary-800 dark:text-secondary-200">
-												Validated {validationProgress.done} /{" "}
-												{validationProgress.total}
+												{t("Validated {{done}} / {{total}}", {
+													done: validationProgress.done,
+													total: validationProgress.total,
+												})}
 											</span>
 											<span className="text-secondary-500 dark:text-secondary-400">
 												·
 											</span>
 											<span className="text-green-700 dark:text-green-400">
-												{validationProgress.clean} clean
+												{t("{{count}} clean", {
+													count: validationProgress.clean,
+												})}
 											</span>
 											{validationProgress.extraDeps > 0 && (
 												<>
@@ -1303,7 +1371,9 @@ export default function PatchWizard({
 														·
 													</span>
 													<span className="text-amber-700 dark:text-amber-400">
-														{validationProgress.extraDeps} extra deps
+														{t("{{count}} extra deps", {
+															count: validationProgress.extraDeps,
+														})}
 													</span>
 												</>
 											)}
@@ -1313,7 +1383,9 @@ export default function PatchWizard({
 														·
 													</span>
 													<span className="text-red-700 dark:text-red-400">
-														{validationProgress.failed} failed
+														{t("{{count}} failed", {
+															count: validationProgress.failed,
+														})}
 													</span>
 												</>
 											)}
@@ -1323,7 +1395,9 @@ export default function PatchWizard({
 														·
 													</span>
 													<span className="text-secondary-600 dark:text-secondary-400">
-														{validationProgress.offline} offline
+														{t("{{count}} offline", {
+															count: validationProgress.offline,
+														})}
 													</span>
 												</>
 											)}
@@ -1333,7 +1407,9 @@ export default function PatchWizard({
 														·
 													</span>
 													<span className="text-primary-700 dark:text-primary-400">
-														{validationProgress.validating} validating
+														{t("{{count}} validating", {
+															count: validationProgress.validating,
+														})}
 													</span>
 												</>
 											)}
@@ -1343,7 +1419,9 @@ export default function PatchWizard({
 														·
 													</span>
 													<span className="text-secondary-600 dark:text-secondary-400">
-														{validationProgress.pending} pending
+														{t("{{count}} pending", {
+															count: validationProgress.pending,
+														})}
 													</span>
 												</>
 											)}
@@ -1354,12 +1432,12 @@ export default function PatchWizard({
 										<div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700">
 											<AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
 											<p className="text-sm text-amber-700 dark:text-amber-300">
-												<strong>
-													{targetsWithExtraDeps.length} host
-													{targetsWithExtraDeps.length !== 1 ? "s" : ""}
-												</strong>{" "}
-												will install additional dependencies beyond the
-												requested packages. Review below before proceeding.
+												<Trans
+													t={t}
+													i18nKey="<strong>{{count}} host</strong> will install additional dependencies beyond the requested packages. Review below before proceeding."
+													count={targetsWithExtraDeps.length}
+													components={{ strong: <strong /> }}
+												/>
 											</p>
 										</div>
 									)}
@@ -1422,37 +1500,40 @@ export default function PatchWizard({
 													{v.status === "pending" && (
 														<span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-secondary-300">
 															<Clock className="h-3 w-3" />
-															Pending
+															{t("Pending")}
 														</span>
 													)}
 													{v.status === "validating" && (
 														<span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-primary-100 text-primary-700 dark:bg-primary-800 dark:text-primary-200">
 															<RefreshCw className="h-3 w-3 animate-spin" />
-															Validating…
+															{t("Validating…")}
 														</span>
 													)}
 													{v.status === "validated" && extraDeps.length > 0 && (
 														<span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-800 dark:text-amber-200">
 															<AlertTriangle className="h-3 w-3" />
-															{extraDeps.length} extra dep
-															{extraDeps.length !== 1 ? "s" : ""}
+															{t("{{count}} extra dep", {
+																count: extraDeps.length,
+															})}
 														</span>
 													)}
 													{v.status === "validated" &&
 														extraDeps.length === 0 && (
 															<span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-200">
 																<Check className="h-3 w-3" />
-																Clean
+																{t("Clean")}
 															</span>
 														)}
 													{v.status === "failed" && (
 														<span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-800 dark:text-red-200">
-															Failed
+															{t("Failed")}
 														</span>
 													)}
 													{v.status === "timeout" && (
 														<span className="text-xs px-2 py-0.5 rounded bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-secondary-300">
-															{v.still_running ? "Still running" : "Offline"}
+															{v.still_running
+																? t("Still running")
+																: t("Offline")}
 														</span>
 													)}
 												</div>
@@ -1465,9 +1546,9 @@ export default function PatchWizard({
 														) : v.packages_affected?.length > 0 ? (
 															<>
 																<p className="text-secondary-600 dark:text-secondary-300 text-xs mb-1">
-																	{v.packages_affected.length} package
-																	{v.packages_affected.length !== 1 ? "s" : ""}{" "}
-																	will be updated:
+																	{t("{{count}} package will be updated:", {
+																		count: v.packages_affected.length,
+																	})}
 																</p>
 																<ul className="text-xs text-secondary-600 dark:text-secondary-400 list-disc list-inside space-y-0.5 max-h-20 overflow-y-auto">
 																	{v.packages_affected.map((p) => (
@@ -1482,7 +1563,7 @@ export default function PatchWizard({
 																			{p}
 																			{extraSet.has(p.toLowerCase()) && (
 																				<span className="ml-1 text-amber-500 dark:text-amber-400">
-																					(dependency)
+																					{t("(dependency)")}
 																				</span>
 																			)}
 																		</li>
@@ -1491,7 +1572,7 @@ export default function PatchWizard({
 															</>
 														) : (
 															<p className="text-xs text-secondary-500 dark:text-secondary-400">
-																No additional packages.
+																{t("No additional packages.")}
 															</p>
 														)}
 														{v.shell_output && (
@@ -1505,7 +1586,9 @@ export default function PatchWizard({
 																className="mt-2 text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1"
 															>
 																<Terminal className="h-3 w-3" />
-																{isExpanded ? "Hide" : "Show"} validation output
+																{isExpanded
+																	? t("Hide validation output")
+																	: t("Show validation output")}
 															</button>
 														)}
 														{isExpanded && v.shell_output && (
@@ -1526,7 +1609,7 @@ export default function PatchWizard({
 											className="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1"
 										>
 											<RefreshCw className="h-3 w-3" />
-											Re-run validation
+											{t("Re-run validation")}
 										</button>
 									)}
 								</div>
@@ -1539,7 +1622,7 @@ export default function PatchWizard({
 					{currentStepId === "packages" && (
 						<div className="space-y-3">
 							<p className="text-sm text-secondary-600 dark:text-secondary-400">
-								Choose which packages to include in this patch run.
+								{t("Choose which packages to include in this patch run.")}
 							</p>
 							<div className="flex items-center gap-2 text-xs">
 								<button
@@ -1547,7 +1630,7 @@ export default function PatchWizard({
 									onClick={() => setSelectedPackageNames(packageNames || [])}
 									className="text-primary-600 dark:text-primary-400 hover:underline"
 								>
-									Select all
+									{t("Select all")}
 								</button>
 								<span className="text-secondary-400">|</span>
 								<button
@@ -1555,11 +1638,13 @@ export default function PatchWizard({
 									onClick={() => setSelectedPackageNames([])}
 									className="text-primary-600 dark:text-primary-400 hover:underline"
 								>
-									Select none
+									{t("Select none")}
 								</button>
 								<span className="ml-auto text-sm text-secondary-500 dark:text-secondary-400">
-									{selectedPackageNames.length} of {packageNames?.length || 0}{" "}
-									selected
+									{t("{{count}} of {{total}} selected", {
+										count: selectedPackageNames.length,
+										total: packageNames?.length || 0,
+									})}
 								</span>
 							</div>
 							<div className="border border-secondary-200 dark:border-secondary-600 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
@@ -1603,9 +1688,10 @@ export default function PatchWizard({
 							{selectedPackageNames.length > DRY_RUN_PACKAGE_LIMIT && (
 								<p className="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1">
 									<AlertTriangle className="h-3.5 w-3.5" />
-									{DRY_RUN_PACKAGE_LIMIT} package limit for dry-run validation.
-									The next step will let you skip validation and queue the patch
-									directly.
+									{t(
+										"{{limit}} package limit for dry-run validation. The next step will let you skip validation and queue the patch directly.",
+										{ limit: DRY_RUN_PACKAGE_LIMIT },
+									)}
 								</p>
 							)}
 						</div>
@@ -1617,9 +1703,9 @@ export default function PatchWizard({
 					{currentStepId === "timing" && (
 						<div className="space-y-4">
 							<p className="text-sm text-secondary-600 dark:text-secondary-400">
-								Choose when this patch should run on each host. By default each
-								host follows its assigned policy; you can override to run
-								immediately instead.
+								{t(
+									"Choose when this patch should run on each host. By default each host follows its assigned policy; you can override to run immediately instead.",
+								)}
 							</p>
 
 							{/* Bulk controls — flips every selected host at once. Only
@@ -1627,7 +1713,7 @@ export default function PatchWizard({
 							{selectedTargets.length > 1 && (
 								<div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-secondary-300 dark:border-secondary-600 px-3 py-2 bg-secondary-50/50 dark:bg-secondary-800/40">
 									<span className="text-xs font-medium text-secondary-500 dark:text-secondary-400">
-										Apply to all hosts:
+										{t("Apply to all hosts:")}
 									</span>
 									<button
 										type="button"
@@ -1638,7 +1724,7 @@ export default function PatchWizard({
 										}}
 										className="text-xs px-2 py-1 rounded border border-secondary-300 dark:border-secondary-600 hover:bg-white dark:hover:bg-secondary-700"
 									>
-										Use host policy
+										{t("Use host policy")}
 									</button>
 									<button
 										type="button"
@@ -1649,7 +1735,7 @@ export default function PatchWizard({
 										}}
 										className="text-xs px-2 py-1 rounded border border-secondary-300 dark:border-secondary-600 hover:bg-white dark:hover:bg-secondary-700"
 									>
-										Run immediately
+										{t("Run immediately")}
 									</button>
 								</div>
 							)}
@@ -1659,11 +1745,11 @@ export default function PatchWizard({
 								const override = policyOverrides[target.id] || "default";
 								const scheduledAt =
 									override === "immediate"
-										? "Now"
+										? t("Now")
 										: preview?.run_at_iso
 											? formatDate(preview.run_at_iso)
 											: preview
-												? "Immediately"
+												? t("Immediately")
 												: "\u2014";
 								const hostLabel =
 									target.friendly_name || target.hostname || target.hostId;
@@ -1683,7 +1769,7 @@ export default function PatchWizard({
 												<div className="flex-1 min-w-0">
 													<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-1 flex items-center gap-1">
 														<Shield className="h-3 w-3" />
-														Patch policy
+														{t("Patch policy")}
 													</p>
 													{/*
 													 * Only two options are truly honoured by the backend
@@ -1705,30 +1791,33 @@ export default function PatchWizard({
 													>
 														<option value="default">
 															{preview?.policy_name
-																? `Use host policy (${preview.policy_name})`
-																: "Use host policy (Default)"}
+																? t("Use host policy ({{policy}})", {
+																		policy: preview.policy_name,
+																	})
+																: t("Use host policy (Default)")}
 														</option>
 														<option value="immediate">
-															Override: Run immediately
+															{t("Override: Run immediately")}
 														</option>
 													</select>
 													{preview?.policy_name && (
 														<p className="mt-1 text-[11px] text-secondary-500 dark:text-secondary-400">
-															To use a different policy, change the host's
-															assigned policy in Patching → Policies.
+															{t(
+																"To use a different policy, change the host's assigned policy in Patching → Policies.",
+															)}
 														</p>
 													)}
 												</div>
 												<div className="shrink-0">
 													<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-1 flex items-center gap-1">
 														<Calendar className="h-3 w-3" />
-														Scheduled at
+														{t("Scheduled at")}
 													</p>
 													<div className="flex items-center gap-1 text-sm text-secondary-700 dark:text-secondary-300">
 														<Clock className="h-3.5 w-3.5 text-secondary-400" />
 														{override === "immediate" ? (
 															<span className="text-green-600 dark:text-green-400 font-medium">
-																Immediately
+																{t("Immediately")}
 															</span>
 														) : (
 															scheduledAt
@@ -1745,7 +1834,7 @@ export default function PatchWizard({
 							<div className="border border-secondary-200 dark:border-secondary-600 rounded-lg px-4 py-3 bg-white dark:bg-secondary-800">
 								<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-2 flex items-center gap-1">
 									<Power className="h-3 w-3" />
-									Restart
+									{t("Restart")}
 								</p>
 								<RestartOptions
 									value={restartChoice}
@@ -1753,11 +1842,9 @@ export default function PatchWizard({
 								/>
 								{restartChoice.mode !== "never" && (
 									<p className="mt-2 text-[11px] text-secondary-500 dark:text-secondary-400">
-										The agent restarts the host once the run is over, never
-										after a dry run or a stopped run, nor after a failed run on
-										Linux. Signed-in users are warned; applications are closed
-										when the countdown ends. Ignored if you submit the run for
-										approval: the approver chooses then.
+										{t(
+											"The agent restarts the host once the run is over, never after a dry run or a stopped run, nor after a failed run on Linux. Signed-in users are warned; applications are closed when the countdown ends. Ignored if you submit the run for approval: the approver chooses then.",
+										)}
 									</p>
 								)}
 							</div>
@@ -1773,7 +1860,7 @@ export default function PatchWizard({
 					{currentStepId === "approval" && (
 						<div className="space-y-4">
 							<p className="text-sm text-secondary-600 dark:text-secondary-400">
-								How should this patch be released?
+								{t("How should this patch be released?")}
 							</p>
 							{/* Helpful context for the submit-for-approval choice:
 							    tell the user how many of the selected hosts have
@@ -1782,17 +1869,29 @@ export default function PatchWizard({
 							{!isPatchAll && selectedTargetIds.size > 0 && (
 								<div className="text-xs text-secondary-500 dark:text-secondary-400">
 									{approvableRunCount === selectedTargetIds.size
-										? "All selected hosts have a pending validation run — submit will reuse them."
+										? t(
+												"All selected hosts have a pending validation run — submit will reuse them.",
+											)
 										: approvableRunCount > 0
-											? `${approvableRunCount} of ${selectedTargetIds.size} selected hosts already validated; the remaining ${selectedTargetIds.size - approvableRunCount} will be queued as pending approval.`
-											: "No validation was run — submit will create pending approval runs directly."}
+											? t(
+													"{{validated}} of {{total}} selected hosts already validated; the remaining {{remaining}} will be queued as pending approval.",
+													{
+														validated: approvableRunCount,
+														total: selectedTargetIds.size,
+														remaining:
+															selectedTargetIds.size - approvableRunCount,
+													},
+												)
+											: t(
+													"No validation was run — submit will create pending approval runs directly.",
+												)}
 								</div>
 							)}
 							{isPatchAll && (
 								<div className="text-xs text-secondary-500 dark:text-secondary-400">
-									Patch All doesn't use dry-run validation, so submit will
-									create a pending approval run per host for a second approver
-									to release later.
+									{t(
+										"Patch All doesn't use dry-run validation, so submit will create a pending approval run per host for a second approver to release later.",
+									)}
 								</div>
 							)}
 							<div className="grid sm:grid-cols-2 gap-3">
@@ -1808,12 +1907,13 @@ export default function PatchWizard({
 									<div className="flex items-center gap-2 mb-1">
 										<Zap className="h-4 w-4 text-primary-600" />
 										<span className="font-medium text-secondary-900 dark:text-white">
-											Approve now
+											{t("Approve now")}
 										</span>
 									</div>
 									<p className="text-xs text-secondary-600 dark:text-secondary-400">
-										Queue the patch to run as soon as the selected timing
-										allows.
+										{t(
+											"Queue the patch to run as soon as the selected timing allows.",
+										)}
 									</p>
 								</button>
 								<button
@@ -1838,7 +1938,7 @@ export default function PatchWizard({
 									<div className="flex items-center gap-2 mb-1">
 										<Send className="h-4 w-4 text-amber-500" />
 										<span className="font-medium text-secondary-900 dark:text-white">
-											Submit for approval
+											{t("Submit for approval")}
 										</span>
 									</div>
 									<p
@@ -1850,10 +1950,12 @@ export default function PatchWizard({
 										className="text-xs text-secondary-600 dark:text-secondary-400"
 									>
 										{canSubmitForApproval
-											? "Create a pending run for a second approver. Review and release later from Runs & History."
+											? t(
+													"Create a pending run for a second approver. Review and release later from Runs & History.",
+												)
 											: selectedTargetIds.size === 0
-												? "Select at least one host first."
-												: "Not available in approve mode."}
+												? t("Select at least one host first.")
+												: t("Not available in approve mode.")}
 									</p>
 								</button>
 							</div>
@@ -1871,26 +1973,21 @@ export default function PatchWizard({
 									<AlertTriangle className="h-4 w-4 text-danger-600 dark:text-danger-400 mt-0.5 shrink-0" />
 									<div className="text-sm text-danger-700 dark:text-danger-300">
 										<p>
-											<strong>
-												{failedTargetIds.length}{" "}
-												{pluraliseTarget(failedTargetIds.length, isApprove)}
-											</strong>{" "}
-											could not be {submitVerb}.
+											<Trans
+												t={t}
+												i18nKey={outcomeText.failed}
+												count={failedTargetIds.length}
+												components={{ strong: <strong /> }}
+											/>
 											{succeededTargetIds.length > 0 &&
-												` ${succeededTargetIds.length} ${pluraliseTarget(
-													succeededTargetIds.length,
-													isApprove,
-												)} ${
-													succeededTargetIds.length !== 1 ? "were" : "was"
-												} ${submitVerb} successfully and now appear${
-													succeededTargetIds.length !== 1 ? "" : "s"
-												} in Runs & History.`}
+												` ${t(outcomeText.succeeded, {
+													count: succeededTargetIds.length,
+												})}`}
 										</p>
 										<p className="mt-1 text-xs">
-											Retrying only re-submits the failed{" "}
-											{pluraliseTarget(failedTargetIds.length, isApprove)}.
+											{t(outcomeText.retry, { count: failedTargetIds.length })}
 											{succeededTargetIds.length > 0
-												? " Choose Done to keep the successful runs and close."
+												? ` ${t("Choose Done to keep the successful runs and close.")}`
 												: ""}
 										</p>
 									</div>
@@ -1906,12 +2003,12 @@ export default function PatchWizard({
 									<div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700">
 										<AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
 										<p className="text-sm text-amber-700 dark:text-amber-300">
-											<strong>
-												{targetsWithExtraDeps.length} host
-												{targetsWithExtraDeps.length !== 1 ? "s" : ""}
-											</strong>{" "}
-											will install additional dependencies. Review each host
-											below before confirming.
+											<Trans
+												t={t}
+												i18nKey="<strong>{{count}} host</strong> will install additional dependencies. Review each host below before confirming."
+												count={targetsWithExtraDeps.length}
+												components={{ strong: <strong /> }}
+											/>
 										</p>
 									</div>
 								)}
@@ -1932,13 +2029,12 @@ export default function PatchWizard({
 										<div className="flex items-start gap-2 p-3 rounded-lg bg-secondary-50 dark:bg-secondary-700/40 border border-secondary-200 dark:border-secondary-600">
 											<AlertTriangle className="h-4 w-4 text-secondary-500 dark:text-secondary-300 mt-0.5 shrink-0" />
 											<p className="text-sm text-secondary-700 dark:text-secondary-200">
-												<strong>
-													{offline.length} host
-													{offline.length !== 1 ? "s" : ""}
-												</strong>{" "}
-												did not respond to validation and may be offline. The
-												patch will queue but may not run until the host comes
-												back online.
+												<Trans
+													t={t}
+													i18nKey="<strong>{{count}} host</strong> did not respond to validation and may be offline. The patch will queue but may not run until the host comes back online."
+													count={offline.length}
+													components={{ strong: <strong /> }}
+												/>
 											</p>
 										</div>
 									);
@@ -1946,9 +2042,10 @@ export default function PatchWizard({
 
 							{isApprove && (
 								<p className="text-sm text-secondary-600 dark:text-secondary-400">
-									You are approving {selectedTargetIds.size} existing run
-									{selectedTargetIds.size !== 1 ? "s" : ""}. Review the summary
-									for each host below before approving.
+									{t(
+										"You are approving {{count}} existing run. Review the summary for each host below before approving.",
+										{ count: selectedTargetIds.size },
+									)}
 								</p>
 							)}
 
@@ -1956,16 +2053,20 @@ export default function PatchWizard({
 								<div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700">
 									<Send className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
 									<p className="text-sm text-amber-700 dark:text-amber-300">
-										These runs will be left as <strong>pending approval</strong>
-										. Nothing will be patched until a second approver reviews
-										them in Runs & History.
+										<Trans
+											t={t}
+											i18nKey="These runs will be left as <strong>pending approval</strong>. Nothing will be patched until a second approver reviews them in Runs & History."
+											components={{ strong: <strong /> }}
+										/>
 									</p>
 								</div>
 							)}
 
 							{lockPackages && selectedPkgs.length > 0 && !isPatchAll && (
 								<p className="text-xs text-secondary-500 dark:text-secondary-400 italic">
-									Packages are fixed for this action and cannot be edited here.
+									{t(
+										"Packages are fixed for this action and cannot be edited here.",
+									)}
 								</p>
 							)}
 
@@ -2003,11 +2104,11 @@ export default function PatchWizard({
 								const override = policyOverrides[target.id] || "default";
 								const scheduledAt =
 									override === "immediate"
-										? "Now"
+										? t("Now")
 										: preview?.run_at_iso
 											? formatDate(preview.run_at_iso)
 											: preview
-												? "Immediately"
+												? t("Immediately")
 												: "\u2014";
 
 								const hostLabel =
@@ -2027,8 +2128,9 @@ export default function PatchWizard({
 											{!isApprove && validationDone && extraDeps.length > 0 && (
 												<span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-800 dark:text-amber-200">
 													<AlertTriangle className="h-3 w-3" />
-													{extraDeps.length} extra dep
-													{extraDeps.length !== 1 ? "s" : ""}
+													{t("{{count}} extra dep", {
+														count: extraDeps.length,
+													})}
 												</span>
 											)}
 											{!isApprove &&
@@ -2037,34 +2139,38 @@ export default function PatchWizard({
 												extraDeps.length === 0 && (
 													<span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-200">
 														<Check className="h-3 w-3" />
-														Clean
+														{t("Clean")}
 													</span>
 												)}
 											{!isApprove && !validationDone && !hostIsPatchAll && (
 												<span
 													className="text-xs text-secondary-400 dark:text-secondary-300"
-													title="Validation was skipped — dependency preview unavailable"
+													title={t(
+														"Validation was skipped — dependency preview unavailable",
+													)}
 												>
-													Validation skipped
+													{t("Validation skipped")}
 												</span>
 											)}
 											{v?.status === "timeout" && (
 												<span className="text-xs px-2 py-0.5 rounded bg-secondary-100 text-secondary-600 dark:bg-secondary-600 dark:text-secondary-300">
 													{v.still_running
-														? "Validation still running"
-														: "Host offline"}
+														? t("Validation still running")
+														: t("Host offline")}
 												</span>
 											)}
 											{submitResult?.status === "success" && (
 												<span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
 													<Check className="h-3 w-3" />
-													{submitMode === "approval" ? "Submitted" : "Queued"}
+													{submitMode === "approval"
+														? t("Submitted")
+														: t("Queued")}
 												</span>
 											)}
 											{submitResult?.status === "failed" && (
 												<span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded bg-danger-100 text-danger-800 dark:bg-danger-900 dark:text-danger-200">
 													<AlertTriangle className="h-3 w-3" />
-													Failed
+													{t("Failed")}
 												</span>
 											)}
 										</div>
@@ -2072,18 +2178,19 @@ export default function PatchWizard({
 										{/* Packages table or summary */}
 										{hostIsPatchAll ? (
 											<div className="px-4 py-3 bg-white dark:bg-secondary-800 text-sm text-secondary-700 dark:text-secondary-300">
-												All pending system package updates on this host will be
-												installed.
+												{t(
+													"All pending system package updates on this host will be installed.",
+												)}
 											</div>
 										) : (
 											<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
 												<thead className="bg-secondary-50/50 dark:bg-secondary-700/50">
 													<tr>
 														<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider w-1/2">
-															Package
+															{t("Package")}
 														</th>
 														<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider">
-															Type
+															{t("Type")}
 														</th>
 													</tr>
 												</thead>
@@ -2096,7 +2203,7 @@ export default function PatchWizard({
 															</td>
 															<td className="px-4 py-1.5">
 																<span className="text-xs text-secondary-500 dark:text-secondary-400">
-																	Requested
+																	{t("Requested")}
 																</span>
 															</td>
 														</tr>
@@ -2122,8 +2229,9 @@ export default function PatchWizard({
 																			<ChevronDown className="h-4 w-4 shrink-0" />
 																		)}
 																		<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-																		{extraDeps.length} additional dependenc
-																		{extraDeps.length !== 1 ? "ies" : "y"}
+																		{t("{{count}} additional dependency", {
+																			count: extraDeps.length,
+																		})}
 																	</button>
 																</td>
 															</tr>
@@ -2139,7 +2247,7 @@ export default function PatchWizard({
 																		<td className="px-4 py-1.5">
 																			<span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
 																				<AlertTriangle className="h-3 w-3" />
-																				Dependency
+																				{t("Dependency")}
 																			</span>
 																		</td>
 																	</tr>
@@ -2154,8 +2262,9 @@ export default function PatchWizard({
 																	colSpan={2}
 																	className="px-4 py-2 text-sm text-secondary-500 dark:text-secondary-400"
 																>
-																	Validation was skipped — dependencies will be
-																	resolved at run time.
+																	{t(
+																		"Validation was skipped — dependencies will be resolved at run time.",
+																	)}
 																</td>
 															</tr>
 														)}
@@ -2171,26 +2280,28 @@ export default function PatchWizard({
 												<div className="flex-1 min-w-0">
 													<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-1 flex items-center gap-1">
 														<Shield className="h-3 w-3" />
-														Patch policy
+														{t("Patch policy")}
 													</p>
 													<p className="text-sm text-secondary-800 dark:text-secondary-200">
 														{override === "immediate"
-															? "Run immediately (override)"
+															? t("Run immediately (override)")
 															: preview?.policy_name
-																? `Host policy: ${preview.policy_name}`
-																: "Host policy: Default"}
+																? t("Host policy: {{policy}}", {
+																		policy: preview.policy_name,
+																	})
+																: t("Host policy: Default")}
 													</p>
 												</div>
 												<div className="shrink-0">
 													<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-1 flex items-center gap-1">
 														<Calendar className="h-3 w-3" />
-														Scheduled at
+														{t("Scheduled at")}
 													</p>
 													<div className="flex items-center gap-1 text-sm text-secondary-700 dark:text-secondary-300">
 														<Clock className="h-3.5 w-3.5 text-secondary-400" />
 														{override === "immediate" ? (
 															<span className="text-green-600 dark:text-green-400 font-medium">
-																Immediately
+																{t("Immediately")}
 															</span>
 														) : (
 															scheduledAt
@@ -2230,7 +2341,7 @@ export default function PatchWizard({
 								className="btn-outline inline-flex items-center gap-1"
 							>
 								<ArrowLeft className="h-4 w-4" />
-								Back
+								{t("Back")}
 							</button>
 						)}
 						<button
@@ -2239,7 +2350,7 @@ export default function PatchWizard({
 							disabled={isPatching || isValidating}
 							className="btn-outline"
 						>
-							{submittedRuns.length > 0 ? "Done" : "Cancel"}
+							{submittedRuns.length > 0 ? t("Done") : t("Cancel")}
 						</button>
 					</div>
 
@@ -2252,7 +2363,7 @@ export default function PatchWizard({
 								onClick={goNext}
 								className="btn-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Next
+								{t("Next")}
 								<ArrowRight className="h-4 w-4" />
 							</button>
 						)}
@@ -2265,7 +2376,7 @@ export default function PatchWizard({
 								onClick={goNext}
 								className="btn-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Next
+								{t("Next")}
 								<ArrowRight className="h-4 w-4" />
 							</button>
 						)}
@@ -2280,7 +2391,7 @@ export default function PatchWizard({
 										onClick={goNext}
 										className="btn-outline text-sm"
 									>
-										Skip validation
+										{t("Skip validation")}
 									</button>
 								)}
 								{validationDone && !isValidating && (
@@ -2289,7 +2400,7 @@ export default function PatchWizard({
 										onClick={goNext}
 										className="btn-primary inline-flex items-center gap-1.5"
 									>
-										Next
+										{t("Next")}
 										<ArrowRight className="h-4 w-4" />
 									</button>
 								)}
@@ -2299,7 +2410,7 @@ export default function PatchWizard({
 										onClick={goNext}
 										className="btn-outline text-sm"
 									>
-										Skip (too many packages)
+										{t("Skip (too many packages)")}
 									</button>
 								)}
 							</div>
@@ -2313,7 +2424,7 @@ export default function PatchWizard({
 								disabled={restartInvalid}
 								className="btn-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Next
+								{t("Next")}
 								<ArrowRight className="h-4 w-4" />
 							</button>
 						)}
@@ -2325,7 +2436,7 @@ export default function PatchWizard({
 								onClick={goNext}
 								className="btn-primary inline-flex items-center gap-1.5"
 							>
-								Next
+								{t("Next")}
 								<ArrowRight className="h-4 w-4" />
 							</button>
 						)}

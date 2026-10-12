@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
 	REBOOT_MAX_DELAY_MINUTES,
 	REBOOT_MAX_MESSAGE_LENGTH,
@@ -13,6 +14,7 @@ const inputClass =
  * signed-in users. value/onChange hold a DEFAULT_RESTART_CHOICE-shaped object.
  */
 export default function RestartOptions({ value, onChange, showMode = true }) {
+	const { t } = useTranslation();
 	const set = (patch) => onChange({ ...value, ...patch });
 	const enabled = !showMode || value.mode !== "never";
 	const error = enabled
@@ -24,16 +26,18 @@ export default function RestartOptions({ value, onChange, showMode = true }) {
 			{showMode && (
 				<label className="block">
 					<span className="text-xs font-medium text-secondary-500 dark:text-secondary-400">
-						Restart after patching
+						{t("Restart after patching")}
 					</span>
 					<select
 						value={value.mode}
 						onChange={(e) => set({ mode: e.target.value })}
 						className={`mt-1 w-full ${inputClass}`}
 					>
-						<option value="never">Never (restart by hand)</option>
-						<option value="if_needed">If the host needs a restart</option>
-						<option value="always">Always</option>
+						<option value="never">{t("Never (restart by hand)")}</option>
+						<option value="if_needed">
+							{t("If the host needs a restart")}
+						</option>
+						<option value="always">{t("Always")}</option>
 					</select>
 				</label>
 			)}
@@ -42,7 +46,7 @@ export default function RestartOptions({ value, onChange, showMode = true }) {
 				<>
 					<fieldset className="space-y-2">
 						<legend className="text-xs font-medium text-secondary-500 dark:text-secondary-400">
-							When
+							{t("When")}
 						</legend>
 						<label className="flex items-center gap-2 text-sm text-secondary-700 dark:text-secondary-300">
 							<input
@@ -50,7 +54,7 @@ export default function RestartOptions({ value, onChange, showMode = true }) {
 								checked={value.when !== "at"}
 								onChange={() => set({ when: "delay" })}
 							/>
-							In
+							{t("In")}
 							<input
 								type="number"
 								min={REBOOT_MIN_DELAY_MINUTES}
@@ -59,9 +63,9 @@ export default function RestartOptions({ value, onChange, showMode = true }) {
 								disabled={value.when === "at"}
 								onChange={(e) => set({ delayMinutes: e.target.value })}
 								className={`w-20 ${inputClass}`}
-								aria-label="Delay in minutes"
+								aria-label={t("Delay in minutes")}
 							/>
-							minutes{showMode ? " after the run" : ""}
+							{showMode ? t("minutes after the run") : t("minutes")}
 						</label>
 						<label className="flex items-center gap-2 text-sm text-secondary-700 dark:text-secondary-300">
 							<input
@@ -69,31 +73,33 @@ export default function RestartOptions({ value, onChange, showMode = true }) {
 								checked={value.when === "at"}
 								onChange={() => set({ when: "at" })}
 							/>
-							At
+							{t("At")}
 							<input
 								type="time"
 								value={value.atTime}
 								disabled={value.when !== "at"}
 								onChange={(e) => set({ atTime: e.target.value })}
 								className={inputClass}
-								aria-label="Time of day"
+								aria-label={t("Time of day")}
 							/>
 							<span className="text-xs text-secondary-500 dark:text-secondary-400">
-								(your local time, next occurrence)
+								{t("(your local time, next occurrence)")}
 							</span>
 						</label>
 					</fieldset>
 
 					<label className="block">
 						<span className="text-xs font-medium text-secondary-500 dark:text-secondary-400">
-							Message for signed-in users (optional)
+							{t("Message for signed-in users (optional)")}
 						</span>
 						<input
 							type="text"
 							maxLength={REBOOT_MAX_MESSAGE_LENGTH}
 							value={value.message}
 							onChange={(e) => set({ message: e.target.value })}
-							placeholder="This computer restarts to finish installing updates"
+							placeholder={t(
+								"This computer restarts to finish installing updates",
+							)}
 							className={`mt-1 w-full ${inputClass}`}
 						/>
 					</label>
