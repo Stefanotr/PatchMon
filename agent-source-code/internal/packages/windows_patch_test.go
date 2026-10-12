@@ -632,6 +632,36 @@ func TestParseWinGetListOutput(t *testing.T) {
 			body:           wingetTable([]string{"이름", "ID", "버전", "사용 가능", "원본"}, gitRow),
 			wantUnreadable: 1,
 		},
+		{
+			// The footer is only recognised after a row, so with a single
+			// row that does not fit, nothing else would catch it.
+			name:           "a single row that does not fit is unreadable",
+			body:           misfit(wingetTable(wingetHeader, firefoxRow)) + "1 upgrades available.\n",
+			wantUnreadable: 1,
+		},
+		{
+			name:           "a single row that does not fit, without a footer",
+			body:           misfit(wingetTable(wingetHeader, firefoxRow)),
+			wantUnreadable: 1,
+		},
+		{
+			name:           "every row of a table that does not fit counts at least once",
+			body:           misfit(misfit(wingetTable(wingetHeader, zipRow, firefoxRow))) + "2 upgrades available.\n",
+			wantUnreadable: 1,
+		},
+		{
+			name:           "a table with no row at all is unreadable",
+			body:           wingetSpinner + wingetTable(wingetHeader, gitRow)[:strings.Index(wingetTable(wingetHeader, gitRow), "Git ")],
+			wantUnreadable: 1,
+		},
+		{
+			// The footer counts both tables; the rowless explicit table
+			// already accounts for its row.
+			name: "an explicit-targeting table whose only row does not fit",
+			body: wingetTable(wingetHeader, gitRow) + "2 upgrades available.\n" + explicitIntro +
+				misfit(wingetTable(wingetHeader, pinnedRow)),
+			want: []string{"Git.Git"}, wantUnreadable: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -689,6 +719,36 @@ func TestParseWinGetListOutput(t *testing.T) {
 			t.Errorf("path = %q, err = %v, want the first marker", l.Path, err)
 		}
 	})
+
+	// The run must not report a name as "not pending" when the only row of
+	// the listing could not be read.
+	t.Run("a single unreadable row makes an app name fatal", func(t *testing.T) {
+		listing, err := parseWinGetListOutput(wingetScriptOutput(misfit(wingetTable(wingetHeader, firefoxRow)) + "1 upgrades available.\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		inv := WindowsInventory{WinGet: listing.Apps, WinGetUnreadable: listing.Unreadable, WinGetPath: testWinGetPath}
+		_, unres := ResolveWindowsNames([]string{"Mozilla Firefox (x64 en-US)"}, inv)
+		if len(unres) != 1 || !unres[0].Fatal || !strings.Contains(unres[0].Reason, "could not be read") {
+			t.Errorf("unresolved = %+v, want a fatal unreadable listing", unres)
+		}
+	})
+}
+
+// misfit inserts a space where the second column starts in the first row of
+// an ASCII table that still fits it, so that row no longer lines up with the
+// header, as when a cell is wider than winget made its column.
+func misfit(table string) string {
+	lines := strings.SplitAfter(table, "\n")
+	cols := parseWinGetHeader(lines[0])
+	at := cols.starts[1]
+	for j := 2; j < len(lines); j++ {
+		if _, ok := cols.parseRow(lines[j]); ok {
+			lines[j] = lines[j][:at] + " " + lines[j][at:]
+			return strings.Join(lines, "")
+		}
+	}
+	return table
 }
 
 func TestValidWinGetPath(t *testing.T) {

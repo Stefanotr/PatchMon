@@ -805,15 +805,24 @@ type WinGetListing struct {
 //     unreadable too, which catches a last row that did not fit. Its presence
 //     also overrides the introduction check: a first table followed by a
 //     footer is the regular one, whatever message stood above it.
+//   - winget prints no table without rows, so a table from which no row could
+//     be read counts one unreadable line: its only row did not fit, or none of
+//     them did. The footer is only recognised after a row, so it cannot catch
+//     that case.
 func parseWinGetUpgradeTables(lines []string) (apps []WinGetUpgrade, unreadable int) {
 	var cols *wingetColumns
 	tables, junk, tableStart := 0, 0, 0
 	explicit := false
 	announced := -1
 	footer := -1 // count on the first footer line after the rows of the table
+	rowless := 0 // tables from which no row could be read
 	endTable := func() {
 		if cols == nil {
 			return
+		}
+		if len(apps) == tableStart {
+			rowless++
+			unreadable++
 		}
 		if explicit && tables == 1 && footer >= 0 {
 			explicit = false
@@ -862,8 +871,9 @@ func parseWinGetUpgradeTables(lines []string) (apps []WinGetUpgrade, unreadable 
 		apps = append(apps, app)
 	}
 	endTable()
-	if announced > len(apps) {
-		unreadable += announced - len(apps)
+	// A rowless table already counted one of the rows the footer announces.
+	if missing := announced - len(apps) - rowless; missing > 0 {
+		unreadable += missing
 	}
 	return apps, unreadable
 }
