@@ -153,7 +153,8 @@ const HostDetail = () => {
 	const [searchParams, setSearchParams] = useSearchParams();
 	const queryClient = useQueryClient();
 	const toast = useToast();
-	const { canManageHosts, canManagePatching, hasModule } = useAuth();
+	const { canManageHosts, canRestartHosts, hasModule } = useAuth();
+	const canRestart = canRestartHosts() && hasModule("patching");
 	const [showCredentialsModal, setShowCredentialsModal] = useState(false);
 
 	// Get plaintext API key from navigation state (only available immediately after host creation)
@@ -1430,9 +1431,7 @@ const HostDetail = () => {
 								hostDownThresholdSeconds={hostDownThresholdSeconds}
 								updateIntervalMinutes={updateIntervalMinutes}
 								onRebootClick={
-									canManagePatching() && hasModule("patching")
-										? () => setShowRestartModal(true)
-										: undefined
+									canRestart ? () => setShowRestartModal(true) : undefined
 								}
 							/>
 							{host.awaiting_post_patch_report_run_id && (
@@ -1510,7 +1509,7 @@ const HostDetail = () => {
 								<span className="sm:hidden">{t("Patch")}</span>
 							</button>
 						)}
-						{canManagePatching() && hasModule("patching") && (
+						{canRestart && (
 							<button
 								type="button"
 								onClick={() => setShowRestartModal(true)}

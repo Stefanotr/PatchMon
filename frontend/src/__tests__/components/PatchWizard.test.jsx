@@ -20,7 +20,15 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { toastWarning } = vi.hoisted(() => ({ toastWarning: vi.fn() }));
+const { toastWarning, auth } = vi.hoisted(() => ({
+	toastWarning: vi.fn(),
+	// Restarting hosts is a permission of its own (can_restart_hosts).
+	auth: { canRestart: true },
+}));
+
+vi.mock("../../contexts/AuthContext", () => ({
+	useAuth: () => ({ canRestartHosts: () => auth.canRestart }),
+}));
 
 vi.mock("../../contexts/ToastContext", () => ({
 	useToast: () => ({
@@ -581,6 +589,7 @@ describe("PatchWizard validation", () => {
 describe("PatchWizard restart option", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		auth.canRestart = true;
 		patchingAPI.getPreviewRun.mockResolvedValue({});
 		patchingAPI.trigger.mockImplementation(async (hostId) => ({
 			patch_run_id: `run-${hostId}`,
@@ -617,6 +626,26 @@ describe("PatchWizard restart option", () => {
 	it("sends no restart by default", async () => {
 		renderWizard([HOSTS[0]]);
 		await clickAndSettle(confirmButton());
+		expect(patchingAPI.trigger).toHaveBeenCalledWith(
+			"h1",
+			"patch_all",
+			null,
+			null,
+			{},
+		);
+	});
+
+	it("neither offers nor sends a restart without the permission", async () => {
+		auth.canRestart = false;
+		renderWizard([HOSTS[0]], { initialStep: 0 });
+
+		expect(
+			screen.queryByLabelText("Restart after patching"),
+		).not.toBeInTheDocument();
+		await clickAndSettle(screen.getByRole("button", { name: /Next/ }));
+		await clickAndSettle(screen.getByRole("button", { name: /Next/ }));
+		await clickAndSettle(confirmButton());
+
 		expect(patchingAPI.trigger).toHaveBeenCalledWith(
 			"h1",
 			"patch_all",

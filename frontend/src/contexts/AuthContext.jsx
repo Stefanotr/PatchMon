@@ -679,6 +679,8 @@ export const AuthProvider = ({ children }) => {
 	const canViewNotificationLogs = () =>
 		hasPermission("can_view_notification_logs");
 	const canManagePatching = () => hasPermission("can_manage_patching");
+	// Restarting hosts is its own permission, apart from patching.
+	const canRestartHosts = () => hasPermission("can_restart_hosts");
 	const canManageCompliance = () => hasPermission("can_manage_compliance");
 	const canManageDocker = () => hasPermission("can_manage_docker");
 	const canManageAlerts = () => hasPermission("can_manage_alerts");
@@ -892,6 +894,7 @@ export const AuthProvider = ({ children }) => {
 		canManageNotifications,
 		canViewNotificationLogs,
 		canManagePatching,
+		canRestartHosts,
 		canManageCompliance,
 		canManageDocker,
 		canManageAlerts,

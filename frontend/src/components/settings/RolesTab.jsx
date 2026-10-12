@@ -11,6 +11,7 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	countPermissions,
 	PERMISSION_GROUPS,
@@ -27,6 +28,7 @@ import { permissionsAPI } from "../../utils/api";
 import ModalPortal from "../ui/ModalPortal";
 
 const RolesTab = () => {
+	const { t } = useTranslation();
 	const confirm = useConfirm();
 	const toast = useToast();
 	const [editingRole, setEditingRole] = useState(null);
@@ -292,9 +294,11 @@ const RolesTab = () => {
 														<div className="flex items-center gap-2">
 															<PermIcon className="h-4 w-4 text-secondary-400 flex-shrink-0" />
 															<div>
-																<div className="font-medium">{perm.label}</div>
+																<div className="font-medium">
+																	{t(perm.label)}
+																</div>
 																<div className="text-xs text-secondary-400 dark:text-secondary-500 hidden lg:block">
-																	{perm.description}
+																	{t(perm.description)}
 																</div>
 															</div>
 														</div>
@@ -370,6 +374,7 @@ const RolePermissionsCard = ({
 	onSave,
 	onDelete,
 }) => {
+	const { t } = useTranslation();
 	const [permissions, setPermissions] = useState(role);
 
 	// Sync permissions state with role prop when it changes
@@ -520,11 +525,11 @@ const RolePermissionsCard = ({
 														htmlFor={`${role.role}-${field.key}`}
 														className="text-sm font-medium text-secondary-900 dark:text-white"
 													>
-														{field.label}
+														{t(field.label)}
 													</label>
 												</div>
 												<p className="text-xs text-secondary-500 mt-1">
-													{field.description}
+													{t(field.description)}
 												</p>
 											</div>
 										</div>
@@ -541,6 +546,7 @@ const RolePermissionsCard = ({
 
 // Add Role Modal Component
 const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
+	const { t } = useTranslation();
 	const roleNameInputId = useId();
 	const [formData, setFormData] = useState({
 		role: "",
@@ -711,11 +717,11 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 														<div className="flex items-center gap-1.5">
 															<PermIcon className="h-3.5 w-3.5 text-secondary-400 flex-shrink-0" />
 															<span className="text-sm font-medium text-secondary-800 dark:text-secondary-100">
-																{perm.label}
+																{t(perm.label)}
 															</span>
 														</div>
 														<p className="text-xs text-secondary-500 dark:text-secondary-400 mt-0.5">
-															{perm.description}
+															{t(perm.description)}
 														</p>
 													</label>
 												</div>
