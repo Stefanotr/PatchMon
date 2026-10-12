@@ -60,8 +60,3 @@ func TestTrustedStateFileLive(t *testing.T) {
 		}
 	}
 }
-
-func runningAsSystem() bool {
-	u, err := windows.GetCurrentProcessToken().GetTokenUser()
-	return err == nil && u.User.Sid.IsWellKnown(windows.WinLocalSystemSid)
-}
