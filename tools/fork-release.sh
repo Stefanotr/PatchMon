@@ -10,11 +10,28 @@
 # ghcr.io/<owner>/patchmon-server:<version> and :fork, agents included, and
 # publish the GitHub release the instances' update check follows.
 #
-# Usage: tools/fork-release.sh [--push]
+# The tag message names the PatchMon code the release is really built on:
+# the official tag when only official releases were merged (the rule), or
+# "v2.1.3-113-gc8f42251" when commits PatchMon has not released yet are in,
+# with the database migrations they add. Such a release needs
+# --unreleased-base: going back to the official image of that base then
+# needs a database restore.
+#
+# Usage: tools/fork-release.sh [--push] [--unreleased-base]
 #   Windows: run it with the bash of Git for Windows, not the WSL one.
 set -euo pipefail
 
 die() { echo "error: $*" >&2; exit 1; }
+
+push=false
+allow_unreleased=false
+for arg in "$@"; do
+  case "$arg" in
+    --push) push=true ;;
+    --unreleased-base) allow_unreleased=true ;;
+    *) die "unknown option $arg (use --push, --unreleased-base)" ;;
+  esac
+done
 
 cd "$(git rev-parse --show-toplevel)"
 [ -z "$(git status --porcelain)" ] || die "the working tree has uncommitted changes"
@@ -24,6 +41,7 @@ git remote get-url upstream >/dev/null 2>&1 ||
 # Official tags from upstream (kept local, never pushed to the fork), fork
 # tags from origin.
 git fetch -q --tags upstream
+git fetch -q upstream main
 git fetch -q --tags origin
 
 git branch -r --contains HEAD | grep -q '^ *origin/' ||
@@ -41,6 +59,30 @@ printf '%s' "$base_tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || die "unexpecte
 base="${base_tag#v}"
 next="${base%.*}.$(( ${base##*.} + 1 ))"
 
+# The newest PatchMon commit merged into HEAD, described from its official
+# tag: "v2.1.3" when it is the release itself.
+upstream_base="$(git merge-base HEAD upstream/main)" || die "HEAD shares no history with upstream/main"
+upstream_desc="$(git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' "$upstream_base")" ||
+  die "no official release tag before the PatchMon commits merged into HEAD"
+message="PatchMon fork release vNEXT, based on PatchMon $upstream_desc"
+if [ "$upstream_desc" != "$base_tag" ]; then
+  ahead="$(git rev-list --count "$base_tag..$upstream_base")"
+  migrations="$(git diff --name-only --diff-filter=AM "$base_tag" "$upstream_base" -- \
+    server-source-code/internal/migrate/migrations/ | sed -n 's#.*/\([0-9]*_[^/]*\)\.up\.sql$#\1#p' | tr '\n' ' ')"
+  warning="It contains $ahead PatchMon commits after $base_tag that PatchMon has not released yet"
+  if [ -n "$migrations" ]; then
+    warning="$warning, with these database migrations: ${migrations% }. Going back to the official $base_tag image needs a database restore"
+  fi
+  if ! $allow_unreleased; then
+    echo "$warning." >&2
+    die "merge official tags only (git merge vX.Y.Z), or pass --unreleased-base to release it anyway"
+  fi
+  echo "warning: $warning." >&2
+  message="$message.
+
+$warning."
+fi
+
 n=0
 while read -r t; do
   [ -n "$t" ] || continue
@@ -50,10 +92,10 @@ while read -r t; do
 done < <(git tag -l "v$next-fork.*")
 tag="v$next-fork.$((n + 1))"
 
-git tag -a "$tag" -m "PatchMon fork release $tag, based on $base_tag"
-echo "Tagged $tag on $(git rev-parse --short HEAD), based on $base_tag."
+git tag -a "$tag" -m "${message/vNEXT/${tag}}"
+echo "Tagged $tag on $(git rev-parse --short HEAD), based on PatchMon $upstream_desc."
 
-if [ "${1:-}" = "--push" ]; then
+if $push; then
   git push origin "$tag"
   echo "Pushed: the Docker workflow builds the image and publishes the release."
 else
