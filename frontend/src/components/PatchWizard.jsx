@@ -34,6 +34,7 @@ import {
 } from "../utils/patchingApi";
 import { extraDependencies } from "../utils/patchRun";
 import RestartOptions from "./RestartOptions";
+import ModalPortal from "./ui/ModalPortal";
 
 const DRY_RUN_PACKAGE_LIMIT = 5;
 // Dry runs triggered at once, then dry runs polled at once (one request every
@@ -1062,8 +1063,8 @@ export default function PatchWizard({
 	// step to show — then it's effectively a plain confirm dialog.
 	const showStepIndicator = steps.length > 1;
 
-	return (
-		<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+	const modal = (
+		<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[120]">
 			<button
 				type="button"
 				onClick={() => !isPatching && !isValidating && handleClose()}
@@ -2363,4 +2364,6 @@ export default function PatchWizard({
 			</div>
 		</div>
 	);
+
+	return <ModalPortal>{modal}</ModalPortal>;
 }

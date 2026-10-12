@@ -236,8 +236,15 @@ fetch_credentials() {
         -d "{\"token\": \"${BOOTSTRAP_TOKEN}\"}" 2>/dev/null)
 
     if [ -z "$CREDS" ] || echo "$CREDS" | grep -q '"error"'; then
-        echo "ERROR: Failed to fetch credentials. Bootstrap token may have expired."
-        echo "Please request a new installation script."
+        CORS_CODE=$(echo "$CREDS" | grep -oE '"code":"(cors|host)_mismatch"' | cut -d'"' -f4)
+        if [ -n "$CORS_CODE" ]; then
+            echo "ERROR: The PatchMon server rejected the URL this host used (${CORS_CODE}). The hostname in Settings > Server URL must be listed in CORS_ORIGIN."
+            echo "Server response: $CREDS"
+        else
+            echo "ERROR: Failed to fetch credentials. Bootstrap token may have expired."
+            [ -n "$CREDS" ] && echo "Server response: $CREDS"
+            echo "Please request a new installation script."
+        fi
         exit 1
     fi
 
@@ -410,6 +417,14 @@ func (h *InstallHandler) ServePing(w http.ResponseWriter, r *http.Request) {
 			// Treat as legacy heartbeat.
 			hasBody = false
 		default:
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				slog.Warn("ping: body exceeded AGENT_PING_BODY_LIMIT", "host_id", checkin.ID, "limit_bytes", tooLarge.Limit)
+				JSON(w, http.StatusRequestEntityTooLarge, map[string]string{
+					"error": fmt.Sprintf("Check-in exceeds the %s AGENT_PING_BODY_LIMIT. Raise it in Settings then Environment. A host with many mounted volumes can need this.", formatBytesEnv(tooLarge.Limit)),
+				})
+				return
+			}
 			JSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 			return
 		}
@@ -730,6 +745,7 @@ func (h *InstallHandler) ServeUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
+			slog.Warn("update: body exceeded AGENT_UPDATE_BODY_LIMIT", "host_id", host.ID, "limit_bytes", tooLarge.Limit)
 			h.rejectUpdate(w, r, host.ID, "full", nil, http.StatusRequestEntityTooLarge,
 				fmt.Sprintf("Report exceeds the %s AGENT_UPDATE_BODY_LIMIT. Raise it in Settings then Environment, and raise the body size limit on any reverse proxy in front of PatchMon.", formatBytesEnv(tooLarge.Limit)),
 				updateStart)

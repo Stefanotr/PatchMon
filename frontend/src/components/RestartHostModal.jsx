@@ -10,6 +10,7 @@ import {
 	restartChoiceError,
 } from "../utils/patchingApi";
 import RestartOptions from "./RestartOptions";
+import ModalPortal from "./ui/ModalPortal";
 
 const errorText = (err) => err?.response?.data?.error || err?.message;
 
@@ -57,8 +58,8 @@ export default function RestartHostModal({
 	const busy = restart.isPending || cancel.isPending;
 	const invalid = Boolean(restartChoiceError(choice));
 
-	return (
-		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+	const modal = (
+		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-md">
 				<div className="flex items-start gap-3 mb-4">
 					<div className="w-10 h-10 bg-warning-100 dark:bg-warning-900 rounded-full flex items-center justify-center shrink-0">
@@ -113,4 +114,6 @@ export default function RestartHostModal({
 			</div>
 		</div>
 	);
+
+	return <ModalPortal>{modal}</ModalPortal>;
 }

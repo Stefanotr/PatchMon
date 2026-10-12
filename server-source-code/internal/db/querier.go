@@ -100,6 +100,7 @@ type Querier interface {
 	// Re-parsing the JSON here is cheap (kilobytes, in-memory) and avoids a
 	// per-row round-trip — the alternative was a SELECT loop in Go.
 	BulkUpsertPackages(ctx context.Context, payload []byte) ([]BulkUpsertPackagesRow, error)
+	CancelActiveComplianceScansByHost(ctx context.Context, arg CancelActiveComplianceScansByHostParams) (int64, error)
 	ClearHostComplianceHashOnEnable(ctx context.Context, arg ClearHostComplianceHashOnEnableParams) error
 	// Force a fresh docker payload on next check-in by NULLing the hash whenever
 	// the operator re-enables docker. If the agent was already streaming docker
@@ -141,13 +142,13 @@ type Querier interface {
 	CountNetworks(ctx context.Context, arg CountNetworksParams) (int32, error)
 	CountNetworksByHostID(ctx context.Context, hostID string) (int32, error)
 	CountPatchRuns(ctx context.Context, arg CountPatchRunsParams) (int64, error)
-	CountPatchRunsTotal(ctx context.Context) (int64, error)
+	CountPatchRunsTotal(ctx context.Context, hostIds []string) (int64, error)
 	CountRepositories(ctx context.Context) (int32, error)
 	CountRepositoriesForList(ctx context.Context, arg CountRepositoriesForListParams) (int32, error)
 	CountSecureRepositories(ctx context.Context) (int32, error)
 	CountSuperadmins(ctx context.Context) (int64, error)
 	CountTfaRememberSessionsByUser(ctx context.Context, userID string) (int64, error)
-	CountUnscannedHosts(ctx context.Context) (int64, error)
+	CountUnscannedHosts(ctx context.Context, hostIds []string) (int64, error)
 	CountUpdateHistory(ctx context.Context, hostID string) (int32, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CountUsersByRole(ctx context.Context, role string) (int64, error)
@@ -292,6 +293,7 @@ type Querier interface {
 	GetHomepageStats(ctx context.Context, since pgtype.Timestamp) (GetHomepageStatsRow, error)
 	GetHostByApiID(ctx context.Context, apiID string) (Host, error)
 	GetHostByID(ctx context.Context, id string) (Host, error)
+	GetHostByMachineIDAndName(ctx context.Context, arg GetHostByMachineIDAndNameParams) (Host, error)
 	// Single-row read used on the per-ping hot path. Returns the host's identity
 	// and the six per-section hashes the server compares against incoming agent
 	// hashes.
@@ -361,6 +363,7 @@ type Querier interface {
 	GetImagesByIDs(ctx context.Context, dollar_1 []string) ([]DockerImage, error)
 	GetImagesBySource(ctx context.Context) ([]GetImagesBySourceRow, error)
 	GetLatestCompletedScans(ctx context.Context) ([]GetLatestCompletedScansRow, error)
+	GetLatestCompletedScansByHostAllTypes(ctx context.Context, hostID string) ([]GetLatestCompletedScansByHostAllTypesRow, error)
 	GetLatestCompletedScansByProfile(ctx context.Context, profileID string) ([]GetLatestCompletedScansByProfileRow, error)
 	GetLatestComplianceScanByHost(ctx context.Context, hostID string) (GetLatestComplianceScanByHostRow, error)
 	GetLatestComplianceScanByHostAndType(ctx context.Context, arg GetLatestComplianceScanByHostAndTypeParams) (GetLatestComplianceScanByHostAndTypeRow, error)
@@ -399,6 +402,7 @@ type Querier interface {
 	GetRecentComplianceScans(ctx context.Context) ([]GetRecentComplianceScansRow, error)
 	GetRecentHosts(ctx context.Context, limit int32) ([]GetRecentHostsRow, error)
 	GetRecentUsers(ctx context.Context, limit int32) ([]GetRecentUsersRow, error)
+	GetRemediationProfileNameByHost(ctx context.Context, arg GetRemediationProfileNameByHostParams) (string, error)
 	GetRepoCountsForRepos(ctx context.Context, dollar_1 []string) ([]GetRepoCountsForReposRow, error)
 	GetRepositoryByID(ctx context.Context, id string) (Repository, error)
 	// Lock-free read on the (url, distribution, components) unique key. Serves
@@ -514,7 +518,7 @@ type Querier interface {
 	// that aggregate those two states can link to a single filter.
 	ListPatchRuns(ctx context.Context, arg ListPatchRunsParams) ([]ListPatchRunsRow, error)
 	ListPatchRunsByPackage(ctx context.Context, arg ListPatchRunsByPackageParams) ([]ListPatchRunsByPackageRow, error)
-	ListPatchRunsByStatus(ctx context.Context) ([]ListPatchRunsByStatusRow, error)
+	ListPatchRunsByStatus(ctx context.Context, hostIds []string) ([]ListPatchRunsByStatusRow, error)
 	ListPatchRunsOrderByCompletedAt(ctx context.Context, arg ListPatchRunsOrderByCompletedAtParams) ([]ListPatchRunsOrderByCompletedAtRow, error)
 	ListPatchRunsOrderByCompletedAtAsc(ctx context.Context, arg ListPatchRunsOrderByCompletedAtAscParams) ([]ListPatchRunsOrderByCompletedAtAscRow, error)
 	ListPatchRunsOrderByCreatedAtAsc(ctx context.Context, arg ListPatchRunsOrderByCreatedAtAscParams) ([]ListPatchRunsOrderByCreatedAtAscRow, error)
@@ -522,7 +526,7 @@ type Querier interface {
 	ListPatchRunsOrderByStartedAtAsc(ctx context.Context, arg ListPatchRunsOrderByStartedAtAscParams) ([]ListPatchRunsOrderByStartedAtAscRow, error)
 	ListPatchRunsOrderByStatus(ctx context.Context, arg ListPatchRunsOrderByStatusParams) ([]ListPatchRunsOrderByStatusRow, error)
 	ListPatchRunsOrderByStatusDesc(ctx context.Context, arg ListPatchRunsOrderByStatusDescParams) ([]ListPatchRunsOrderByStatusDescRow, error)
-	ListRecentPatchRuns(ctx context.Context, limit int32) ([]ListRecentPatchRunsRow, error)
+	ListRecentPatchRuns(ctx context.Context, arg ListRecentPatchRunsParams) ([]ListRecentPatchRunsRow, error)
 	ListRepositories(ctx context.Context, arg ListRepositoriesParams) ([]ListRepositoriesRow, error)
 	ListRoles(ctx context.Context) ([]RolePermission, error)
 	ListScheduledReports(ctx context.Context) ([]ScheduledReport, error)

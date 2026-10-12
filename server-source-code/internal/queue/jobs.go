@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/PatchMon/PatchMon/server-source-code/internal/agentregistry"
@@ -75,8 +74,10 @@ type RunScanPayload struct {
 	ProfileID            *string `json:"profile_id,omitempty"`
 	EnableRemediation    bool    `json:"enable_remediation"`
 	FetchRemoteResources bool    `json:"fetch_remote_resources"`
-	RequeueCount         int     `json:"requeue_count,omitempty"`
 }
+
+// RunScanTaskID is the fixed task ID that deduplicates a host's scans.
+func RunScanTaskID(hostID string) string { return "compliance-scan-" + hostID }
 
 // NewRunScanTask creates a run_scan task. Use TaskID for deduplication: compliance-scan-{hostId}.
 func NewRunScanTask(p RunScanPayload) (*asynq.Task, error) {
@@ -86,8 +87,8 @@ func NewRunScanTask(p RunScanPayload) (*asynq.Task, error) {
 	}
 	opts := []asynq.Option{
 		asynq.Queue(QueueCompliance),
-		asynq.MaxRetry(10),
-		asynq.TaskID("compliance-scan-" + p.HostID),
+		asynq.MaxRetry(maxScanRequeueAttempts),
+		asynq.TaskID(RunScanTaskID(p.HostID)),
 	}
 	return asynq.NewTask(TypeRunScan, payload, opts...), nil
 }
@@ -105,7 +106,7 @@ func NewInstallComplianceToolsTask(hostID, apiID, host string) (*asynq.Task, err
 	if err != nil {
 		return nil, err
 	}
-	return asynq.NewTask(TypeInstallComplianceTools, payload, asynq.Queue(QueueCompliance), asynq.MaxRetry(2)), nil
+	return asynq.NewTask(TypeInstallComplianceTools, payload, asynq.Queue(QueueCompliance), asynq.MaxRetry(2), asynq.Retention(time.Hour)), nil
 }
 
 // SSGUpgradePayload is the payload for per-host ssg_upgrade jobs.
@@ -443,7 +444,7 @@ func (h *ReportNowHandler) ProcessTask(ctx context.Context, t *asynq.Task) error
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return err
 	}
-	d := resolveDBForHost(ctx, p.Host, h.db, h.poolCache)
+	ctx, d := resolveDBForHost(ctx, p.Host, h.db, h.poolCache)
 
 	// The host may have reported during the catch-up's jitter delay.
 	knownHostID := ""
@@ -509,7 +510,7 @@ func sendAgentCommand(ctx context.Context, h *ReportNowHandler, p ReportNowPaylo
 		taskID = taskIDVal
 	}
 	attempt := int32(retryCount + 1)
-	d := resolveDBForHost(ctx, p.Host, h.db, h.poolCache)
+	ctx, d := resolveDBForHost(ctx, p.Host, h.db, h.poolCache)
 
 	if d != nil && taskID != "" && retryCount == 0 {
 		host, err := d.Queries.GetHostByApiID(ctx, p.ApiID)
@@ -610,7 +611,7 @@ func (h *UpdateAgentHandler) ProcessTask(ctx context.Context, t *asynq.Task) err
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return err
 	}
-	d := resolveDBForHost(ctx, p.Host, h.db, h.poolCache)
+	ctx, d := resolveDBForHost(ctx, p.Host, h.db, h.poolCache)
 
 	taskID, _ := asynq.GetTaskID(ctx)
 	retryCount, _ := asynq.GetRetryCount(ctx)
@@ -705,11 +706,8 @@ func (h *RunPatchHandler) ProcessTask(ctx context.Context, t *asynq.Task) error 
 		return err
 	}
 
-	// Resolve per-context DB when Host is in payload (multi-host mode).
-	if h.poolCache != nil && strings.TrimSpace(p.Host) != "" {
-		if db, err := h.poolCache.GetOrCreate(ctx, p.Host); err == nil && db != nil {
-			ctx = hostctx.WithDB(ctx, db)
-		}
+	if hctx, rd := resolveDBForHost(ctx, p.Host, nil, h.poolCache); rd != nil {
+		ctx = hostctx.WithDB(hctx, rd)
 	}
 
 	if !h.registry.IsConnected(p.ApiID) {
