@@ -7,13 +7,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"time"
 
 	"patchmon-agent/internal/winexec"
-
-	"golang.org/x/sys/windows"
 )
 
 const (
@@ -54,23 +50,11 @@ try {
 }
 `
 
-// systemPowerShell is Windows PowerShell in the system directory.
-func systemPowerShell() (string, error) {
-	dir, err := windows.GetSystemDirectory()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "WindowsPowerShell", "v1.0", "powershell.exe"), nil
-}
-
 // shutdownEvents runs the query within ctx; a variable so tests can fake it.
 var shutdownEvents = func(ctx context.Context, since time.Time) ([]shutdownEvent, error) {
-	ps, err := systemPowerShell()
-	if err != nil {
-		return nil, err
-	}
 	var out bytes.Buffer
-	cmd := exec.CommandContext(ctx, ps, "-NoProfile", "-NonInteractive", "-Command", winexec.Script(shutdownEventsScript))
+	// Windows PowerShell by absolute path, never looked up in PATH.
+	cmd := winexec.PowerShell(ctx, "-NoProfile", "-NonInteractive", "-Command", winexec.Script(shutdownEventsScript))
 	cmd.Env = append(os.Environ(), "PATCHMON_SINCE="+since.UTC().Format("2006-01-02T15:04:05Z"))
 	cmd.Stdout, cmd.Stderr = &out, &out
 	cmd.WaitDelay = eventLogWaitDelay
