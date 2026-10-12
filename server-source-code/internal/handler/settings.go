@@ -200,8 +200,9 @@ func (h *SettingsHandler) VersionCheckUpdates(currentVersion string) http.Handle
 			return
 		}
 
-		// Fetch fresh version from DNS (same as Node and agent version detection)
-		latestVersion, err := forksource.LatestVersion(ctx, serverVersionDNS)
+		// Fetch a fresh version: DNS for an official build, the fork's GitHub
+		// releases for a fork (read again, not taken from the cache).
+		latestVersion, err := forksource.CheckLatestVersion(ctx, serverVersionDNS)
 		if err != nil {
 			// Fall back to cached data from settings
 			if s.LatestVersion != nil && *s.LatestVersion != "" {

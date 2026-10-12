@@ -62,8 +62,14 @@ func (h *AgentVersionHandler) getCurrentAgentVersion(ctx context.Context) string
 }
 
 // getLatestVersionFromDNS performs DNS TXT lookup for agent version (matches Node checkVersionFromDNS).
-func (h *AgentVersionHandler) getLatestVersionFromDNS(ctx context.Context) (string, error) {
-	v, err := forksource.LatestVersion(ctx, agentDNSDomain)
+// A fork reads its GitHub releases instead; fresh skips their cache, for a
+// check an admin asked for.
+func (h *AgentVersionHandler) getLatestVersionFromDNS(ctx context.Context, fresh bool) (string, error) {
+	lookup := forksource.LatestVersion
+	if fresh {
+		lookup = forksource.CheckLatestVersion
+	}
+	v, err := lookup(ctx, agentDNSDomain)
 	if err != nil {
 		return "", err
 	}
@@ -97,7 +103,7 @@ func (h *AgentVersionHandler) GetVersionInfo(w http.ResponseWriter, r *http.Requ
 	// intentional: silently falling back used to produce "0.0.0" downstream.
 	now := time.Now()
 	if h.upstreamVersion == "" || h.lastChecked == nil || now.Sub(*h.lastChecked) > 5*time.Minute {
-		if v, err := h.getLatestVersionFromDNS(ctx); err == nil {
+		if v, err := h.getLatestVersionFromDNS(ctx, false); err == nil {
 			h.upstreamVersion = v
 			h.lastChecked = &now
 		} else {
@@ -228,7 +234,7 @@ func (h *AgentVersionHandler) ServeAgentDownload(w http.ResponseWriter, r *http.
 // version (what the agent will receive on download).
 func (h *AgentVersionHandler) CheckForUpdates(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	v, err := h.getLatestVersionFromDNS(ctx)
+	v, err := h.getLatestVersionFromDNS(ctx, true)
 	now := time.Now()
 	if err != nil {
 		h.log.Warn("agent version: DNS check failed", "domain", agentDNSDomain, "error", err)

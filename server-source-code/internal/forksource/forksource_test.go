@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // stamp sets the link-time variables for one test.
@@ -62,6 +63,15 @@ func TestDescribe(t *testing.T) {
 
 func fakeGitHub(t *testing.T, status int, body string) *atomic.Int32 {
 	t.Helper()
+	var b atomic.Pointer[string]
+	b.Store(&body)
+	return fakeGitHubReleases(t, status, &b)
+}
+
+// fakeGitHubReleases serves the body b points to, so a test can publish a
+// release between two checks.
+func fakeGitHubReleases(t *testing.T, status int, b *atomic.Pointer[string]) *atomic.Int32 {
+	t.Helper()
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -70,7 +80,7 @@ func fakeGitHub(t *testing.T, status int, body string) *atomic.Int32 {
 			return
 		}
 		w.WriteHeader(status)
-		_, _ = w.Write([]byte(body))
+		_, _ = w.Write([]byte(*b.Load()))
 	}))
 	t.Cleanup(srv.Close)
 	githubAPI = srv.URL
@@ -93,6 +103,52 @@ func TestLatestVersionFromForkReleases(t *testing.T) {
 	// Cached: a second check does not ask GitHub again.
 	if _, err := LatestVersion(context.Background(), "agent.vcheck.patchmon.net"); err != nil || calls.Load() != 1 {
 		t.Fatalf("calls = %d, err %v", calls.Load(), err)
+	}
+}
+
+// ageCache makes the last read look older, instead of sleeping.
+func ageCache(d time.Duration) {
+	releases.mu.Lock()
+	defer releases.mu.Unlock()
+	releases.at = releases.at.Add(-d)
+}
+
+// A release published after the last read shows up on a manual check, not
+// only once the cache expires; reads stay at least refreshFloor apart.
+func TestCheckLatestVersionSeesANewRelease(t *testing.T) {
+	stamp(t, "Stefanotr/PatchMon", "")
+	var body atomic.Pointer[string]
+	before := `[{"tag_name": "v2.1.4-fork.3", "draft": false}]`
+	body.Store(&before)
+	calls := fakeGitHubReleases(t, http.StatusOK, &body)
+	ctx := context.Background()
+
+	if v, err := LatestVersion(ctx, "server.vcheck.patchmon.net"); err != nil || v != "2.1.4-fork.3" {
+		t.Fatalf("first read = %q, %v", v, err)
+	}
+	after := `[{"tag_name": "v2.1.4-fork.4", "draft": false}, {"tag_name": "v2.1.4-fork.3", "draft": false}]`
+	body.Store(&after)
+	ageCache(5 * time.Minute)
+
+	// Background checks keep the cached answer.
+	if v, _ := LatestVersion(ctx, "agent.vcheck.patchmon.net"); v != "2.1.4-fork.3" || calls.Load() != 1 {
+		t.Fatalf("cached read = %q after %d calls", v, calls.Load())
+	}
+	// A manual check reads the releases again.
+	if v, err := CheckLatestVersion(ctx, "server.vcheck.patchmon.net"); err != nil || v != "2.1.4-fork.4" || calls.Load() != 2 {
+		t.Fatalf("manual check = %q, %v after %d calls", v, err, calls.Load())
+	}
+	// Another click right away does not.
+	if v, _ := CheckLatestVersion(ctx, "server.vcheck.patchmon.net"); v != "2.1.4-fork.4" || calls.Load() != 2 {
+		t.Fatalf("second click = %q after %d calls", v, calls.Load())
+	}
+	// The fresh answer serves the background checks too.
+	if v, _ := LatestVersion(ctx, "agent.vcheck.patchmon.net"); v != "2.1.4-fork.4" || calls.Load() != 2 {
+		t.Fatalf("background read = %q after %d calls", v, calls.Load())
+	}
+	ageCache(refreshFloor)
+	if _, err := CheckLatestVersion(ctx, "server.vcheck.patchmon.net"); err != nil || calls.Load() != 3 {
+		t.Fatalf("click after the floor: %v after %d calls", err, calls.Load())
 	}
 }
 
@@ -128,5 +184,9 @@ func TestLatestVersionOfficialBuildUsesDNS(t *testing.T) {
 	v, err := LatestVersion(context.Background(), "server.vcheck.patchmon.net")
 	if err != nil || v != "2.1.4" || asked != "server.vcheck.patchmon.net" || calls.Load() != 0 {
 		t.Fatalf("v %q err %v asked %q github calls %d", v, err, asked, calls.Load())
+	}
+	v, err = CheckLatestVersion(context.Background(), "agent.vcheck.patchmon.net")
+	if err != nil || v != "2.1.4" || asked != "agent.vcheck.patchmon.net" || calls.Load() != 0 {
+		t.Fatalf("manual check: v %q err %v asked %q github calls %d", v, err, asked, calls.Load())
 	}
 }
