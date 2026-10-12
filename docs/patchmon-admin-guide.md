@@ -217,7 +217,7 @@ Users also get a one-click button to create an auto-enrolment-style API token sc
 The Roles editor is where custom roles are authored. A role is a named bundle of permission flags:
 
 - `can_view_dashboard`, `can_view_hosts`, `can_view_users`, `can_view_packages`, `can_view_reports`, `can_view_notification_logs`
-- `can_manage_hosts`, `can_manage_users`, `can_manage_settings`, `can_manage_alerts`, `can_manage_notifications`, `can_manage_compliance`, `can_manage_patching`, `can_manage_automation`, `can_manage_docker`
+- `can_manage_hosts`, `can_manage_users`, `can_manage_settings`, `can_manage_alerts`, `can_manage_notifications`, `can_manage_compliance`, `can_manage_patching`, `can_restart_hosts`, `can_manage_automation`, `can_manage_docker`
 - `can_use_remote_access` (SSH terminal and RDP)
 
 The built-in roles (`superadmin`, `admin`, `user`, `readonly`) are immutable; the editor lets you create and edit additional roles alongside them and assign any user to any custom role.
@@ -1416,6 +1416,7 @@ Patching uses two RBAC permissions on top of the module gate:
 |---|---|---|
 | View dashboard, list runs, open a run, watch the live stream | `can_view_hosts` | `GET /patching/*` |
 | Trigger a run, approve, retry validation, stop, delete a run | `can_manage_patching` | `POST /patching/trigger`, `POST /patching/runs/{id}/approve`, etc. |
+| Run or approve a patch run that restarts the host, restart or cancel a restart on demand | `can_restart_hosts` (and remote restarts enabled on the host) | `POST /patching/trigger` and `/approve` with a reboot option, `POST /hosts/{id}/reboot`, `POST /hosts/{id}/reboot/cancel` |
 | View policies | `can_view_hosts` | `GET /patching/policies` |
 | Create, edit, delete policies and policy assignments / exclusions | `can_manage_patching` | `POST/PUT/DELETE /patching/policies/*` |
 
@@ -1727,6 +1728,20 @@ You can stop a run while it is in the `running` state. This is a hard stop with 
 
 Many updates (a kernel, Windows cumulative updates, a .NET runtime) only take effect after a restart. PatchMon can restart the host once a run is over, or on demand from the Host Detail page. The agent always hands the restart to the operating system's own scheduler (`InitiateSystemShutdownEx` on Windows, `shutdown -r +N` on Linux and FreeBSD), which warns signed-in users with the message you give and survives the agent being restarted.
 
+#### Before PatchMon can restart a host
+
+Two things must be allowed, one on each side:
+
+- **On the host**, remote restarts must be enabled in the agent's `config.yml` (`/etc/patchmon/config.yml`, or `C:\ProgramData\PatchMon\config.yml` on Windows), then the agent service restarted:
+
+  ```yaml
+  integrations:
+    remote-restart-enabled: true
+  ```
+
+  The setting is off by default and the server cannot change it, like `ssh-proxy-enabled`: whoever administers the host decides whether PatchMon may restart it. Leave it off on hosts that must never be restarted remotely (domain controllers, hypervisors). While it is off, restart commands are refused and the restart a patch run asks for is skipped; cancelling a restart PatchMon scheduled stays possible.
+- **In PatchMon**, the user needs the `can_restart_hosts` permission, apart from `can_manage_patching`, so that restarting hosts can be given to fewer people than patching. The Restart button, the restart dialog and the wizard's Restart section only appear with it, and the server refuses a restart command or a patch run asking for a restart without it (`403 Restarting hosts requires the can_restart_hosts permission: submit the run without a restart`). When the permission was added, every role that could manage patching received it, so nothing changed for existing roles until an administrator removes it.
+
 #### Restart after a patch run
 
 The wizard's **Timing** step has a **Restart** section that applies to every host in the run:
@@ -1737,7 +1752,13 @@ The wizard's **Timing** step has a **Restart** section that applies to every hos
 | If one is needed | Restart only when the host reports a pending restart after the run: `/var/run/reboot-required`, `needs-restarting -r` or a newer installed kernel on Linux; an update that asked for one, or the Windows Update and Component Based Servicing flags, on Windows. |
 | Always | Restart after every real run. |
 
-Pick **when**: a delay in minutes after the run ends (5 to 10080), or a time of day. A time of day is turned into its next occurrence in your browser's time zone (today if still ahead, tomorrow otherwise). If the run itself ends late (a policy window, a host that was offline) and that time has passed, the agent waits for the same time on the next day instead of restarting in the middle of the day; a time less than 5 minutes ahead is pushed back to 5 minutes. The agent always waits at least 5 minutes, so the run's final status and inventory report reach the server first and signed-in users can save their work. A restart more than 7 days away is refused. The optional message (one line, at most 200 bytes) is shown to signed-in users after a `PatchMon:` prefix.
+Pick **when**: a delay in minutes after the run ends (5 to 10080), or a time of day. A time of day is turned into its next occurrence in your browser's time zone (today if still ahead, tomorrow otherwise). On the host:
+
+- a time still ahead is kept, or pushed back to 5 minutes from now if it is closer;
+- a time that passed 15 minutes ago or less (picked a few seconds late, network or clock lag) restarts 5 minutes from now;
+- a time that passed longer ago (a policy window, a host that was offline) waits for the next occurrence of the same time of day in the host's time zone, instead of restarting in the middle of the day. It stays at the same local time across a daylight saving change.
+
+The agent always waits at least 5 minutes, so the run's final status and inventory report reach the server first and signed-in users can save their work. A restart more than 7 days away is refused. The optional message (one line, at most 200 bytes) is shown to signed-in users after a `PatchMon:` prefix.
 
 The run's output ends with what the agent did, for example `Restart: scheduled for 2026-10-10 01:00 UTC (in 8h55m); signed-in users are warned`, and the Run Detail page shows the restart option the run was given.
 
@@ -1747,7 +1768,10 @@ The agent never restarts the host:
 - after a stopped run;
 - after a failed run on Linux (a half-applied transaction is better fixed before a restart);
 - on Windows, when the run reached its time limit, when an installer timed out and may still be running, or when the run failed before installing anything;
-- while another patch run is in progress on the host, or when a restart or shutdown is already pending, scheduled by PatchMon or by someone else (logind's schedule on systemd, a waiting `shutdown` process on SysV init and FreeBSD, `InitiateSystemShutdown` on Windows). PatchMon never replaces a pending shutdown with its own.
+- while another patch run is in progress on the host, or when a restart or shutdown is already pending, scheduled by PatchMon or by someone else (logind's schedule on systemd, a waiting `shutdown` process on SysV init and FreeBSD, `InitiateSystemShutdown` on Windows). PatchMon never replaces a pending shutdown with its own;
+- when remote restarts are disabled on the host (see above).
+
+In the last two cases the restart was wanted but skipped: the run keeps its status, its output says why (`Restart: skipped, remote restarts are disabled on this host (remote-restart-enabled in /etc/patchmon/config.yml)`, for example), and the restart history records it as failed with `restart skipped: <reason>`.
 
 When a restart was wanted but the operating system refused to schedule it, the run is marked `failed` with the reason, and the post-patch inventory report is still sent.
 
@@ -1755,23 +1779,25 @@ Runs submitted for approval ignore the restart option chosen at submission: the 
 
 #### Restart or cancel from the Host Detail page
 
-The **Restart** button in the Host Detail header opens a dialog to schedule a restart (delay or time of day, message), or to cancel a scheduled one. It needs the `can_manage_patching` permission, the Patching module, and a connected agent: the command is not queued for later.
+The **Restart** button in the Host Detail header opens a dialog to schedule a restart (delay or time of day, message), or to cancel a scheduled one. It needs the `can_restart_hosts` permission, the Patching module, remote restarts enabled on the host, and a connected agent: the command is not queued for later.
 
 The same dialog opens from the **Reboot pending** pill on Host Detail and from the **Required** badge of the Hosts list's *Reboot* column. It shows the host's last reported state: why a restart is pending, or that none is and restarting is optional.
 
 The server waits up to 20 seconds for the agent's answer:
 
 - **Scheduled / cancelled**: the agent did it; the toast shows the restart time.
-- **The agent refused: ...**: a patch run is in progress on the host, a restart is already scheduled (cancel it first to pick another time), or nothing was scheduled when you cancelled.
-- **Sent to the agent, which did not answer in time**: nothing is confirmed; check the host. Agents older than this feature ignore restart commands; update the agent. With several PatchMon server instances behind Redis, the answer reaches the instance the agent is connected to, so a command relayed from another instance always ends here even though the agent carried it out.
+- **The agent refused: ...**: remote restarts are disabled on the host, a patch run is in progress on the host, a restart is already scheduled (cancel it first to pick another time), or no restart scheduled by PatchMon was pending when you cancelled.
+- **Sent to the agent, which did not answer in time**: nothing is confirmed yet; check the host. The agent answers within 15 seconds, so this means it is offline, busy or older than this feature (older agents ignore restart commands; update the agent). If it answers later, the history records the outcome then. With several PatchMon server instances behind Redis, the answer reaches the instance the agent is connected to, so a command relayed from another instance ends here even though the agent carried it out.
 
-A cancel stops any pending restart or shutdown on the host, whoever scheduled it (`shutdown -c` on Linux, the pending `shutdown` process on FreeBSD, `AbortSystemShutdown` on Windows), and is only reported done once the system no longer has one pending. While a restart or shutdown is pending, the agent refuses a real patch run that could not finish before it, or one whose time the system does not tell (SysV init, FreeBSD); dry runs still start.
+The restart commands only accept JSON requests (`Content-Type: application/json`), which a page on another site cannot send without the browser asking PatchMon first.
+
+A cancel only stops a restart PatchMon scheduled. The agent keeps a record of the restart it scheduled (`restart-scheduled.json` next to `config.yml`, readable by root or SYSTEM only), and cancels only when the pending restart matches it: logind's scheduled time on systemd, the `PatchMon:` message of the waiting `shutdown` process on SysV init and FreeBSD, or, on Windows, a pending shutdown while the recorded time is still ahead and the host has not restarted since. A restart or shutdown someone scheduled on the host itself is left alone: `no restart scheduled by PatchMon is pending on this host; a restart or shutdown scheduled outside PatchMon is left alone`. A cancel is only reported done once the system no longer has one pending. While a restart or shutdown is pending, the agent refuses a real patch run that could not finish before it, or one whose time the system does not tell (SysV init, FreeBSD); dry runs still start.
 
 #### Restart history
 
-Every restart is recorded in the host's **Agent Activity** tab, as an outbound job named *Restart* or *Restart Cancel*; the dialog's **Restart history** link opens the tab filtered on them. A record says:
+Every restart is recorded in the host's **Agent Activity** tab, as an outbound job named *Restart* or *Restart Cancel*; the dialog's **Restart history** link opens the tab filtered on them. A command is recorded before it is sent (a command that cannot be recorded is not sent), then the same record gets the outcome. A record says:
 
-- the outcome: completed, or failed with the reason (agent not connected, refused by the agent and why, no answer in time);
+- the outcome: active while the command is on its way; completed; failed with the reason (agent not connected, command not sent, refused by the agent and why, restart skipped by a patch run and why); or waiting, when the agent did not answer within 20 seconds. A waiting record is completed if the agent answers later; only the host that received the command can complete it;
 - in its output: the source (`manual` for the Restart button, `patch_run` with the run ID for a restart a patch run scheduled), who asked (`requested_by`), the delay or time and message chosen, and the time the host restarts (`reboot_at`).
 
 After the restart, the host's uptime starts again and the **Reboot pending** pill disappears with the next report.
