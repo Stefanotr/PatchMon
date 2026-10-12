@@ -15,6 +15,7 @@ import DiscordIcon from "../components/DiscordIcon";
 import { useAuth } from "../contexts/AuthContext";
 import { authAPI, getGlobalTimezone, isCorsError } from "../utils/api";
 import { resolveLogoPath } from "../utils/logoPaths";
+import { repoUrl, sourceRepo } from "../utils/sourceRepo";
 import { compareVersions, isUpdateAvailable } from "../utils/version";
 
 const Login = () => {
@@ -66,6 +67,8 @@ const Login = () => {
 
 	// Logo/favicon settings from login-settings (public, no auth needed)
 	const [settings, setSettings] = useState(null);
+	// Releases are read from the repository the server was built from.
+	const releaseRepo = sourceRepo(settings);
 
 	// Check login settings (signup enabled and show github version)
 	useEffect(() => {
@@ -189,12 +192,14 @@ const Login = () => {
 
 		const abortController = new AbortController();
 		let isMounted = true;
+		const releaseCacheKey = `githubLatestRelease:${releaseRepo}`;
+		const releaseCacheTimeKey = `githubReleaseCacheTime:${releaseRepo}`;
 
 		const fetchData = async () => {
 			try {
 				// Try to get cached release data first
-				const cachedRelease = localStorage.getItem("githubLatestRelease");
-				const cacheTime = localStorage.getItem("githubReleaseCacheTime");
+				const cachedRelease = localStorage.getItem(releaseCacheKey);
+				const cacheTime = localStorage.getItem(releaseCacheTimeKey);
 				const now = Date.now();
 
 				// Load cached data immediately
@@ -202,7 +207,7 @@ const Login = () => {
 					try {
 						setLatestRelease(JSON.parse(cachedRelease));
 					} catch (_e) {
-						localStorage.removeItem("githubLatestRelease");
+						localStorage.removeItem(releaseCacheKey);
 					}
 				}
 				// Use cache if less than 1 hour old
@@ -213,7 +218,7 @@ const Login = () => {
 				if (shouldFetchFresh) {
 					try {
 						const releaseResponse = await fetch(
-							"https://api.github.com/repos/PatchMon/PatchMon/releases/latest",
+							`https://api.github.com/repos/${releaseRepo}/releases/latest`,
 							{
 								headers: {
 									Accept: "application/vnd.github.v3+json",
@@ -241,10 +246,10 @@ const Login = () => {
 
 							setLatestRelease(releaseInfo);
 							localStorage.setItem(
-								"githubLatestRelease",
+								releaseCacheKey,
 								JSON.stringify(releaseInfo),
 							);
-							localStorage.setItem("githubReleaseCacheTime", now.toString());
+							localStorage.setItem(releaseCacheTimeKey, now.toString());
 						}
 					} catch (releaseError) {
 						// Ignore abort errors
@@ -259,7 +264,7 @@ const Login = () => {
 
 				console.error("Failed to fetch GitHub data:", error);
 				// Set fallback data if nothing cached
-				const cachedRelease = localStorage.getItem("githubLatestRelease");
+				const cachedRelease = localStorage.getItem(releaseCacheKey);
 				if (!cachedRelease && isMounted) {
 					setLatestRelease({
 						version: "v1.3.0",
@@ -277,7 +282,7 @@ const Login = () => {
 			isMounted = false;
 			abortController.abort();
 		};
-	}, [showGithubVersionOnLogin]); // Run once on mount
+	}, [showGithubVersionOnLogin, releaseRepo]); // Once the login settings are in
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
@@ -589,7 +594,7 @@ const Login = () => {
 										)}
 
 										<a
-											href="https://github.com/PatchMon/PatchMon/releases/latest"
+											href={`${repoUrl(releaseRepo)}/releases/latest`}
 											target="_blank"
 											rel="noopener noreferrer"
 											className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200 transition-colors font-medium"

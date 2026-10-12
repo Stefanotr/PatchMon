@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/PatchMon/PatchMon/server-source-code/internal/database"
+	"github.com/PatchMon/PatchMon/server-source-code/internal/forksource"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/notifications"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/store"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/util"
@@ -32,7 +33,7 @@ func ProcessAgentUpdate(ctx context.Context, d *database.DB, agentsDir string, t
 	currentVersion := util.GetCurrentAgentVersionFromBinary(ctx, agentsDir)
 
 	// Latest version from DNS
-	latest, dnsErr := util.LookupVersionFromDNS(agentVersionDNS)
+	latest, dnsErr := forksource.LatestVersion(ctx, agentVersionDNS)
 	if dnsErr != nil {
 		log.Warn("agent_update: DNS lookup failed", "error", dnsErr)
 	} else if latest != "" {

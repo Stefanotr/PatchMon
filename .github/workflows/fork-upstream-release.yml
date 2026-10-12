@@ -1,0 +1,103 @@
+name: Upstream release watch
+
+# Fork only. Opens an issue when PatchMon publishes an official release that
+# the fork's branch does not contain yet, so the fork gets synced and a new
+# fork release built. Never runs in the upstream repository.
+#
+# Set the FORK_BRANCH repository variable to the branch fork releases are cut
+# from; the default branch is used otherwise.
+
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-release-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    if: github.repository != 'PatchMon/PatchMon'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM: PatchMon/PatchMon
+      FORK: ${{ github.repository }}
+      OWNER: ${{ github.repository_owner }}
+      FORK_BRANCH: ${{ vars.FORK_BRANCH }}
+      LABEL: upstream-release
+    steps:
+      - name: Open an issue for a new upstream release
+        run: |
+          set -euo pipefail
+
+          # Every value below comes from the API or a variable and reaches the
+          # shell through env; each is checked before it is used.
+          release="$(gh api "repos/$UPSTREAM/releases/latest")"
+          tag="$(jq -r '.tag_name // empty' <<<"$release")"
+          if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::warning::unexpected upstream release tag '$tag'; nothing done"
+            exit 0
+          fi
+          published="$(jq -r '.published_at // empty' <<<"$release" | cut -c1-10)"
+          printf '%s' "$published" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || published=""
+
+          branch="${FORK_BRANCH:-$(gh api "repos/$FORK" --jq .default_branch)}"
+          if ! printf '%s' "$branch" | grep -qE '^[A-Za-z0-9._/-]+$' || [[ "$branch" == *..* ]]; then
+            echo "::error::invalid branch name '$branch'"
+            exit 1
+          fi
+          echo "Latest upstream release: $tag; fork branch: $branch"
+
+          # Nothing to do when the branch already contains the release.
+          sha="$(gh api "repos/$UPSTREAM/commits/$tag" --jq .sha)"
+          status="$(gh api "repos/$FORK/compare/$sha...$branch" --jq .status 2>/dev/null || echo unknown)"
+          case "$status" in
+            identical|ahead)
+              echo "$branch already contains $tag"
+              exit 0
+              ;;
+          esac
+
+          # One issue per release, open or closed.
+          title="PatchMon $tag est disponible"
+          gh label create "$LABEL" -R "$FORK" --color 0E8A16 \
+            --description "Official PatchMon release to merge into the fork" --force
+          existing="$(gh issue list -R "$FORK" --label "$LABEL" --state all \
+            --search "$tag in:title" --json title \
+            --jq "[.[] | select(.title == \"$title\")] | length")"
+          if [ "$existing" != "0" ]; then
+            echo "An issue for $tag already exists"
+            exit 0
+          fi
+
+          v="${tag#v}"
+          next="${v%.*}.$(( ${v##*.} + 1 ))"
+          {
+            echo "PatchMon **$tag** est sorti${published:+ le $published} et la branche \`$branch\` du fork ne le contient pas encore."
+            echo
+            echo "- Notes de version : https://github.com/$UPSTREAM/releases/tag/$tag"
+            echo "- Ce qui arrive dans le fork : https://github.com/$FORK/compare/$branch...PatchMon:PatchMon:$tag"
+            echo
+            echo "### Mettre le fork à jour"
+            echo
+            echo '```bash'
+            echo "git fetch upstream --tags"
+            echo "git checkout $branch"
+            echo "git merge $tag            # résoudre les conflits, lancer les tests"
+            echo "git push origin $branch"
+            echo "fork/release.sh --push    # tag v$next-fork.1 : la CI construit l'image"
+            echo '```'
+            echo
+            echo "Puis sur le serveur : \`docker compose pull server && docker compose up -d server\`, et **Update Now** sur les hosts."
+            echo
+            echo "Ferme cette issue une fois le fork à jour. cc @$OWNER"
+          } > body.md
+
+          gh issue create -R "$FORK" --title "$title" --label "$LABEL" --body-file body.md

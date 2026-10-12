@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PatchMon/PatchMon/server-source-code/internal/forksource"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/util"
 )
 
@@ -62,7 +63,7 @@ func (h *AgentVersionHandler) getCurrentAgentVersion(ctx context.Context) string
 
 // getLatestVersionFromDNS performs DNS TXT lookup for agent version (matches Node checkVersionFromDNS).
 func (h *AgentVersionHandler) getLatestVersionFromDNS(ctx context.Context) (string, error) {
-	v, err := util.LookupVersionFromDNS(agentDNSDomain)
+	v, err := forksource.LatestVersion(ctx, agentDNSDomain)
 	if err != nil {
 		return "", err
 	}

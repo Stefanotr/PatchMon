@@ -183,6 +183,15 @@ jobs:
             fi
           done
 
+          # Stamp the repository and commit the build comes from. An official
+          # build stamps PatchMon/PatchMon and keeps the upstream update checks;
+          # a fork's server follows the fork's releases and links to the fork
+          # (internal/forksource).
+          FORK_PKG="github.com/PatchMon/PatchMon/server-source-code/internal/forksource"
+          if printf '%s' "$GITHUB_REPOSITORY" | grep -qE '^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$'; then
+            LDFLAGS="$LDFLAGS -X $FORK_PKG.Repository=$GITHUB_REPOSITORY -X $FORK_PKG.Commit=$(git rev-parse HEAD)"
+          fi
+
           if [ "${{ github.ref_type }}" = "tag" ]; then
             ARCHES="amd64 arm64 386 arm"
           else
@@ -294,6 +303,9 @@ jobs:
             type=semver,pattern={{major}}
             type=edge,branch=main
             type=raw,value=edge,enable=${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+            # Fork releases (vX.Y.Z-fork.N) are pre-releases, which never get
+            # :latest; :fork follows the newest one (see FORK.md).
+            type=raw,value=fork,enable=${{ github.ref_type == 'tag' && contains(github.ref_name, '-fork.') }}
 
       # Harbor is staging only: PR previews and the `main` edge build. Releases
       # go to GHCR alone, hence the ref_type gate here and on every Harbor step

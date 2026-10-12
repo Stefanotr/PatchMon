@@ -9,7 +9,12 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { agentVersionAPI, getGlobalTimezone } from "../../utils/api";
+import {
+	agentVersionAPI,
+	getGlobalTimezone,
+	versionAPI,
+} from "../../utils/api";
+import { repoUrl, sourceRepo } from "../../utils/sourceRepo";
 
 const AgentManagementTab = () => {
 	const [toasts, setToasts] = useState([]);
@@ -38,6 +43,12 @@ const AgentManagementTab = () => {
 	const removeToast = (id) => {
 		setToasts((prev) => prev.filter((t) => t.id !== id));
 	};
+
+	// Where the server build comes from, for the repository link.
+	const { data: buildInfo } = useQuery({
+		queryKey: ["versionInfo"],
+		queryFn: () => versionAPI.getCurrent().then((res) => res.data),
+	});
 
 	// Agent version queries
 	const {
@@ -372,7 +383,7 @@ const AgentManagementTab = () => {
 					image to update.
 				</p>
 				<a
-					href="https://github.com/PatchMon/PatchMon"
+					href={repoUrl(sourceRepo(buildInfo))}
 					target="_blank"
 					rel="noopener noreferrer"
 					className="inline-flex items-center justify-center px-4 py-3 text-secondary-700 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 transition-colors duration-200 font-medium border border-secondary-300 dark:border-secondary-600 rounded-lg hover:bg-secondary-50 dark:hover:bg-secondary-700"

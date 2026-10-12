@@ -9,6 +9,13 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { formatDate, settingsAPI, versionAPI } from "../../utils/api";
+import {
+	isForkRepo,
+	repoUrl,
+	shortCommit,
+	sourceRepo,
+	UPSTREAM_REPO,
+} from "../../utils/sourceRepo";
 
 const VersionUpdateTab = () => {
 	const queryClient = useQueryClient();
@@ -18,6 +25,15 @@ const VersionUpdateTab = () => {
 		queryKey: ["settings"],
 		queryFn: () => settingsAPI.get().then((res) => res.data),
 	});
+
+	// Where this build comes from (shared with the layout's version query).
+	const { data: buildInfo } = useQuery({
+		queryKey: ["versionInfo"],
+		queryFn: () => versionAPI.getCurrent().then((res) => res.data),
+	});
+	const repo = sourceRepo(buildInfo);
+	const isFork = isForkRepo(repo);
+	const commit = shortCommit(buildInfo);
 
 	// Update settings mutation
 	const updateSettingsMutation = useMutation({
@@ -178,6 +194,42 @@ const VersionUpdateTab = () => {
 						<span className="text-lg font-mono text-secondary-900 dark:text-white">
 							{versionInfo.currentVersion}
 						</span>
+						{isFork && (
+							<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-300">
+								Fork build:{" "}
+								<a
+									href={repoUrl(repo)}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="font-mono text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+								>
+									{repo}
+								</a>
+								{commit && (
+									<>
+										{" @ "}
+										<a
+											href={buildInfo.source_commit_url}
+											target="_blank"
+											rel="noopener noreferrer"
+											className="font-mono text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+										>
+											{commit}
+										</a>
+									</>
+								)}
+								{", based on "}
+								<a
+									href={repoUrl(UPSTREAM_REPO)}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="font-mono text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+								>
+									{UPSTREAM_REPO}
+								</a>
+								. Updates follow the fork's releases.
+							</p>
+						)}
 					</div>
 
 					{/* Latest Release */}
@@ -229,13 +281,12 @@ const VersionUpdateTab = () => {
 								</span>
 								<div className="flex items-center gap-2">
 									<a
-										href="https://github.com/PatchMon/PatchMon"
+										href={repoUrl(repo)}
 										target="_blank"
 										rel="noopener noreferrer"
 										className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-mono"
 									>
-										PatchMon/PatchMon{" "}
-										<ExternalLink className="h-3 w-3 inline ml-1" />
+										{repo} <ExternalLink className="h-3 w-3 inline ml-1" />
 									</a>
 								</div>
 							</div>

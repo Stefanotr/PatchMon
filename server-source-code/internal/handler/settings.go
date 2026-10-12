@@ -16,6 +16,7 @@ import (
 	"github.com/PatchMon/PatchMon/server-source-code/internal/agentregistry"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/config"
 	hostctx "github.com/PatchMon/PatchMon/server-source-code/internal/context"
+	"github.com/PatchMon/PatchMon/server-source-code/internal/forksource"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/models"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/store"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/util"
@@ -111,26 +112,41 @@ func (h *SettingsHandler) VersionCurrent(version string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s, err := h.settings.GetFirst(r.Context())
 		if err != nil {
-			JSON(w, http.StatusOK, map[string]interface{}{
+			JSON(w, http.StatusOK, withBuildSource(map[string]interface{}{
 				"version": version, "latest_version": nil, "is_update_available": false,
 				"last_update_check": nil, "buildDate": time.Now().UTC().Format(time.RFC3339),
 				"environment": "production",
-			})
+			}))
 			return
 		}
 		var lastCheck interface{}
 		if s.LastUpdateCheck != nil {
 			lastCheck = s.LastUpdateCheck.Format(time.RFC3339)
 		}
-		JSON(w, http.StatusOK, map[string]interface{}{
+		JSON(w, http.StatusOK, withBuildSource(map[string]interface{}{
 			"version":             version,
 			"latest_version":      s.LatestVersion,
 			"is_update_available": s.UpdateAvailable,
 			"last_update_check":   lastCheck,
 			"buildDate":           time.Now().UTC().Format(time.RFC3339),
 			"environment":         "production",
-		})
+		}))
 	}
+}
+
+// withBuildSource adds the repository the build comes from, and its commit
+// when stamped, so the UI links a fork's instance to the fork.
+func withBuildSource(m map[string]interface{}) map[string]interface{} {
+	info := forksource.Describe()
+	m["source_repository"] = info.Repository
+	m["source_url"] = info.URL
+	m["is_fork"] = info.IsFork
+	m["upstream_repository"] = info.Upstream
+	if info.Commit != "" {
+		m["source_commit"] = info.Commit
+		m["source_commit_url"] = info.CommitURL
+	}
+	return m
 }
 
 const serverVersionDNS = "server.vcheck.patchmon.net"
@@ -149,7 +165,7 @@ func (h *SettingsHandler) VersionCheckUpdates(currentVersion string) http.Handle
 		}
 
 		// Fetch fresh version from DNS (same as Node and agent version detection)
-		latestVersion, err := util.LookupVersionFromDNS(serverVersionDNS)
+		latestVersion, err := forksource.LatestVersion(ctx, serverVersionDNS)
 		if err != nil {
 			// Fall back to cached data from settings
 			if s.LatestVersion != nil && *s.LatestVersion != "" {
@@ -184,7 +200,7 @@ func (h *SettingsHandler) VersionCheckUpdates(currentVersion string) http.Handle
 				"version":     latestVersion,
 				"tagName":     "v" + latestVersion,
 				"publishedAt": nil,
-				"htmlUrl":     "https://github.com/PatchMon/PatchMon/releases/tag/v" + latestVersion,
+				"htmlUrl":     forksource.ReleaseURL(latestVersion),
 			}
 
 			// Persist to settings so /version/current shows fresh data (like Node versionUpdateCheck job)
@@ -289,6 +305,7 @@ func (h *SettingsHandler) GetLoginSettings(w http.ResponseWriter, r *http.Reques
 			"signup_enabled":               false,
 			"show_github_version_on_login": showGithubVersionFallback,
 			"current_version":              currentVersion,
+			"source_repository":            forksource.Repo(),
 			"show_newsletter":              showNewsletter,
 			"admin_mode":                   adminMode,
 			"discord": map[string]interface{}{
@@ -342,6 +359,7 @@ func (h *SettingsHandler) GetLoginSettings(w http.ResponseWriter, r *http.Reques
 		"signup_enabled":               signupEnabled,
 		"show_github_version_on_login": showGithubVersion,
 		"current_version":              currentVersion,
+		"source_repository":            forksource.Repo(),
 		"show_newsletter":              showNewsletter,
 		"admin_mode":                   adminMode,
 		"discord": map[string]interface{}{

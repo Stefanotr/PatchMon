@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/PatchMon/PatchMon/server-source-code/internal/database"
+	"github.com/PatchMon/PatchMon/server-source-code/internal/forksource"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/notifications"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/store"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/util"
@@ -29,7 +30,7 @@ func ProcessServerUpdate(ctx context.Context, db *database.DB, serverVersion str
 	}
 
 	// DNS lookup for latest version
-	latest, dnsErr := util.LookupVersionFromDNS(serverVersionDNS)
+	latest, dnsErr := forksource.LatestVersion(ctx, serverVersionDNS)
 	if dnsErr != nil {
 		log.Warn("server_update: DNS lookup failed", "error", dnsErr)
 	} else if latest != "" {
