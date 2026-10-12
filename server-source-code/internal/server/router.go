@@ -272,6 +272,8 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 	// for the stop-run endpoint. Kept as optional dependencies so unrelated
 	// call-sites don't need to thread them.
 	patchingHandler.SetStreamDependencies(patchstream.NewHub(), registry)
+	// A run that restarts the host also needs can_restart_hosts.
+	patchingHandler.WithRestartPermission(permissionsStore)
 	windowsUpdatesHandler := handler.NewWindowsUpdatesHandler(hostsStore, dbProvider, notifyEmit)
 
 	aiSvc := ai.NewService(enc)
@@ -545,10 +547,11 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore), hostctx.RequireModule("compliance")).Post("/hosts/{hostId}/integrations/compliance/scanners", hostsHandler.SetComplianceScanners)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore), hostctx.RequireModule("compliance")).Post("/hosts/{hostId}/integrations/compliance/default-profile", hostsHandler.SetComplianceDefaultProfile)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/{hostId}/integrations/apply-pending-config", hostsHandler.ApplyPendingConfig)
-			// Restarting a host belongs with patching, not with editing host
-			// records (can_manage_hosts), and is part of the patching module.
-			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot", hostsHandler.RebootHost)
-			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot/cancel", hostsHandler.CancelHostReboot)
+			// Restarting a host has its own permission, apart from patching
+			// and from editing host records (separation of duties), and is
+			// part of the patching module.
+			r.With(middleware.RequirePermission("can_restart_hosts", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot", hostsHandler.RebootHost)
+			r.With(middleware.RequirePermission("can_restart_hosts", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot/cancel", hostsHandler.CancelHostReboot)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/{hostId}/integrations/{integrationName}/toggle", hostsHandler.ToggleIntegration)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore)).Get("/hosts/{hostId}", hostsHandler.GetByID)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/create", hostsHandler.Create)

@@ -22,7 +22,8 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// Run applies all pending migrations using embedded SQL files.
+// Run applies all pending migrations using embedded SQL files, then this
+// fork's schema steps (see fork.go).
 // Logs to the provided logger and always prints migration status to stdout.
 // Returns an error if migrations fail.
 // ErrNoChange is treated as success (already up to date).
@@ -31,6 +32,9 @@ func Run(databaseURL string, log *slog.Logger) error {
 		return fmt.Errorf("DATABASE_URL is required for migrations")
 	}
 
+	// The fork's schema steps connect with the URL as given, like the
+	// server's own pools; ensureSSLMode is for golang-migrate.
+	forkURL := databaseURL
 	databaseURL = ensureSSLMode(databaseURL)
 
 	_, _ = fmt.Fprintln(os.Stdout, "[migrate] running migrations from embedded binary")
@@ -68,14 +72,14 @@ func Run(databaseURL string, log *slog.Logger) error {
 	if upErr == migrate.ErrNoChange {
 		_, _ = fmt.Fprintln(os.Stdout, "[migrate] already up to date")
 		log.Info("migrations: already up to date")
-		return nil
+		return applyForkSchema(forkURL, log)
 	}
 
 	version, _, _ := m.Version()
 	msg := fmt.Sprintf("[migrate] applied successfully (version %d)", version)
 	_, _ = fmt.Fprintln(os.Stdout, msg)
 	log.Info("migrations applied successfully", "version", version)
-	return nil
+	return applyForkSchema(forkURL, log)
 }
 
 // Open returns a migrate instance using embedded migrations, for use by the CLI (up/down/force/version).

@@ -75,6 +75,7 @@ func (s *PermissionsStore) UpsertRole(ctx context.Context, p *models.RolePermiss
 		CanManageAutomation:     p.CanManageAutomation,
 		CanUseRemoteAccess:      p.CanUseRemoteAccess,
 		CanManageBilling:        p.CanManageBilling,
+		CanRestartHosts:         p.CanRestartHosts,
 	})
 	return err
 }

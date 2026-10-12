@@ -37,6 +37,18 @@ func RequireAnyPermission(permissions *store.PermissionsStore, perms ...string) 
 	}
 }
 
+// RoleAllows reports whether the signed-in user's role grants perm, read from
+// the same role permissions as RequirePermission. It is for checks that
+// depend on the request body (a patch run that asks for a restart, say).
+func RoleAllows(r *http.Request, permissions *store.PermissionsStore, perm string) bool {
+	role, _ := r.Context().Value(UserRoleKey).(string)
+	if role == "" || permissions == nil {
+		return false
+	}
+	p, err := permissions.GetByRole(r.Context(), role)
+	return err == nil && p != nil && hasPermission(p, perm)
+}
+
 func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -85,6 +97,8 @@ func hasPermission(p *models.RolePermission, perm string) bool {
 		return p.CanUseRemoteAccess
 	case "can_manage_billing":
 		return p.CanManageBilling
+	case "can_restart_hosts":
+		return p.CanRestartHosts
 	default:
 		return false
 	}

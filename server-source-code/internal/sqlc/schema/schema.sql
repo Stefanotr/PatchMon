@@ -837,3 +837,7 @@ SELECT
 FROM host_packages hp
 GROUP BY hp.package_id;
 CREATE UNIQUE INDEX IF NOT EXISTS mv_package_stats_pkey ON mv_package_stats (package_id);
+
+-- Fork schema steps (internal/forkschema): columns this fork adds outside
+-- the numbered migrations, declared here so sqlc sees them.
+ALTER TABLE role_permissions ADD COLUMN can_restart_hosts BOOLEAN NOT NULL DEFAULT false;

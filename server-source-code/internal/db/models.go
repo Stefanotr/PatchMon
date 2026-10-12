@@ -538,6 +538,7 @@ type RolePermission struct {
 	CanManageBilling        bool             `json:"can_manage_billing"`
 	CreatedAt               pgtype.Timestamp `json:"created_at"`
 	UpdatedAt               pgtype.Timestamp `json:"updated_at"`
+	CanRestartHosts         bool             `json:"can_restart_hosts"`
 }
 
 type ScheduledReport struct {
