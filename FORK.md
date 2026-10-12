@@ -100,8 +100,9 @@ Cela remplace `deploy-patchmon-custom.sh` et ses bind mounts.
 
 ```bash
 cd /opt/patchmon
-docker compose exec -T database sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
-  | gzip > "backup-$(date +%Y%m%d-%H%M%S).sql.gz"
+# The dump holds password hashes and encrypted secrets: readable by root only.
+(umask 077 && docker compose exec -T database sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  | gzip > "backup-$(date +%Y%m%d-%H%M%S).sql.gz")
 cat > docker-compose.override.yml <<'EOF'
 services:
   server:
