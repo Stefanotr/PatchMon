@@ -61,6 +61,29 @@ jobs:
           name: coverage-report
           path: server-source-code/coverage.html
 
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version-file: "package.json"
+          cache: "npm"
+
+      # Includes src/__tests__/i18n: every string marked for translation has
+      # a French translation that keeps its placeholders and tags.
+      - name: Run tests
+        run: |
+          npm ci
+          npm run test:run --workspace=frontend
+
   lint:
     name: Lint (server)
     runs-on: ubuntu-latest

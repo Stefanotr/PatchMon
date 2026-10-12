@@ -1,3 +1,4 @@
+import i18n, { tk } from "../i18n";
 import api from "./api";
 
 const DRY_RUN_POLL_INTERVAL_MS = 2000;
@@ -131,12 +132,14 @@ const utf8Length = (s) => new TextEncoder().encode(s).length;
 export function restartChoiceError(choice) {
 	if (!choice || choice.mode === "never") return null;
 	if (utf8Length((choice.message || "").trim()) > REBOOT_MAX_MESSAGE_LENGTH) {
-		return `The message must be at most ${REBOOT_MAX_MESSAGE_LENGTH} bytes`;
+		return i18n.t("The message must be at most {{max}} bytes", {
+			max: REBOOT_MAX_MESSAGE_LENGTH,
+		});
 	}
 	if (choice.when === "at") {
 		return /^([01]\d|2[0-3]):[0-5]\d$/.test(choice.atTime || "")
 			? null
-			: "Pick a time of day";
+			: i18n.t("Pick a time of day");
 	}
 	const d = Number(choice.delayMinutes);
 	if (
@@ -144,7 +147,10 @@ export function restartChoiceError(choice) {
 		d < REBOOT_MIN_DELAY_MINUTES ||
 		d > REBOOT_MAX_DELAY_MINUTES
 	) {
-		return `The delay must be between ${REBOOT_MIN_DELAY_MINUTES} and ${REBOOT_MAX_DELAY_MINUTES} minutes`;
+		return i18n.t("The delay must be between {{min}} and {{max}} minutes", {
+			min: REBOOT_MIN_DELAY_MINUTES,
+			max: REBOOT_MAX_DELAY_MINUTES,
+		});
 	}
 	return null;
 }
@@ -168,6 +174,18 @@ export function buildRebootRequest(choice, { mode, now = new Date() } = {}) {
 	return body;
 }
 
+// The fixed messages the server answers restart commands with, translated
+// when shown. Any other server text is shown as it comes.
+const SERVER_RESTART_MESSAGES = new Set([
+	tk("Restart scheduled"),
+	tk("Scheduled restart cancelled"),
+	tk(
+		"Sent to the agent, which did not answer in time: check the host. Agents older than this feature ignore restart commands.",
+	),
+]);
+const serverMessage = (text) =>
+	SERVER_RESTART_MESSAGES.has(text) ? i18n.t(text) : text;
+
 /**
  * Turn the server's answer to a restart or cancel command into a toast:
  * { level: "success" | "warning", text }. 202 means the command went out but
@@ -175,17 +193,21 @@ export function buildRebootRequest(choice, { mode, now = new Date() } = {}) {
  */
 export function describeRestartAnswer(res, fallback) {
 	const data = res?.data || {};
+	const serverText = data.message ? serverMessage(data.message) : "";
 	if (res?.status === 202) {
 		return {
 			level: "warning",
-			text: data.message || "Sent to the agent, which did not answer",
+			text: serverText || i18n.t("Sent to the agent, which did not answer"),
 		};
 	}
-	const text = data.message || fallback;
+	const text = serverText || fallback;
 	return {
 		level: "success",
 		text: data.reboot_at
-			? `${text}, for ${new Date(data.reboot_at).toLocaleString()}`
+			? i18n.t("{{text}}, for {{time}}", {
+					text,
+					time: new Date(data.reboot_at).toLocaleString(),
+				})
 			: text,
 	};
 }
@@ -197,12 +219,14 @@ export function describeReboot(reboot) {
 	if (!reboot?.mode || reboot.mode === "never") return null;
 	const what =
 		reboot.mode === "always"
-			? "Restart after the run"
-			: "Restart after the run if one is needed";
+			? i18n.t("Restart after the run")
+			: i18n.t("Restart after the run if one is needed");
 	const when = reboot.at
-		? `at ${new Date(reboot.at).toLocaleString()}`
-		: `${Math.max(reboot.delay_minutes || 0, REBOOT_MIN_DELAY_MINUTES)} min after it ends`;
-	return `${what}, ${when}`;
+		? i18n.t("at {{time}}", { time: new Date(reboot.at).toLocaleString() })
+		: i18n.t("{{minutes}} min after it ends", {
+				minutes: Math.max(reboot.delay_minutes || 0, REBOOT_MIN_DELAY_MINUTES),
+			});
+	return i18n.t("{{what}}, {{when}}", { what, when });
 }
 
 export const patchingAPI = {

@@ -10,55 +10,58 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { tk } from "../i18n";
 import { searchAPI } from "../utils/api";
 
 const typeConfig = {
 	host: {
 		icon: Server,
 		color: "text-blue-500",
-		label: "Hosts",
+		label: tk("Hosts"),
 		route: (id) => `/hosts/${id}`,
 	},
 	package: {
 		icon: Package,
 		color: "text-green-500",
-		label: "Packages",
+		label: tk("Packages"),
 		route: (id) => `/packages/${id}`,
 	},
 	repository: {
 		icon: GitBranch,
 		color: "text-purple-500",
-		label: "Repositories",
+		label: tk("Repositories"),
 		route: (id) => `/repositories/${id}`,
 	},
 	host_group: {
 		icon: Layers,
 		color: "text-teal-500",
-		label: "Host Groups",
+		label: tk("Host Groups"),
 		route: (id) => `/host-groups/${id}`,
 	},
 	user: {
 		icon: User,
 		color: "text-orange-500",
-		label: "Users",
+		label: tk("Users"),
 		route: () => "/settings/users",
 	},
 	docker_container: {
 		icon: Container,
 		color: "text-cyan-500",
-		label: "Docker Containers",
+		label: tk("Docker Containers"),
 		route: (id) => `/docker/containers/${id}`,
 	},
 	docker_image: {
 		icon: Box,
 		color: "text-indigo-500",
-		label: "Docker Images",
+		label: tk("Docker Images"),
 		route: (id) => `/docker/images/${id}`,
 	},
 };
 
 const GlobalSearch = () => {
+	const { t } = useTranslation();
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState(null);
 	const [isOpen, setIsOpen] = useState(false);
@@ -223,7 +226,7 @@ const GlobalSearch = () => {
 					ref={inputRef}
 					type="text"
 					className="block w-full rounded-lg border border-secondary-200 bg-white py-2.5 sm:py-2 pl-10 pr-10 text-sm text-secondary-900 placeholder-secondary-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-secondary-600 dark:bg-secondary-700 dark:text-white dark:placeholder-secondary-400 min-h-[44px]"
-					placeholder="Search hosts, packages, repos..."
+					placeholder={t("Search hosts, packages, repos...")}
 					value={query}
 					onChange={handleInputChange}
 					onKeyDown={handleKeyDown}
@@ -236,7 +239,7 @@ const GlobalSearch = () => {
 						type="button"
 						onClick={handleClear}
 						className="absolute inset-y-0 right-0 flex items-center pr-3 text-secondary-400 hover:text-secondary-600 min-w-[44px] min-h-[44px] justify-center"
-						aria-label="Clear search"
+						aria-label={t("Clear search")}
 					>
 						<X className="h-4 w-4" />
 					</button>
@@ -247,7 +250,7 @@ const GlobalSearch = () => {
 				<div className="absolute z-50 mt-2 w-full sm:w-[calc(100vw-2rem)] sm:max-w-md rounded-lg border border-secondary-200 bg-white shadow-lg dark:border-secondary-600 dark:bg-secondary-800 left-0 sm:left-auto right-0 sm:right-auto">
 					{isLoading ? (
 						<div className="px-4 py-2 text-center text-sm text-secondary-500 dark:text-white/70">
-							Searching...
+							{t("Searching...")}
 						</div>
 					) : hasResults ? (
 						<div className="max-h-96 overflow-y-auto">
@@ -261,7 +264,7 @@ const GlobalSearch = () => {
 								return (
 									<div key={type}>
 										<div className="sticky top-0 z-10 bg-secondary-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-500 dark:bg-secondary-700 dark:text-white/80">
-											{config.label}
+											{t(config.label)}
 										</div>
 										{items.map((item) => {
 											const globalIdx = allResults.findIndex(
@@ -300,7 +303,8 @@ const GlobalSearch = () => {
 						</div>
 					) : query.trim() ? (
 						<div className="px-4 py-2 text-center text-sm text-secondary-500 dark:text-white/70">
-							No results found for "{query}"
+							{/* \u0022 is a double quote: biome then keeps the key double-quoted, as the i18n test needs */}
+							{t("No results found for \u0022{{query}}\u0022", { query })}
 						</div>
 					) : null}
 				</div>

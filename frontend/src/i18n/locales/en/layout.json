@@ -1,0 +1,6 @@
+{
+	"{{count}} host connected_one": "{{count}} host connected",
+	"{{count}} host connected_other": "{{count}} hosts connected",
+	"{{count}} host offline_one": "{{count}} host offline",
+	"{{count}} host offline_other": "{{count}} hosts offline"
+}

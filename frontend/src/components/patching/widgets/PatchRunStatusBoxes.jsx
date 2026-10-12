@@ -1,7 +1,9 @@
 import { CheckCircle, Clock, ListChecks, XCircle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 const PatchRunStatusBoxes = ({ data }) => {
+	const { t } = useTranslation();
 	const summary = data?.summary || {};
 	const total = summary.total_runs ?? 0;
 	const active = (summary.queued ?? 0) + (summary.running ?? 0);
@@ -10,28 +12,28 @@ const PatchRunStatusBoxes = ({ data }) => {
 
 	const boxes = [
 		{
-			label: "Total Runs",
+			label: t("Total Runs"),
 			value: total,
 			Icon: ListChecks,
 			icon_class: "text-primary-600",
 			to: "/patching?tab=runs",
 		},
 		{
-			label: "Active",
+			label: t("Active"),
 			value: active,
 			Icon: Clock,
 			icon_class: "text-blue-600",
 			to: "/patching?tab=runs&status=active",
 		},
 		{
-			label: "Completed",
+			label: t("Completed"),
 			value: completed,
 			Icon: CheckCircle,
 			icon_class: "text-green-600",
 			to: "/patching?tab=runs&status=completed",
 		},
 		{
-			label: "Failed",
+			label: t("Failed"),
 			value: failed,
 			Icon: XCircle,
 			icon_class: "text-red-600",
@@ -42,7 +44,7 @@ const PatchRunStatusBoxes = ({ data }) => {
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-				Patch Run Status
+				{t("Patch Run Status")}
 			</h3>
 			<div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
 				{boxes.map((box) => {

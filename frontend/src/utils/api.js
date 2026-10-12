@@ -1,4 +1,5 @@
 import axios from "axios";
+import i18n from "../i18n";
 import { requestTokenRefresh } from "./sessionRefresh";
 import { consumeInteraction } from "./userActivity";
 
@@ -650,14 +651,16 @@ export const formatRelativeTime = (date) => {
 	const hours = Math.floor(minutes / 60);
 	const days = Math.floor(hours / 24);
 
-	const suffix = future ? "" : " ago";
-	const prefix = future ? "in " : "";
-	if (days > 0) return `${prefix}${days} day${days > 1 ? "s" : ""}${suffix}`;
-	if (hours > 0)
-		return `${prefix}${hours} hour${hours > 1 ? "s" : ""}${suffix}`;
-	if (minutes > 0) return `${prefix}${minutes} min${suffix}`;
-	if (future) return "in a few seconds";
-	return "just now";
+	let span = null;
+	if (days > 0) span = i18n.t("{{count}} day", { count: days });
+	else if (hours > 0) span = i18n.t("{{count}} hour", { count: hours });
+	else if (minutes > 0) span = i18n.t("{{n}} min", { n: minutes });
+	if (span) {
+		return future
+			? i18n.t("in {{time}}", { time: span })
+			: i18n.t("{{time}} ago", { time: span });
+	}
+	return future ? i18n.t("in a few seconds") : i18n.t("just now");
 };
 
 /**

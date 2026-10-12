@@ -1,0 +1,18 @@
+{
+	"{{count}} hour_one": "{{count}} hour",
+	"{{count}} hour_other": "{{count}} hours",
+	"{{count}} minute_one": "{{count}} minute",
+	"{{count}} minute_other": "{{count}} minutes",
+	"{{count}} day_one": "{{count}} day",
+	"{{count}} day_other": "{{count}} days",
+	"{{count}} hosts haven't reported in {{threshold}}+_one": "{{count}} host haven't reported in {{threshold}}+",
+	"{{count}} hosts haven't reported in {{threshold}}+_other": "{{count}} hosts haven't reported in {{threshold}}+",
+	"{{count}} stale host_one": "{{count}} stale host",
+	"{{count}} stale host_other": "{{count}} stale hosts",
+	"{{count}} user_one": "{{count}} user",
+	"{{count}} user_other": "{{count}} users",
+	"{{count}} host_one": "{{count}} host",
+	"{{count}} host_other": "{{count}} hosts",
+	"Review {{count}} run needing action_one": "Review {{count}} run needing action",
+	"Review {{count}} run needing action_other": "Review {{count}} runs needing action"
+}

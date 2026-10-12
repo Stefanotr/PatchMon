@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { useRef } from "react";
 import { Doughnut } from "react-chartjs-2";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { useTheme } from "../../../contexts/ThemeContext";
 import { getDoughnutOptions } from "../../compliance/widgets/chartOptions";
@@ -14,6 +15,7 @@ const STATUS_LINKS = [
 ];
 
 const PatchRunOutcomesDoughnut = ({ data }) => {
+	const { t } = useTranslation();
 	const { isDark } = useTheme();
 	const navigate = useNavigate();
 	const chart_ref = useRef(null);
@@ -34,8 +36,14 @@ const PatchRunOutcomesDoughnut = ({ data }) => {
 
 	const chart_data = {
 		labels: has_data
-			? ["Completed", "Failed", "Cancelled", "Timed out", "Agent disconnected"]
-			: ["No runs yet"],
+			? [
+					t("Completed"),
+					t("Failed"),
+					t("Cancelled"),
+					t("Timed out"),
+					t("Agent disconnected"),
+				]
+			: [t("No runs yet")],
 		datasets: [
 			{
 				data: has_data
@@ -69,7 +77,7 @@ const PatchRunOutcomesDoughnut = ({ data }) => {
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-				Run Outcomes
+				{t("Run Outcomes")}
 			</h3>
 			<div className="h-56 w-full flex items-center justify-center flex-1 min-h-0">
 				<div className="w-full h-full max-w-sm">
@@ -77,7 +85,7 @@ const PatchRunOutcomesDoughnut = ({ data }) => {
 						<Doughnut ref={chart_ref} data={chart_data} options={options} />
 					) : (
 						<div className="flex items-center justify-center h-full text-secondary-500 dark:text-white text-sm">
-							No completed runs yet
+							{t("No completed runs yet")}
 						</div>
 					)}
 				</div>
@@ -86,7 +94,7 @@ const PatchRunOutcomesDoughnut = ({ data }) => {
 				to="/patching?tab=runs"
 				className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:underline flex-shrink-0"
 			>
-				View all runs
+				{t("View all runs")}
 				<ChevronRight className="h-4 w-4" />
 			</Link>
 		</div>

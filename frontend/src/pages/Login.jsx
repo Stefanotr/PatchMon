@@ -8,17 +8,28 @@ import {
 	User,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useNavigate } from "react-router-dom";
 import { LoginCommunityLinks } from "../components/CommunityLinks";
 import DiscordIcon from "../components/DiscordIcon";
+import LanguageSelect from "../components/LanguageSelect";
 import { useAuth } from "../contexts/AuthContext";
+import { currentLanguage, tk } from "../i18n";
 import { authAPI, getGlobalTimezone, isCorsError } from "../utils/api";
 import { resolveLogoPath } from "../utils/logoPaths";
 import { repoUrl, sourceRepo } from "../utils/sourceRepo";
 import { compareVersions, isUpdateAvailable } from "../utils/version";
 
+// Server defaults for the SSO button labels. A button still showing its
+// default label is translated; a label set by an admin is shown as is.
+const DEFAULT_OIDC_BUTTON_TEXT = tk("Login with SSO");
+const DEFAULT_DISCORD_BUTTON_TEXT = tk("Login with Discord");
+
 const Login = () => {
+	const { t } = useTranslation();
+	const buttonLabel = (text, defaultText) =>
+		!text || text === defaultText ? t(defaultText) : text;
 	const usernameId = useId();
 	const firstNameId = useId();
 	const lastNameId = useId();
@@ -54,12 +65,12 @@ const Login = () => {
 	const [currentVersion, setCurrentVersion] = useState(null);
 	const [oidcConfig, setOidcConfig] = useState({
 		enabled: false,
-		buttonText: "Login with SSO",
+		buttonText: DEFAULT_OIDC_BUTTON_TEXT,
 		disableLocalAuth: false,
 	});
 	const [discordConfig, setDiscordConfig] = useState({
 		enabled: false,
-		buttonText: "Login with Discord",
+		buttonText: DEFAULT_DISCORD_BUTTON_TEXT,
 	});
 	const [oidcProcessed, setOidcProcessed] = useState(false); // Track if OIDC callback was processed
 
@@ -192,7 +203,12 @@ const Login = () => {
 
 		const abortController = new AbortController();
 		let isMounted = true;
-		const releaseCacheKey = `githubLatestRelease:${releaseRepo}`;
+		// The release date is cached formatted: one cache per language.
+		const lang = currentLanguage();
+		const releaseCacheKey =
+			lang === "en"
+				? `githubLatestRelease:${releaseRepo}`
+				: `githubLatestRelease:${releaseRepo}:${lang}`;
 		const releaseCacheTimeKey = `githubReleaseCacheTime:${releaseRepo}`;
 
 		const fetchData = async () => {
@@ -233,7 +249,7 @@ const Login = () => {
 								version: data.tag_name,
 								name: data.name,
 								publishedAt: new Date(data.published_at).toLocaleDateString(
-									"en-US",
+									lang === "fr" ? "fr-FR" : "en-US",
 									{
 										year: "numeric",
 										month: "long",
@@ -268,9 +284,9 @@ const Login = () => {
 				if (!cachedRelease && isMounted) {
 					setLatestRelease({
 						version: "v1.3.0",
-						name: "Latest Release",
-						publishedAt: "Recently",
-						body: "Monitor and manage your Linux package updates",
+						name: t("Latest Release"),
+						publishedAt: t("Recently"),
+						body: t("Monitor and manage your Linux package updates"),
 					});
 				}
 			}
@@ -282,7 +298,7 @@ const Login = () => {
 			isMounted = false;
 			abortController.abort();
 		};
-	}, [showGithubVersionOnLogin, releaseRepo]); // Once the login settings are in
+	}, [showGithubVersionOnLogin, releaseRepo, t]); // Once the login settings are in
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
@@ -301,23 +317,27 @@ const Login = () => {
 			} else if (result.success) {
 				navigate("/");
 			} else {
-				setError(result.error || "Login failed");
+				setError(result.error || t("Login failed"));
 			}
 		} catch (err) {
 			// Check for CORS/network errors first
 			if (isCorsError(err)) {
 				setError(
-					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					t(
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					),
 				);
 			} else if (
 				err.name === "TypeError" &&
 				err.message?.includes("Failed to fetch")
 			) {
 				setError(
-					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					t(
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					),
 				);
 			} else {
-				setError(err.response?.data?.error || "Login failed");
+				setError(err.response?.data?.error || t("Login failed"));
 			}
 		} finally {
 			setIsLoading(false);
@@ -344,27 +364,31 @@ const Login = () => {
 				// Redirect to dashboard
 				navigate("/");
 			} else {
-				setError("Signup failed - invalid response");
+				setError(t("Signup failed - invalid response"));
 			}
 		} catch (err) {
 			console.error("Signup error:", err);
 			if (isCorsError(err)) {
 				setError(
-					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					t(
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					),
 				);
 			} else if (
 				err.name === "TypeError" &&
 				err.message?.includes("Failed to fetch")
 			) {
 				setError(
-					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					t(
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					),
 				);
 			} else {
 				const errorMessage =
 					err.response?.data?.error ||
 					(err.response?.data?.errors && err.response.data.errors.length > 0
 						? err.response.data.errors.map((e) => e.msg).join(", ")
-						: err.message || "Signup failed");
+						: err.message || t("Signup failed"));
 				setError(errorMessage);
 			}
 		} finally {
@@ -392,24 +416,30 @@ const Login = () => {
 				// Redirect to dashboard
 				navigate("/");
 			} else {
-				setError("TFA verification failed - invalid response");
+				setError(t("TFA verification failed - invalid response"));
 			}
 		} catch (err) {
 			console.error("TFA verification error:", err);
 			if (isCorsError(err)) {
 				setError(
-					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					t(
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					),
 				);
 			} else if (
 				err.name === "TypeError" &&
 				err.message?.includes("Failed to fetch")
 			) {
 				setError(
-					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					t(
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					),
 				);
 			} else {
 				const errorMessage =
-					err.response?.data?.error || err.message || "TFA verification failed";
+					err.response?.data?.error ||
+					err.message ||
+					t("TFA verification failed");
 				setError(errorMessage);
 			}
 			// Clear the token input for security (preserve remember_me preference)
@@ -422,7 +452,7 @@ const Login = () => {
 				setRequiresTfa(false);
 				setTfaTicket("");
 				setTfaData({ token: "", remember_me: false });
-				setError("Your sign-in attempt expired. Please sign in again.");
+				setError(t("Your sign-in attempt expired. Please sign in again."));
 			}
 		} finally {
 			setIsLoading(false);
@@ -488,6 +518,10 @@ const Login = () => {
 				className="absolute inset-0 bg-gradient-to-br from-black/30 to-black/50 pointer-events-none"
 			/>
 
+			<div className="absolute top-4 right-4 z-20">
+				<LanguageSelect compact />
+			</div>
+
 			{/* Left side - Info Panel (hidden on mobile or when GitHub version is disabled) */}
 			{showGithubVersionOnLogin && (
 				<div className="hidden lg:flex lg:w-1/2 xl:w-3/5 relative z-10">
@@ -501,7 +535,7 @@ const Login = () => {
 										className="h-16 mb-4"
 									/>
 									<p className="text-sm text-blue-200 font-medium tracking-wide uppercase">
-										Linux Patch Management
+										{t("Linux Patch Management")}
 									</p>
 								</div>
 
@@ -524,7 +558,7 @@ const Login = () => {
 															<>
 																<div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
 																<span className="text-amber-300 text-sm font-semibold">
-																	Update Available
+																	{t("Update Available")}
 																</span>
 															</>
 														);
@@ -541,7 +575,7 @@ const Login = () => {
 															<>
 																<div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
 																<span className="text-green-300 text-sm font-semibold">
-																	You&apos;re on Latest
+																	{t("You're on Latest")}
 																</span>
 															</>
 														);
@@ -551,7 +585,7 @@ const Login = () => {
 														<>
 															<div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
 															<span className="text-green-300 text-sm font-semibold">
-																Latest Release
+																{t("Latest Release")}
 															</span>
 														</>
 													);
@@ -574,9 +608,9 @@ const Login = () => {
 												fill="none"
 												stroke="currentColor"
 												viewBox="0 0 24 24"
-												aria-label="Release date"
+												aria-label={t("Release date")}
 											>
-												<title>Release date</title>
+												<title>{t("Release date")}</title>
 												<path
 													strokeLinecap="round"
 													strokeLinejoin="round"
@@ -584,7 +618,11 @@ const Login = () => {
 													d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
 												/>
 											</svg>
-											<span>Released {latestRelease.publishedAt}</span>
+											<span>
+												{t("Released {{date}}", {
+													date: latestRelease.publishedAt,
+												})}
+											</span>
 										</div>
 
 										{latestRelease.body && (
@@ -599,15 +637,15 @@ const Login = () => {
 											rel="noopener noreferrer"
 											className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200 transition-colors font-medium"
 										>
-											View Release Notes
+											{t("View Release Notes")}
 											<svg
 												className="w-4 h-4"
 												fill="none"
 												stroke="currentColor"
 												viewBox="0 0 24 24"
-												aria-label="External link"
+												aria-label={t("External link")}
 											>
-												<title>External link</title>
+												<title>{t("External link")}</title>
 												<path
 													strokeLinecap="round"
 													strokeLinejoin="round"
@@ -632,7 +670,9 @@ const Login = () => {
 						{/* Social Links Footer */}
 						<div className="max-w-xl mx-auto w-full">
 							<div className="border-t border-white/10 pt-6">
-								<p className="text-sm text-gray-400 mb-4">Connect with us</p>
+								<p className="text-sm text-gray-400 mb-4">
+									{t("Connect with us")}
+								</p>
 								<LoginCommunityLinks />
 							</div>
 						</div>
@@ -653,7 +693,7 @@ const Login = () => {
 										? new Date(settings.updated_at).getTime()
 										: Date.now()
 								}`}
-								alt="PatchMon Logo"
+								alt={t("PatchMon Logo")}
 								className="h-16 w-16"
 								onError={(e) => {
 									e.target.src = `/assets/logo_square_default.svg?v=${Date.now()}`;
@@ -661,10 +701,12 @@ const Login = () => {
 							/>
 						</div>
 						<h2 className="mt-6 text-center text-3xl font-extrabold text-secondary-900 dark:text-secondary-100">
-							{isSignupMode ? "Create PatchMon Account" : "Sign in to PatchMon"}
+							{isSignupMode
+								? t("Create PatchMon Account")
+								: t("Sign in to PatchMon")}
 						</h2>
 						<p className="mt-2 text-center text-sm text-secondary-600 dark:text-white">
-							Monitor and manage your Linux package updates
+							{t("Monitor and manage your Linux package updates")}
 						</p>
 					</div>
 
@@ -681,7 +723,7 @@ const Login = () => {
 											htmlFor={usernameId}
 											className="block text-sm font-medium text-secondary-900 dark:text-secondary-100"
 										>
-											{isSignupMode ? "Username" : "Username or Email"}
+											{isSignupMode ? t("Username") : t("Username or Email")}
 										</label>
 										<div className="mt-1 relative">
 											<input
@@ -696,8 +738,8 @@ const Login = () => {
 												className="appearance-none rounded-md relative block w-full pl-10 pr-3 py-2 border border-secondary-300 placeholder-secondary-500 text-secondary-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
 												placeholder={
 													isSignupMode
-														? "Enter your username"
-														: "Enter your username or email"
+														? t("Enter your username")
+														: t("Enter your username or email")
 												}
 											/>
 											<div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-20 flex items-center">
@@ -714,7 +756,7 @@ const Login = () => {
 														htmlFor={firstNameId}
 														className="block text-sm font-medium text-secondary-900 dark:text-secondary-100"
 													>
-														First Name
+														{t("First Name")}
 													</label>
 													<div className="mt-1 relative">
 														<div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -728,7 +770,7 @@ const Login = () => {
 															value={formData.firstName}
 															onChange={handleInputChange}
 															className="appearance-none rounded-md relative block w-full pl-10 pr-3 py-2 border border-secondary-300 placeholder-secondary-500 text-secondary-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-															placeholder="Enter your first name"
+															placeholder={t("Enter your first name")}
 														/>
 													</div>
 												</div>
@@ -737,7 +779,7 @@ const Login = () => {
 														htmlFor={lastNameId}
 														className="block text-sm font-medium text-secondary-900 dark:text-secondary-100"
 													>
-														Last Name
+														{t("Last Name")}
 													</label>
 													<div className="mt-1 relative">
 														<div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -751,7 +793,7 @@ const Login = () => {
 															value={formData.lastName}
 															onChange={handleInputChange}
 															className="appearance-none rounded-md relative block w-full pl-10 pr-3 py-2 border border-secondary-300 placeholder-secondary-500 text-secondary-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-															placeholder="Enter your last name"
+															placeholder={t("Enter your last name")}
 														/>
 													</div>
 												</div>
@@ -761,7 +803,7 @@ const Login = () => {
 													htmlFor={emailId}
 													className="block text-sm font-medium text-secondary-900 dark:text-secondary-100"
 												>
-													Email
+													{t("Email")}
 												</label>
 												<div className="mt-1 relative">
 													<input
@@ -772,7 +814,7 @@ const Login = () => {
 														value={formData.email}
 														onChange={handleInputChange}
 														className="appearance-none rounded-md relative block w-full pl-10 pr-3 py-2 border border-secondary-300 placeholder-secondary-500 text-secondary-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-														placeholder="Enter your email"
+														placeholder={t("Enter your email")}
 													/>
 													<div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-20 flex items-center">
 														<Mail size={20} color="#64748b" strokeWidth={2} />
@@ -787,7 +829,7 @@ const Login = () => {
 											htmlFor={passwordId}
 											className="block text-sm font-medium text-secondary-900 dark:text-secondary-100"
 										>
-											Password
+											{t("Password")}
 										</label>
 										<div className="mt-1 relative">
 											<input
@@ -798,7 +840,7 @@ const Login = () => {
 												value={formData.password}
 												onChange={handleInputChange}
 												className="appearance-none rounded-md relative block w-full pl-10 pr-10 py-2 border border-secondary-300 placeholder-secondary-500 text-secondary-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-												placeholder="Enter your password"
+												placeholder={t("Enter your password")}
 											/>
 											<div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-20 flex items-center">
 												<Lock size={20} color="#64748b" strokeWidth={2} />
@@ -843,12 +885,14 @@ const Login = () => {
 										{isLoading ? (
 											<div className="flex items-center">
 												<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-												{isSignupMode ? "Creating account..." : "Signing in..."}
+												{isSignupMode
+													? t("Creating account...")
+													: t("Signing in...")}
 											</div>
 										) : isSignupMode ? (
-											"Create Account"
+											t("Create Account")
 										) : (
-											"Sign in"
+											t("Sign in")
 										)}
 									</button>
 								</div>
@@ -864,7 +908,7 @@ const Login = () => {
 											</div>
 											<div className="relative flex justify-center text-sm">
 												<span className="px-2 bg-white dark:bg-secondary-900 text-secondary-500">
-													or
+													{t("or")}
 												</span>
 											</div>
 										</div>
@@ -878,7 +922,10 @@ const Login = () => {
 										className={`${oidcConfig.disableLocalAuth ? "" : "mt-4"} w-full flex justify-center py-2 px-4 border border-secondary-300 dark:border-secondary-600 rounded-md shadow-sm text-sm font-medium text-secondary-700 dark:text-secondary-200 bg-white dark:bg-secondary-800 hover:bg-secondary-50 dark:hover:bg-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500`}
 										type="button"
 									>
-										{oidcConfig.buttonText || "Login with SSO"}
+										{buttonLabel(
+											oidcConfig.buttonText,
+											DEFAULT_OIDC_BUTTON_TEXT,
+										)}
 									</button>
 								</div>
 							)}
@@ -895,7 +942,10 @@ const Login = () => {
 										type="button"
 									>
 										<DiscordIcon className="h-5 w-5" />
-										{discordConfig.buttonText || "Login with Discord"}
+										{buttonLabel(
+											discordConfig.buttonText,
+											DEFAULT_DISCORD_BUTTON_TEXT,
+										)}
 									</button>
 								</div>
 							)}
@@ -904,14 +954,14 @@ const Login = () => {
 								<div className="text-center">
 									<p className="text-sm text-secondary-700 dark:text-white">
 										{isSignupMode
-											? "Already have an account?"
-											: "Don't have an account?"}{" "}
+											? t("Already have an account?")
+											: t("Don't have an account?")}{" "}
 										<button
 											type="button"
 											onClick={toggleMode}
 											className="font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300 focus:outline-none focus:underline"
 										>
-											{isSignupMode ? "Sign in" : "Sign up"}
+											{isSignupMode ? t("Sign in") : t("Sign up")}
 										</button>
 									</p>
 								</div>
@@ -927,7 +977,7 @@ const Login = () => {
 												? new Date(settings.updated_at).getTime()
 												: Date.now()
 										}`}
-										alt="PatchMon Logo"
+										alt={t("PatchMon Logo")}
 										className="h-16 w-16"
 										onError={(e) => {
 											e.target.src = `/assets/logo_square_default.svg?v=${Date.now()}`;
@@ -935,11 +985,12 @@ const Login = () => {
 									/>
 								</div>
 								<h3 className="mt-4 text-lg font-medium text-secondary-900 dark:text-secondary-100">
-									Two-Factor Authentication
+									{t("Two-Factor Authentication")}
 								</h3>
 								<p className="mt-2 text-sm text-secondary-600 dark:text-white">
-									Enter the code from your authenticator app, or use a backup
-									code
+									{t(
+										"Enter the code from your authenticator app, or use a backup code",
+									)}
 								</p>
 							</div>
 
@@ -948,7 +999,7 @@ const Login = () => {
 									htmlFor={tokenId}
 									className="block text-sm font-medium text-secondary-900 dark:text-secondary-100"
 								>
-									Verification Code
+									{t("Verification Code")}
 								</label>
 								<div className="mt-1">
 									<input
@@ -959,13 +1010,13 @@ const Login = () => {
 										value={tfaData.token}
 										onChange={handleTfaInputChange}
 										className="appearance-none rounded-md relative block w-full px-3 py-2 border border-secondary-300 placeholder-secondary-500 text-secondary-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm text-center text-lg font-mono tracking-widest uppercase"
-										placeholder="Enter code"
+										placeholder={t("Enter code")}
 										maxLength="6"
 										pattern="[A-Z0-9]{6}"
 									/>
 								</div>
 								<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-									Enter a 6-digit TOTP code or a 6-character backup code
+									{t("Enter a 6-digit TOTP code or a 6-character backup code")}
 								</p>
 							</div>
 
@@ -982,7 +1033,7 @@ const Login = () => {
 									htmlFor={rememberMeId}
 									className="ml-2 block text-sm text-secondary-900 dark:text-secondary-200"
 								>
-									Remember me on this computer (skip TFA for 30 days)
+									{t("Remember me on this computer (skip TFA for 30 days)")}
 								</label>
 							</div>
 
@@ -1006,10 +1057,10 @@ const Login = () => {
 									{isLoading ? (
 										<div className="flex items-center">
 											<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-											Verifying...
+											{t("Verifying...")}
 										</div>
 									) : (
-										"Verify Code"
+										t("Verify Code")
 									)}
 								</button>
 
@@ -1023,7 +1074,7 @@ const Login = () => {
 										className="text-secondary-700 dark:text-secondary-200"
 										strokeWidth={2}
 									/>
-									Back to Login
+									{t("Back to Login")}
 								</button>
 							</div>
 						</form>

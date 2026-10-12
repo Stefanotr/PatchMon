@@ -6,9 +6,12 @@ Ce dépôt est un fork de [PatchMon/PatchMon](https://github.com/PatchMon/PatchM
 - la gestion des redémarrages, après un patch ou à la demande, avec leur historique ;
 - un agent qui ne se met jamais à jour pendant un patch ;
 - le tampon du fork : le serveur sait de quel dépôt il vient et suit les releases du fork ;
-- une veille des versions officielles.
+- une veille des versions officielles ;
+- l'interface en français (langue du navigateur, ou choisie dans le profil ou sur la page de connexion). Les écrans principaux sont traduits, les autres restent en anglais pour l'instant.
 
 Le détail de ces fonctionnalités, et les liens vers leur documentation, sont dans le [README](README.md#what-this-fork-adds). Ce fichier explique comment maintenir le fork : branches, versions, releases, serveurs.
+
+Pour traduire d'autres écrans, suis `frontend/src/i18n/README.md` : une phrase non traduite reste en anglais, et le test `translations.test.js` signale ce qui manque.
 
 ## Branches
 
@@ -82,7 +85,7 @@ Les étapes 1 à 5 sont faites. Elles restent ici pour refaire un fork de zéro.
    | `main` (*New branch ruleset*) | *Include by pattern* : `main` | *Restrict deletions*, *Block force pushes*. Pas de PR obligatoire, sinon *Sync fork* ne passe plus. |
    | `tags` (*New tag ruleset*) | *Include by pattern* : `v*` | *Restrict updates*, *Restrict deletions* : une release publiée ne bouge plus. |
 
-   - Pour *Require status checks to pass*, ajoute `Test (server)`, `Lint (server)`, `Build (server)`, `Agent Tests`, `Agent Lint`, `Agent Tests (windows-latest)` et `Secrets (Gitleaks)`. Ces checks tournent sur toutes les PR vers `fork`.
+   - Pour *Require status checks to pass*, ajoute `Test (server)`, `Lint (server)`, `Build (server)`, `Frontend Tests`, `Agent Tests`, `Agent Lint`, `Agent Tests (windows-latest)` et `Secrets (Gitleaks)`. Ces checks tournent sur toutes les PR vers `fork`.
    - N'ajoute pas `Biome (frontend)` : il ne tourne pas sur une PR qui ne touche que `docker/`, et cette PR resterait bloquée.
    - Une PR ne peut alors plus être fusionnée avant la fin des checks. En cas d'urgence, ajoute le rôle *Repository admin* dans la *Bypass list* du ruleset `fork`.
    - Pour supprimer ou déplacer un tag, désactive le ruleset `tags` le temps de l'opération.
@@ -186,6 +189,8 @@ tools/fork-release.sh --push   # tag v(X.Y.Z+1)-fork.1
 ```
 
 Puis ferme l'issue, et remets `main` à jour avec *Sync fork*.
+
+Les écrans traduits sont ceux où les conflits arrivent le plus souvent : le texte anglais y est entouré de `t()`. Pour un conflit, garde le code de PatchMon, entoure de nouveau ses textes de `t("...")`, puis lance `npx vitest run src/__tests__/i18n` dans `frontend/` : le test liste les phrases à ajouter dans `frontend/src/i18n/locales/fr/`. Une phrase oubliée s'affiche simplement en anglais.
 
 GitHub suspend les workflows planifiés d'un dépôt resté 60 jours sans activité. Pour le réactiver, lance le workflow à la main depuis l'onglet *Actions*.
 

@@ -1,0 +1,14 @@
+{
+	"Report fetch queued for {{successCount}} of {{count}} host_one": "Report fetch queued for {{successCount}} of {{count}} host",
+	"Report fetch queued for {{successCount}} of {{count}} host_other": "Report fetch queued for {{successCount}} of {{count}} hosts",
+	"{{count}} host selected_one": "{{count}} host selected",
+	"{{count}} host selected_other": "{{count}} hosts selected",
+	"{{count}} Updates_one": "{{count}} Updates",
+	"{{count}} Updates_other": "{{count}} Updates",
+	"Assigning {{count}} host:_one": "Assigning {{count}} host:",
+	"Assigning {{count}} host:_other": "Assigning {{count}} hosts:",
+	"You are about to permanently delete {{count}} host. This will remove all host data, including package information, update history, and API credentials._one": "You are about to permanently delete {{count}} host. This will remove all host data, including package information, update history, and API credentials.",
+	"You are about to permanently delete {{count}} host. This will remove all host data, including package information, update history, and API credentials._other": "You are about to permanently delete {{count}} hosts. This will remove all host data, including package information, update history, and API credentials.",
+	"Delete {{count}} Host_one": "Delete {{count}} Host",
+	"Delete {{count}} Host_other": "Delete {{count}} Hosts"
+}

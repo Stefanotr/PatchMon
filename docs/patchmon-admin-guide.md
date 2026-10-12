@@ -233,6 +233,7 @@ Your own account settings. Every authenticated user has access. Covers:
 - **Two-Factor Authentication**: enable or disable TOTP, regenerate backup codes
 - **Trusted Devices**: list and revoke "remember this device" exemptions from MFA challenges
 - **Dashboard preferences**: light/dark mode, card layout, default landing tab
+- **Language**: English or French. Without a choice, the browser's language applies; the sign-in page has the same selector. The choice is kept in the browser, not in the account, and switching reloads the page. French covers the navigation, sign-in, dashboard, hosts, host detail, patch wizard and restart dialogs; other screens are still in English, and text sent by the server or the agents (package names, error messages, reboot reasons) stays as it comes.
 
 Password policy rules are live: you cannot save a password that fails the server's policy. See PatchMon Environment Variables Reference: Password Policy.
 

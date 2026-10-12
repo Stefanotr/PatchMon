@@ -1,58 +1,60 @@
+import { useTranslation } from "react-i18next";
+import { tk } from "../i18n";
 import { QueuedStatusBadge } from "./QueuedStatusBadge";
 
 const STATUS_MAP = {
 	queued: {
 		class:
 			"bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200",
-		label: "Queued",
+		label: tk("Queued"),
 	},
 	pending_validation: {
 		class: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-		label: "Pending validation",
+		label: tk("Pending validation"),
 	},
 	pending_approval: {
 		class: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-		label: "Pending approval",
+		label: tk("Pending approval"),
 	},
 	validated: {
 		class:
 			"bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
-		label: "Validated",
+		label: tk("Validated"),
 	},
 	scheduled: {
 		class:
 			"bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200",
-		label: "Scheduled",
+		label: tk("Scheduled"),
 	},
 	running: {
 		class: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-		label: "Running",
+		label: tk("Running"),
 	},
 	completed: {
 		class: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-		label: "Completed",
+		label: tk("Completed"),
 	},
 	failed: {
 		class: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-		label: "Failed",
+		label: tk("Failed"),
 	},
 	approved: {
 		class:
 			"bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
-		label: "Approved",
+		label: tk("Approved"),
 	},
 	cancelled: {
 		class:
 			"bg-secondary-100 text-secondary-600 dark:bg-secondary-600 dark:text-secondary-200",
-		label: "Cancelled",
+		label: tk("Cancelled"),
 	},
 	timed_out: {
 		class: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-		label: "Timed out",
+		label: tk("Timed out"),
 	},
 	agent_disconnected: {
 		class: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-		label: "Agent disconnected",
+		label: tk("Agent disconnected"),
 	},
 };
 
@@ -60,6 +62,7 @@ const STATUS_MAP = {
  * Status badge for patch runs. For queued runs with scheduled_at, shows a countdown timer.
  */
 export function PatchRunStatusBadge({ run }) {
+	const { t } = useTranslation();
 	const status = run?.status ?? "";
 	const scheduledAt = run?.scheduled_at ?? null;
 
@@ -67,7 +70,8 @@ export function PatchRunStatusBadge({ run }) {
 		return <QueuedStatusBadge scheduledAt={scheduledAt} />;
 	}
 
-	const s = STATUS_MAP[status] || {
+	const known = STATUS_MAP[status];
+	const s = known || {
 		class: "bg-secondary-100 text-secondary-800",
 		label: status,
 	};
@@ -75,7 +79,7 @@ export function PatchRunStatusBadge({ run }) {
 		<span
 			className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${s.class}`}
 		>
-			{s.label}
+			{known ? t(s.label) : s.label}
 		</span>
 	);
 }

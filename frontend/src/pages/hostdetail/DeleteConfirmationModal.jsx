@@ -1,5 +1,12 @@
 import { AlertTriangle } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import ModalPortal from "../../components/ui/ModalPortal";
+
+// The host name is given to <Trans> as a component, not as a value: a value
+// is parsed as markup with the translation, a component's content is not.
+const QuotedHostName = ({ name }) => (
+	<span className="font-semibold">"{name}"</span>
+);
 
 const DeleteConfirmationModal = ({
 	host,
@@ -8,6 +15,7 @@ const DeleteConfirmationModal = ({
 	onConfirm,
 	isLoading,
 }) => {
+	const { t } = useTranslation();
 	if (!isOpen || !host) return null;
 
 	const modal = (
@@ -19,24 +27,29 @@ const DeleteConfirmationModal = ({
 					</div>
 					<div>
 						<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
-							Delete Host
+							{t("Delete Host")}
 						</h3>
 						<p className="text-sm text-secondary-600 dark:text-white">
-							This action cannot be undone
+							{t("This action cannot be undone")}
 						</p>
 					</div>
 				</div>
 
 				<div className="mb-6">
 					<p className="text-secondary-700 dark:text-white">
-						Are you sure you want to delete the host{" "}
-						<span className="font-semibold">"{host.friendly_name}"</span>?
+						<Trans
+							i18nKey="Are you sure you want to delete the host <name/>?"
+							components={{
+								name: <QuotedHostName name={host.friendly_name} />,
+							}}
+						/>
 					</p>
 					<div className="mt-3 p-3 bg-danger-50 dark:bg-danger-900 border border-danger-200 dark:border-danger-700 rounded-md">
 						<p className="text-sm text-danger-800 dark:text-danger-200">
-							<strong>Warning:</strong> This will permanently remove the host
-							and all its associated data, including package information and
-							update history.
+							<Trans
+								i18nKey="<strong>Warning:</strong> This will permanently remove the host and all its associated data, including package information and update history."
+								components={{ strong: <strong /> }}
+							/>
 						</p>
 					</div>
 				</div>
@@ -48,7 +61,7 @@ const DeleteConfirmationModal = ({
 						className="btn-outline"
 						disabled={isLoading}
 					>
-						Cancel
+						{t("Cancel")}
 					</button>
 					<button
 						type="button"
@@ -56,7 +69,7 @@ const DeleteConfirmationModal = ({
 						className="btn-danger"
 						disabled={isLoading}
 					>
-						{isLoading ? "Deleting..." : "Delete Host"}
+						{isLoading ? t("Deleting...") : t("Delete Host")}
 					</button>
 				</div>
 			</div>

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { History, Info, Power, RotateCcw, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { useToast } from "../contexts/ToastContext";
 import { adminHostsAPI } from "../utils/api";
@@ -37,6 +38,7 @@ export default function RestartHostModal({
 	needsReboot,
 	rebootReason,
 }) {
+	const { t } = useTranslation();
 	const toast = useToast();
 	const queryClient = useQueryClient();
 	// Every outcome is recorded in the host's Agent Activity.
@@ -60,18 +62,18 @@ export default function RestartHostModal({
 				hostId,
 				buildRebootRequest(choice, { mode: "always" }),
 			),
-		onSuccess: (res) => report(res, "Restart scheduled"),
+		onSuccess: (res) => report(res, t("Restart scheduled")),
 		onError: (err) => {
-			toast.error(errorText(err) || "Restart failed");
+			toast.error(errorText(err) || t("Restart failed"));
 			refreshHistory();
 		},
 	});
 
 	const cancel = useMutation({
 		mutationFn: () => adminHostsAPI.cancelHostReboot(hostId),
-		onSuccess: (res) => report(res, "Scheduled restart cancelled"),
+		onSuccess: (res) => report(res, t("Scheduled restart cancelled")),
 		onError: (err) => {
-			toast.error(errorText(err) || "Cancel failed");
+			toast.error(errorText(err) || t("Cancel failed"));
 			refreshHistory();
 		},
 	});
@@ -89,7 +91,7 @@ export default function RestartHostModal({
 					</div>
 					<div className="flex-1 min-w-0">
 						<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
-							Restart host
+							{t("Restart host")}
 						</h3>
 						<p className="text-sm text-secondary-600 dark:text-secondary-300 break-words">
 							{hostName}
@@ -99,7 +101,7 @@ export default function RestartHostModal({
 						type="button"
 						onClick={onClose}
 						className="text-secondary-400 hover:text-secondary-600"
-						aria-label="Close"
+						aria-label={t("Close")}
 					>
 						<X className="h-5 w-5" />
 					</button>
@@ -109,8 +111,11 @@ export default function RestartHostModal({
 					<div className="mb-4 flex items-start gap-2 rounded-md border border-warning-200 bg-warning-50 p-3 text-sm text-warning-800 dark:border-warning-800 dark:bg-warning-900/30 dark:text-warning-200">
 						<RotateCcw className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
 						<span>
-							A restart is pending on this host
-							{rebootReason ? `: ${rebootReason}` : "."}
+							{rebootReason
+								? t("A restart is pending on this host: {{reason}}", {
+										reason: rebootReason,
+									})
+								: t("A restart is pending on this host.")}
 						</span>
 					</div>
 				)}
@@ -118,8 +123,9 @@ export default function RestartHostModal({
 					<div className="mb-4 flex items-start gap-2 rounded-md border border-secondary-200 bg-secondary-50 p-3 text-sm text-secondary-700 dark:border-secondary-600 dark:bg-secondary-700/50 dark:text-secondary-200">
 						<Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
 						<span>
-							This host does not report a pending restart. Restarting it is
-							optional.
+							{t(
+								"This host does not report a pending restart. Restarting it is optional.",
+							)}
 						</span>
 					</div>
 				)}
@@ -127,10 +133,9 @@ export default function RestartHostModal({
 				<RestartOptions value={choice} onChange={setChoice} showMode={false} />
 
 				<p className="mt-4 text-xs text-secondary-500 dark:text-secondary-400">
-					Signed-in users are warned. Applications are closed when the countdown
-					ends, unsaved work included. The agent refuses the restart while a
-					patch run is in progress on this host, or when a restart is already
-					scheduled: cancel that one first to pick another time.
+					{t(
+						"Signed-in users are warned. Applications are closed when the countdown ends, unsaved work included. The agent refuses the restart while a patch run is in progress on this host, or when a restart is already scheduled: cancel that one first to pick another time.",
+					)}
 				</p>
 				<Link
 					to={restartHistoryPath(hostId)}
@@ -138,7 +143,7 @@ export default function RestartHostModal({
 					className="mt-2 inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
 				>
 					<History className="h-3 w-3" aria-hidden="true" />
-					Restart history
+					{t("Restart history")}
 				</Link>
 
 				<div className="mt-6 flex flex-wrap justify-between gap-3">
@@ -147,9 +152,11 @@ export default function RestartHostModal({
 						onClick={() => cancel.mutate()}
 						className="btn-outline text-sm"
 						disabled={busy}
-						title="Cancel a restart scheduled on this host"
+						title={t("Cancel a restart scheduled on this host")}
 					>
-						{cancel.isPending ? "Cancelling..." : "Cancel scheduled restart"}
+						{cancel.isPending
+							? t("Cancelling...")
+							: t("Cancel scheduled restart")}
 					</button>
 					<button
 						type="button"
@@ -157,7 +164,7 @@ export default function RestartHostModal({
 						className="btn-danger text-sm"
 						disabled={busy || invalid}
 					>
-						{restart.isPending ? "Sending..." : "Schedule restart"}
+						{restart.isPending ? t("Sending...") : t("Schedule restart")}
 					</button>
 				</div>
 			</div>

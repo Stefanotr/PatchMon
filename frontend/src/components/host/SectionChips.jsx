@@ -7,24 +7,26 @@ import {
 	Server,
 	Shield,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import i18n, { tk } from "../../i18n";
 
 // Icon and label mapping for each section name an agent can report on.
 // New section keys: extend SECTION_META below.
 const SECTION_META = {
-	packages: { icon: Package, label: "Packages" },
-	metrics: { icon: Cpu, label: "Metrics" },
-	hostname: { icon: Server, label: "Hostname" },
-	interfaces: { icon: Network, label: "Interfaces" },
-	repos: { icon: Globe, label: "Repos" },
-	repositories: { icon: Globe, label: "Repos" },
-	compliance: { icon: Shield, label: "Compliance" },
-	docker: { icon: Container, label: "Docker" },
+	packages: { icon: Package, label: tk("Packages") },
+	metrics: { icon: Cpu, label: tk("Metrics") },
+	hostname: { icon: Server, label: tk("Hostname") },
+	interfaces: { icon: Network, label: tk("Interfaces") },
+	repos: { icon: Globe, label: tk("Repos") },
+	repositories: { icon: Globe, label: tk("Repos") },
+	compliance: { icon: Shield, label: tk("Compliance") },
+	docker: { icon: Container, label: tk("Docker") },
 };
 
 const FALLBACK = { icon: Package, label: null };
 
 const formatLabel = (key) => {
-	if (!key) return "Section";
+	if (!key) return i18n.t("Section");
 	return key
 		.toString()
 		.replace(/[_-]+/g, " ")
@@ -38,14 +40,18 @@ const formatLabel = (key) => {
 };
 
 const Chip = ({ name, variant }) => {
+	const { t } = useTranslation();
 	const meta = SECTION_META[name?.toLowerCase()] || FALLBACK;
 	const Icon = meta.icon;
-	const label = meta.label || formatLabel(name);
+	const label = meta.label ? t(meta.label) : formatLabel(name);
 
 	const tooltip =
 		variant === "updated"
-			? `${label} updated: agent sent fresh data this cycle`
-			: `${label} skipped: hash matched server's stored value, no payload sent`;
+			? t("{{label}} updated: agent sent fresh data this cycle", { label })
+			: t(
+					"{{label}} skipped: hash matched server's stored value, no payload sent",
+					{ label },
+				);
 
 	const baseClasses =
 		"inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap";

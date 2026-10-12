@@ -1,25 +1,28 @@
 import { formatDistanceToNow } from "date-fns";
 import { ChevronRight, History } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { dateFnsLocale } from "../../../i18n";
 import { PatchRunStatusBadge } from "../../PatchRunStatusBadge";
 
 const DISPLAY_LIMIT = 5;
 
 const PatchingRecentRuns = ({ data }) => {
+	const { t } = useTranslation();
 	const recent_runs = (data?.recent_runs || []).slice(0, DISPLAY_LIMIT);
 
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<div className="flex items-center justify-between mb-4 flex-shrink-0">
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-					Recent Runs
+					{t("Recent Runs")}
 				</h3>
 			</div>
 
 			{recent_runs.length === 0 ? (
 				<div className="flex flex-col items-center justify-center py-6 text-secondary-400 dark:text-white flex-1">
 					<History className="h-8 w-8 mb-2" />
-					<p className="text-sm">No patch runs yet</p>
+					<p className="text-sm">{t("No patch runs yet")}</p>
 				</div>
 			) : (
 				<div className="flex flex-col flex-1 min-h-0">
@@ -28,13 +31,13 @@ const PatchingRecentRuns = ({ data }) => {
 							<thead className="bg-secondary-50 dark:bg-secondary-700/50">
 								<tr>
 									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-										Host
+										{t("Host")}
 									</th>
 									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-										Status
+										{t("Status")}
 									</th>
 									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-										When
+										{t("When")}
 									</th>
 								</tr>
 							</thead>
@@ -60,6 +63,7 @@ const PatchingRecentRuns = ({ data }) => {
 										<td className="px-3 py-1.5 whitespace-nowrap text-secondary-500 dark:text-white text-xs">
 											{formatDistanceToNow(new Date(run.created_at), {
 												addSuffix: true,
+												locale: dateFnsLocale(),
 											})}
 										</td>
 									</tr>
@@ -71,7 +75,7 @@ const PatchingRecentRuns = ({ data }) => {
 						to="/patching?tab=runs"
 						className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:underline flex-shrink-0"
 					>
-						View all runs
+						{t("View all runs")}
 						<ChevronRight className="h-4 w-4" />
 					</Link>
 				</div>
