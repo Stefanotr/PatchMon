@@ -16,6 +16,7 @@ import (
 	"patchmon-agent/internal/client"
 	"patchmon-agent/internal/logutil"
 	"patchmon-agent/internal/packages"
+	"patchmon-agent/internal/reboot"
 )
 
 // Windows patch runs.
@@ -80,6 +81,8 @@ type windowsPatchBackend interface {
 	// upgrades winget refused (packages.WinGetRefusals).
 	LoadWinGetRefusals() (*packages.WinGetRefusals, error)
 	SaveWinGetRefusals(*packages.WinGetRefusals) error
+	// ScheduleReboot asks Windows to restart the host after d.
+	ScheduleReboot(d time.Duration, msg string) error
 }
 
 // windowsHost is the production backend: the patcher, plus the state file in
@@ -108,6 +111,10 @@ func (h windowsHost) LoadWinGetRefusals() (*packages.WinGetRefusals, error) {
 	return packages.ReadWinGetRefusals(f)
 }
 
+func (h windowsHost) ScheduleReboot(d time.Duration, msg string) error {
+	return scheduleHostRestart(d, msg)
+}
+
 func (h windowsHost) SaveWinGetRefusals(r *packages.WinGetRefusals) error {
 	var b bytes.Buffer
 	if err := r.Encode(&b); err != nil {
@@ -124,9 +131,11 @@ type windowsPatchServer interface {
 }
 
 type windowsPatchRequest struct {
+	runID     string
 	patchType string
 	names     []string
 	dryRun    bool
+	restart   reboot.Options
 }
 
 type windowsPatchOptions struct {
@@ -159,7 +168,7 @@ type windowsPatchOutcome struct {
 var windowsPatchMu sync.Mutex
 
 // runPatchWindows wires a Windows patch run to the server.
-func runPatchWindows(ctx context.Context, httpClient *client.Client, patchRunID, patchType string, packageNames []string, dryRun bool) error {
+func runPatchWindows(ctx context.Context, httpClient *client.Client, patchRunID, patchType string, packageNames []string, dryRun bool, restart reboot.Options) error {
 	if !windowsPatchMu.TryLock() {
 		msg := "another Windows patch run is already in progress on this host"
 		_ = httpClient.SendPatchOutput(ctx, patchRunID, "failed", "", msg)
@@ -184,7 +193,7 @@ func runPatchWindows(ctx context.Context, httpClient *client.Client, patchRunID,
 	sink := newStreamSink(httpClient, patchRunID, &fullOutput)
 
 	outcome := executeWindowsPatch(ctx,
-		windowsPatchRequest{patchType: patchType, names: packageNames, dryRun: dryRun},
+		windowsPatchRequest{runID: patchRunID, patchType: patchType, names: packageNames, dryRun: dryRun, restart: restart},
 		newWindowsHost(),
 		windowsPatchServerClient{client: httpClient, patchRunID: patchRunID},
 		sink, defaultWindowsPatchOptions)
@@ -294,6 +303,9 @@ type windowsRun struct {
 	skipped   int
 	attempted int
 	reboot    bool
+	// installerTimedOut: an item outlived its timeout. Only the process the
+	// agent started was killed; the installer it launched may still run.
+	installerTimedOut bool
 	// refusals holds the upgrades winget refused, in this run or before.
 	refusals *packages.WinGetRefusals
 }
@@ -327,9 +339,12 @@ func executeWindowsPatch(ctx context.Context, req windowsPatchRequest, be window
 
 	if !req.dryRun {
 		r.install(inv, runnable)
-		if r.attempted > 0 {
+		needed := false
+		// The restart state is read when something was installed, and when
+		// the run may restart the host, which needs to know.
+		if r.attempted > 0 || req.restart.Enabled() {
 			pending, reason := be.RebootPending()
-			needed := r.reboot || pending
+			needed = r.reboot || pending
 			switch {
 			case pending:
 				r.printf("Restart required: yes (%s)\n", packages.OneLine(reason))
@@ -338,11 +353,37 @@ func executeWindowsPatch(ctx context.Context, req windowsPatchRequest, be window
 			default:
 				r.printf("Restart required: no\n")
 			}
-			srv.ReportReboot(needed)
+			if r.attempted > 0 {
+				srv.ReportReboot(needed)
+			}
 		}
 		r.saveRefusals()
+		r.restart(needed)
 	}
 	return r.finish(len(runnable))
+}
+
+// restart applies the run's restart option. A stopped run never restarts the
+// host, nor one whose installer may still be running. A run with failed
+// items still does: on Windows an item fails on its own (an app left open,
+// an update withdrawn) without leaving the system half changed, and the
+// updates that did install need the restart to finish. A run that failed
+// before installing anything has nothing to finish.
+func (r *windowsRun) restart(needed bool) {
+	blocked := ""
+	switch err := r.ctx.Err(); {
+	case errors.Is(err, context.DeadlineExceeded):
+		blocked = "the run reached its time limit"
+	case err != nil:
+		blocked = "the run was stopped"
+	case r.installerTimedOut:
+		blocked = "an installer timed out and may still be running; restart by hand once it is done"
+	case r.attempted == 0 && len(r.failed) > 0:
+		blocked = "the run failed before installing anything"
+	}
+	if err := scheduleRestart(r.out, r.req.runID, r.req.restart, needed, blocked, r.be.ScheduleReboot); err != nil {
+		r.failed = append(r.failed, "restart")
+	}
 }
 
 // loadRefusals reads the upgrades winget refused in earlier runs and drops
@@ -598,6 +639,9 @@ func (r *windowsRun) installOne(inv packages.WindowsInventory, t packages.Window
 	})
 	if err != nil {
 		res = packages.ItemResult{Status: packages.StatusFail, Detail: err.Error()}
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timed out") {
+			r.installerTimedOut = true
+		}
 	}
 
 	r.status(res.Status, t.Name, res.Detail)

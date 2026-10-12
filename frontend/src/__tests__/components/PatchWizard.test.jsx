@@ -36,7 +36,9 @@ vi.mock("../../utils/api", () => ({
 	packagesAPI: { getHosts: vi.fn() },
 }));
 
-vi.mock("../../utils/patchingApi", () => ({
+vi.mock("../../utils/patchingApi", async (importOriginal) => ({
+	// The restart helpers are pure; only the API calls are faked.
+	...(await importOriginal()),
 	patchingAPI: {
 		trigger: vi.fn(),
 		approveRun: vi.fn(),
@@ -554,6 +556,55 @@ describe("PatchWizard validation", () => {
 			null,
 			["pkg"],
 			{ dry_run: true },
+		);
+	});
+});
+
+describe("PatchWizard restart option", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		patchingAPI.getPreviewRun.mockResolvedValue({});
+		patchingAPI.trigger.mockImplementation(async (hostId) => ({
+			patch_run_id: `run-${hostId}`,
+		}));
+	});
+
+	it("sends the restart choice with the run, and blocks an invalid one", async () => {
+		renderWizard([HOSTS[0]], { initialStep: 0 });
+
+		fireEvent.change(screen.getByLabelText("Restart after patching"), {
+			target: { value: "if_needed" },
+		});
+		const delay = screen.getByLabelText("Delay in minutes");
+		const next = screen.getByRole("button", { name: /Next/ });
+
+		fireEvent.change(delay, { target: { value: "1" } });
+		expect(next).toBeDisabled();
+
+		fireEvent.change(delay, { target: { value: "15" } });
+		expect(next).not.toBeDisabled();
+		await clickAndSettle(next);
+		await clickAndSettle(screen.getByRole("button", { name: /Next/ }));
+		await clickAndSettle(confirmButton());
+
+		expect(patchingAPI.trigger).toHaveBeenCalledWith(
+			"h1",
+			"patch_all",
+			null,
+			null,
+			{ reboot: { mode: "if_needed", delay_minutes: 15 } },
+		);
+	});
+
+	it("sends no restart by default", async () => {
+		renderWizard([HOSTS[0]]);
+		await clickAndSettle(confirmButton());
+		expect(patchingAPI.trigger).toHaveBeenCalledWith(
+			"h1",
+			"patch_all",
+			null,
+			null,
+			{},
 		);
 	});
 });

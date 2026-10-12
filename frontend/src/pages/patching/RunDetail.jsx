@@ -22,7 +22,11 @@ import {
 import { PatchRunStatusBadge } from "../../components/PatchRunStatusBadge";
 import { useToast } from "../../contexts/ToastContext";
 import { formatDate } from "../../utils/api";
-import { buildRunStreamURL, patchingAPI } from "../../utils/patchingApi";
+import {
+	buildRunStreamURL,
+	describeReboot,
+	patchingAPI,
+} from "../../utils/patchingApi";
 import { hasExtraDependencies } from "../../utils/patchRun";
 
 // Statuses where we should open the live WebSocket stream and show the Stop
@@ -412,6 +416,7 @@ const RunDetail = () => {
 	const hasExtraDeps = hasExtraDependencies(run);
 
 	const hasPolicy = Boolean(run.policy_name || run.policy_snapshot);
+	const rebootDetail = describeReboot(run.policy_snapshot?.reboot);
 	const showDefaultPolicy = !hasPolicy && !run.dry_run;
 
 	const handleCopyOutput = async () => {
@@ -646,6 +651,11 @@ const RunDetail = () => {
 														Runs immediately on trigger
 													</p>
 												</>
+											)}
+											{rebootDetail && (
+												<p className="text-xs text-secondary-500 dark:text-secondary-400">
+													{rebootDetail}
+												</p>
 											)}
 										</div>
 									</div>

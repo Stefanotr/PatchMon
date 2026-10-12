@@ -139,6 +139,38 @@ type RunPatchPayload struct {
 	PackageName  *string  `json:"package_name,omitempty"`
 	PackageNames []string `json:"package_names,omitempty"`
 	DryRun       bool     `json:"dry_run,omitempty"`
+	// Reboot asks the agent to restart the host once the run is over.
+	Reboot *RebootOptions `json:"reboot,omitempty"`
+}
+
+// runPatchMessage builds the run_patch message sent to the agent. A dry run
+// never carries restart options.
+func runPatchMessage(p RunPatchPayload) map[string]any {
+	msg := map[string]any{
+		"type":         "run_patch",
+		"patch_run_id": p.PatchRunID,
+		"patch_type":   p.PatchType,
+		"dry_run":      p.DryRun,
+	}
+	if p.PackageName != nil {
+		msg["package_name"] = *p.PackageName
+	}
+	if len(p.PackageNames) > 0 {
+		msg["package_names"] = p.PackageNames
+	}
+	if p.Reboot != nil && !p.DryRun {
+		msg["reboot"] = p.Reboot
+	}
+	return msg
+}
+
+// RebootOptions is the restart part of a run or of a restart command, in the
+// form the agent reads (agent internal/reboot.Options).
+type RebootOptions struct {
+	Mode         string     `json:"mode"`
+	DelayMinutes int        `json:"delay_minutes,omitempty"`
+	At           *time.Time `json:"at,omitempty"`
+	Message      string     `json:"message,omitempty"`
 }
 
 // NewRunPatchTask creates a run_patch task.
@@ -719,20 +751,7 @@ func (h *RunPatchHandler) ProcessTask(ctx context.Context, t *asynq.Task) error 
 		return nil
 	}
 
-	// Build run_patch payload
-	payload := map[string]interface{}{
-		"type":         "run_patch",
-		"patch_run_id": p.PatchRunID,
-		"patch_type":   p.PatchType,
-		"dry_run":      p.DryRun,
-	}
-	if p.PackageName != nil {
-		payload["package_name"] = *p.PackageName
-	}
-	if len(p.PackageNames) > 0 {
-		payload["package_names"] = p.PackageNames
-	}
-	msg, err := json.Marshal(payload)
+	msg, err := json.Marshal(runPatchMessage(p))
 	if err != nil {
 		return err
 	}

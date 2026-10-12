@@ -25,6 +25,7 @@ import {
 	Monitor,
 	Package,
 	Play,
+	Power,
 	RefreshCw,
 	Send,
 	Server,
@@ -58,6 +59,7 @@ import { PackageListDisplay } from "../components/PackageListDisplay";
 import { PatchRunStatusBadge } from "../components/PatchRunStatusBadge";
 import PatchWizard from "../components/PatchWizard";
 import RdpViewer from "../components/RdpViewer";
+import RestartHostModal from "../components/RestartHostModal";
 import SshTerminal from "../components/SshTerminal";
 import TierBadge from "../components/TierBadge";
 import UpgradeRequiredContent from "../components/UpgradeRequiredContent";
@@ -123,7 +125,7 @@ const HostDetail = () => {
 	const [searchParams, setSearchParams] = useSearchParams();
 	const queryClient = useQueryClient();
 	const toast = useToast();
-	const { canManageHosts, hasModule } = useAuth();
+	const { canManageHosts, canManagePatching, hasModule } = useAuth();
 	const [showCredentialsModal, setShowCredentialsModal] = useState(false);
 
 	// Get plaintext API key from navigation state (only available immediately after host creation)
@@ -176,6 +178,7 @@ const HostDetail = () => {
 	// State for Apply pending config modal
 	const [showApplyConfigModal, setShowApplyConfigModal] = useState(false);
 	const [showPatchConfirmModal, setShowPatchConfirmModal] = useState(false);
+	const [showRestartModal, setShowRestartModal] = useState(false);
 
 	// Ref to track component mount state for setTimeout cleanup
 	const isMountedRef = useRef(true);
@@ -1440,6 +1443,22 @@ const HostDetail = () => {
 								<Wrench className="h-4 w-4" />
 								<span className="hidden sm:inline">Patch all</span>
 								<span className="sm:hidden">Patch</span>
+							</button>
+						)}
+						{canManagePatching() && hasModule("patching") && (
+							<button
+								type="button"
+								onClick={() => setShowRestartModal(true)}
+								disabled={!wsStatus?.connected}
+								className="btn-outline flex items-center gap-2 text-sm whitespace-nowrap"
+								title={
+									!wsStatus?.connected
+										? "Agent must be connected to restart the host"
+										: "Restart this host now or later, or cancel a scheduled restart"
+								}
+							>
+								<Power className="h-4 w-4" />
+								<span className="hidden sm:inline">Restart</span>
 							</button>
 						)}
 						{reportMessage.text && (
@@ -5698,6 +5717,13 @@ const HostDetail = () => {
 					</div>
 				</div>
 			</div>
+
+			<RestartHostModal
+				hostId={hostId}
+				hostName={host?.friendly_name || host?.hostname}
+				isOpen={showRestartModal}
+				onClose={() => setShowRestartModal(false)}
+			/>
 
 			{/* Credentials Modal */}
 			{showCredentialsModal && (

@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -561,10 +563,22 @@ func (h *PatchingHandler) ApproveRun(w http.ResponseWriter, r *http.Request) {
 
 	// Parse optional body for schedule_override.
 	var body struct {
-		ScheduleOverride string `json:"schedule_override"`
+		ScheduleOverride string         `json:"schedule_override"`
+		Reboot           *rebootRequest `json:"reboot"`
 	}
+	// The body is optional, but one that does not decode is refused:
+	// encoding/json carries on past a type error, which would turn a
+	// malformed restart time into the default delay.
 	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			JSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
+			return
+		}
+	}
+	rebootOpts, err := body.Reboot.forRun(time.Now())
+	if err != nil {
+		JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 
 	host, err := h.hosts.GetByID(r.Context(), valRun.HostID)
@@ -631,6 +645,7 @@ func (h *PatchingHandler) ApproveRun(w http.ResponseWriter, r *http.Request) {
 			"patch_delay_type": "immediate",
 		})
 	}
+	policySnap = snapshotWithReboot(policySnap, rebootOpts)
 
 	// Create the new patch run ID and job ID up-front so the task can reference it.
 	newRunID := uuid.New().String()
@@ -645,6 +660,7 @@ func (h *PatchingHandler) ApproveRun(w http.ResponseWriter, r *http.Request) {
 		PackageName:  pkgName,
 		PackageNames: pkgNames,
 		DryRun:       false,
+		Reboot:       rebootOpts,
 	})
 	if err != nil {
 		h.log.Error("patching: create approve task error", "error", err)
@@ -888,6 +904,9 @@ func (h *PatchingHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		// for any patch_type (including patch_all, which cannot dry-run).
 		PendingApproval  bool   `json:"pending_approval"`
 		ScheduleOverride string `json:"schedule_override"` // "immediate" to bypass policy delay
+		// Reboot restarts the host after a real run. Ignored for dry runs and
+		// for runs submitted for approval: the approver chooses then.
+		Reboot *rebootRequest `json:"reboot"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		JSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
@@ -908,6 +927,15 @@ func (h *PatchingHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 	if body.DryRun && body.PendingApproval {
 		JSON(w, http.StatusBadRequest, map[string]string{"error": "dry_run and pending_approval are mutually exclusive"})
 		return
+	}
+
+	var rebootOpts *queue.RebootOptions
+	if !body.DryRun && !body.PendingApproval {
+		var err error
+		if rebootOpts, err = body.Reboot.forRun(time.Now()); err != nil {
+			JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 
 	host, err := h.hosts.GetByID(r.Context(), body.HostID)
@@ -1003,6 +1031,7 @@ func (h *PatchingHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 			"patch_delay_type": "immediate",
 		})
 	}
+	policySnapshot = snapshotWithReboot(policySnapshot, rebootOpts)
 	// Pending-approval runs land in their own "pending_approval" status: they
 	// never executed anything on the host (so they're not pending_validation,
 	// which implies an in-flight dry-run), they're just waiting for an
@@ -1042,6 +1071,7 @@ func (h *PatchingHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		PackageName:  pkgName,
 		PackageNames: pkgNames,
 		DryRun:       body.DryRun,
+		Reboot:       rebootOpts,
 	})
 	if err != nil {
 		h.log.Error("patching: create task error", "error", err)

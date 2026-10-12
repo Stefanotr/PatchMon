@@ -11,6 +11,7 @@ import {
 	ChevronUp,
 	Clock,
 	Eye,
+	Power,
 	RefreshCw,
 	Send,
 	Server,
@@ -24,8 +25,15 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
 import { formatDate, packagesAPI } from "../utils/api";
-import { patchingAPI, pollDryRunUntilDone } from "../utils/patchingApi";
+import {
+	buildRebootRequest,
+	DEFAULT_RESTART_CHOICE,
+	patchingAPI,
+	pollDryRunUntilDone,
+	restartChoiceError,
+} from "../utils/patchingApi";
 import { extraDependencies } from "../utils/patchRun";
+import RestartOptions from "./RestartOptions";
 
 const DRY_RUN_PACKAGE_LIMIT = 5;
 // Dry runs triggered at once, then dry runs polled at once (one request every
@@ -378,6 +386,11 @@ export default function PatchWizard({
 	const [expandedOutput, setExpandedOutput] = useState(null);
 	// Per-target policy override: targetId -> "default" | policyId | "immediate"
 	const [policyOverrides, setPolicyOverrides] = useState({});
+	// Whether the hosts restart once their run is over; one choice for the
+	// whole submission. Not sent when the run is submitted for approval: the
+	// approver chooses then.
+	const [restartChoice, setRestartChoice] = useState(DEFAULT_RESTART_CHOICE);
+	const restartInvalid = Boolean(restartChoiceError(restartChoice));
 	// Per-target: which rows have dependencies expanded in the Submit step
 	const [expandedDepsByTarget, setExpandedDepsByTarget] = useState({});
 	// Per-target outcome of the submit attempts:
@@ -743,6 +756,8 @@ export default function PatchWizard({
 		// action.
 		const userChoseSubmit = !isApprove && approvalDecision === "submit";
 		const nextSubmitMode = userChoseSubmit ? "approval" : "patch";
+		// Built once so every host gets the same restart time.
+		const reboot = buildRebootRequest(restartChoice);
 		// A validation still running on the host counts: it becomes a
 		// validated run waiting for approval once it finishes.
 		const targetHasPendingRun = (id) => {
@@ -802,8 +817,10 @@ export default function PatchWizard({
 			// policy ID) is silently ignored. Only send the override on the
 			// wire when it actually does something — sending "default" was a
 			// no-op but looked like an instruction.
-			const overrideBody =
-				override === "immediate" ? { schedule_override: "immediate" } : {};
+			const overrideBody = {
+				...(override === "immediate" ? { schedule_override: "immediate" } : {}),
+				...(reboot ? { reboot } : {}),
+			};
 
 			let response;
 			if (isApprove) {
@@ -1722,6 +1739,27 @@ export default function PatchWizard({
 									</div>
 								);
 							})}
+
+							{/* Restart after the run, for every host above. */}
+							<div className="border border-secondary-200 dark:border-secondary-600 rounded-lg px-4 py-3 bg-white dark:bg-secondary-800">
+								<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-2 flex items-center gap-1">
+									<Power className="h-3 w-3" />
+									Restart
+								</p>
+								<RestartOptions
+									value={restartChoice}
+									onChange={setRestartChoice}
+								/>
+								{restartChoice.mode !== "never" && (
+									<p className="mt-2 text-[11px] text-secondary-500 dark:text-secondary-400">
+										The agent restarts the host once the run is over, never
+										after a dry run or a stopped run, nor after a failed run on
+										Linux. Signed-in users are warned; applications are closed
+										when the countdown ends. Ignored if you submit the run for
+										approval: the approver chooses then.
+									</p>
+								)}
+							</div>
 						</div>
 					)}
 
@@ -2271,7 +2309,8 @@ export default function PatchWizard({
 							<button
 								type="button"
 								onClick={goNext}
-								className="btn-primary inline-flex items-center gap-1.5"
+								disabled={restartInvalid}
+								className="btn-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Next
 								<ArrowRight className="h-4 w-4" />

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"patchmon-agent/internal/packages"
+	"patchmon-agent/internal/reboot"
 )
 
 // fakeWindowsBackend stands in for the host. Every call is recorded so tests
@@ -37,6 +39,7 @@ type fakeWindowsBackend struct {
 	// reading it.
 	stateFile []byte
 	stateErr  error
+	rebootErr error
 }
 
 func (f *fakeWindowsBackend) record(c string) {
@@ -74,6 +77,10 @@ func (f *fakeWindowsBackend) InstallWUA(ctx context.Context, u packages.WUAUpdat
 	if f.onInstall != nil {
 		f.onInstall(ctx, out)
 	}
+	// Like the real backend, an item whose time ran out is an error.
+	if ctx.Err() != nil {
+		return packages.ItemResult{}, fmt.Errorf("timed out: %w", ctx.Err())
+	}
 	if r, ok := f.wuaRes[u.GUID]; ok {
 		return r, nil
 	}
@@ -84,6 +91,9 @@ func (f *fakeWindowsBackend) UpgradeWinGet(ctx context.Context, _ string, app pa
 	f.record("upgrade-winget " + app.ID)
 	if f.onInstall != nil {
 		f.onInstall(ctx, out)
+	}
+	if ctx.Err() != nil {
+		return packages.ItemResult{}, fmt.Errorf("timed out: %w", ctx.Err())
 	}
 	if r, ok := f.wingetRes[app.ID]; ok {
 		return r, nil
@@ -110,6 +120,11 @@ func (f *fakeWindowsBackend) SaveWinGetRefusals(r *packages.WinGetRefusals) erro
 	}
 	f.stateFile = b.Bytes()
 	return nil
+}
+
+func (f *fakeWindowsBackend) ScheduleReboot(d time.Duration, msg string) error {
+	f.record(fmt.Sprintf("schedule-reboot %s %s", d, msg))
+	return f.rebootErr
 }
 
 func (f *fakeWindowsBackend) RebootPending() (bool, string) {
@@ -202,6 +217,7 @@ func fastWindowsOpts() windowsPatchOptions {
 
 func runWindows(ctx context.Context, t *testing.T, req windowsPatchRequest, be *fakeWindowsBackend, srv *fakeWindowsServer, opts windowsPatchOptions) (windowsPatchOutcome, string) {
 	t.Helper()
+	resetRestartState(t)
 	var out lockedBuffer
 	outcome := executeWindowsPatch(ctx, req, be, srv, &out, opts)
 	return outcome, out.String()
@@ -650,6 +666,122 @@ func TestWindowsUnreadableStateFileRetries(t *testing.T) {
 	}
 	if !strings.Contains(out, "could not read the upgrades winget refused before (not owned by SYSTEM or Administrators)") {
 		t.Errorf("warning missing:\n%s", out)
+	}
+}
+
+func scheduledReboots(calls []string) []string {
+	var out []string
+	for _, c := range calls {
+		if strings.HasPrefix(c, "schedule-reboot ") {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// The restart comes last, after the installs and the restart check, and
+// only on a real run that was not stopped.
+func TestWindowsRunRestartsWhenAsked(t *testing.T) {
+	ifNeeded := reboot.Options{Mode: reboot.ModeIfNeeded, DelayMinutes: 15, Message: "patch window"}
+	req := windowsPatchRequest{patchType: "patch_all", restart: ifNeeded}
+	srv := func() *fakeWindowsServer { return &fakeWindowsServer{known: []string{testCU.GUID, testDefender.GUID}} }
+
+	be := newFakeHost()
+	be.pending = true
+	outcome, out := runWindows(context.Background(), t, req, be, srv(), fastWindowsOpts())
+	calls := be.recorded()
+	got := scheduledReboots(calls)
+	if outcome.err != nil || len(got) != 1 || got[0] != "schedule-reboot 15m0s PatchMon: patch window" {
+		t.Fatalf("outcome %+v, reboots %v\n%s", outcome, got, out)
+	}
+	if slices.Index(calls, got[0]) < slices.Index(calls, "reboot-check") || slices.Index(calls, got[0]) < slices.Index(calls, "install-wua "+testDefender.GUID) {
+		t.Errorf("restart scheduled before the installs finished: %v", calls)
+	}
+	if !strings.Contains(out, "Restart: scheduled for") {
+		t.Errorf("output:\n%s", out)
+	}
+
+	// Nothing pending: no restart.
+	be = newFakeHost()
+	_, out = runWindows(context.Background(), t, req, be, srv(), fastWindowsOpts())
+	if len(scheduledReboots(be.recorded())) != 0 || !strings.Contains(out, "Restart: not needed") {
+		t.Errorf("restarted with nothing pending:\n%s", out)
+	}
+
+	// A dry run never restarts.
+	be = newFakeHost()
+	be.pending = true
+	dry := req
+	dry.dryRun, dry.restart = true, reboot.Options{Mode: reboot.ModeAlways}
+	_, out = runWindows(context.Background(), t, dry, be, srv(), fastWindowsOpts())
+	if len(scheduledReboots(be.recorded())) != 0 || strings.Contains(out, "Restart:") {
+		t.Errorf("dry run restarted:\n%s", out)
+	}
+
+	// "always" restarts even when there was nothing to install.
+	be = newFakeHost()
+	be.apps, be.scan.Updates = nil, nil
+	always := windowsPatchRequest{patchType: "patch_all", restart: reboot.Options{Mode: reboot.ModeAlways}}
+	runWindows(context.Background(), t, always, be, srv(), fastWindowsOpts())
+	if len(scheduledReboots(be.recorded())) != 1 {
+		t.Errorf("always did not restart: %v", be.recorded())
+	}
+}
+
+func TestWindowsStoppedRunDoesNotRestart(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	be := newFakeHost()
+	be.pending = true
+	be.onInstall = func(context.Context, io.Writer) { cancel() }
+	req := windowsPatchRequest{patchType: "patch_package", names: []string{"7zip.7zip"}, restart: reboot.Options{Mode: reboot.ModeAlways}}
+
+	_, out := runWindows(ctx, t, req, be, &fakeWindowsServer{}, fastWindowsOpts())
+
+	if len(scheduledReboots(be.recorded())) != 0 || !strings.Contains(out, "Restart: not scheduled, the run was stopped") {
+		t.Fatalf("stopped run restarted the host: %v\n%s", be.recorded(), out)
+	}
+}
+
+func TestWindowsRestartFailureFailsTheRun(t *testing.T) {
+	be := newFakeHost()
+	be.rebootErr = errors.New("a required privilege is not held by the client")
+	req := windowsPatchRequest{patchType: "patch_package", names: []string{"7zip.7zip"}, restart: reboot.Options{Mode: reboot.ModeAlways}}
+
+	outcome, out := runWindows(context.Background(), t, req, be, &fakeWindowsServer{}, fastWindowsOpts())
+
+	if outcome.err == nil || !strings.Contains(outcome.err.Error(), "restart") || !strings.Contains(out, "[ok] 7zip.7zip") {
+		t.Fatalf("outcome %+v\n%s", outcome, out)
+	}
+}
+
+// Only the process the agent started is killed on an item timeout; the
+// installer it launched may still be running, so no restart.
+func TestWindowsNoRestartAfterAnInstallerTimeout(t *testing.T) {
+	be := newFakeHost()
+	be.pending = true
+	be.onInstall = func(ctx context.Context, _ io.Writer) { <-ctx.Done() }
+	opts := fastWindowsOpts()
+	opts.wingetItemTimeout = 50 * time.Millisecond
+	req := windowsPatchRequest{patchType: "patch_package", names: []string{"7zip.7zip"}, restart: reboot.Options{Mode: reboot.ModeAlways}}
+
+	_, out := runWindows(context.Background(), t, req, be, &fakeWindowsServer{}, opts)
+
+	if len(scheduledReboots(be.recorded())) != 0 || !strings.Contains(out, "an installer timed out and may still be running") {
+		t.Fatalf("restarted after an installer timeout: %v\n%s", be.recorded(), out)
+	}
+}
+
+func TestWindowsNoRestartWhenNothingCouldBeInstalled(t *testing.T) {
+	be := newFakeHost()
+	be.appsErr = errors.New("winget listing failed")
+	be.scanErr = errors.New("0x8024402C")
+	req := windowsPatchRequest{patchType: "patch_all", restart: reboot.Options{Mode: reboot.ModeAlways}}
+
+	_, out := runWindows(context.Background(), t, req, be, &fakeWindowsServer{}, fastWindowsOpts())
+
+	if len(scheduledReboots(be.recorded())) != 0 || !strings.Contains(out, "the run failed before installing anything") {
+		t.Fatalf("restarted a host where nothing was installed: %v\n%s", be.recorded(), out)
 	}
 }
 

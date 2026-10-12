@@ -196,6 +196,15 @@ func (h *AgentWSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(agentWSPongWait))
 
+		// Answers to commands that wait for one (host restart).
+		var reply struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(message, &reply); err == nil && reply.Type == "reboot_result" {
+			agentReplies.deliver(apiID, message)
+			continue
+		}
+
 		// Forward SSH proxy messages to SSH terminal handler
 		if h.onSshProxyMessage != nil {
 			var msg struct {

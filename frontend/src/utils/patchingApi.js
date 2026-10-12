@@ -94,6 +94,117 @@ export async function pollDryRunUntilDone(runId, opts = {}) {
 	}
 }
 
+// Restart choices. The agent never restarts sooner than this after a run,
+// so its final status and the inventory refresh reach the server first.
+export const REBOOT_MIN_DELAY_MINUTES = 5;
+export const REBOOT_MAX_DELAY_MINUTES = 7 * 24 * 60;
+export const REBOOT_MAX_MESSAGE_LENGTH = 200;
+
+export const DEFAULT_RESTART_CHOICE = {
+	mode: "never",
+	when: "delay",
+	delayMinutes: 5,
+	atTime: "03:00",
+	message: "",
+};
+
+/**
+ * Next time the clock shows hh:mm in the browser's time zone: today if it is
+ * still ahead, tomorrow otherwise. The agent pushes a time closer than its
+ * minimum delay back to that minimum.
+ */
+export function nextOccurrence(hhmm, now = new Date()) {
+	const [h, m] = String(hhmm).split(":").map(Number);
+	const t = new Date(now);
+	t.setHours(h, m, 0, 0);
+	if (t.getTime() <= now.getTime()) {
+		t.setDate(t.getDate() + 1);
+	}
+	return t;
+}
+
+const utf8Length = (s) => new TextEncoder().encode(s).length;
+
+/**
+ * Validate a restart choice; returns an error message or null.
+ */
+export function restartChoiceError(choice) {
+	if (!choice || choice.mode === "never") return null;
+	if (utf8Length((choice.message || "").trim()) > REBOOT_MAX_MESSAGE_LENGTH) {
+		return `The message must be at most ${REBOOT_MAX_MESSAGE_LENGTH} bytes`;
+	}
+	if (choice.when === "at") {
+		return /^([01]\d|2[0-3]):[0-5]\d$/.test(choice.atTime || "")
+			? null
+			: "Pick a time of day";
+	}
+	const d = Number(choice.delayMinutes);
+	if (
+		!Number.isInteger(d) ||
+		d < REBOOT_MIN_DELAY_MINUTES ||
+		d > REBOOT_MAX_DELAY_MINUTES
+	) {
+		return `The delay must be between ${REBOOT_MIN_DELAY_MINUTES} and ${REBOOT_MAX_DELAY_MINUTES} minutes`;
+	}
+	return null;
+}
+
+/**
+ * Turn a restart choice into the API's reboot object, or null when nothing
+ * restarts. mode overrides the choice's mode (the restart command on a host
+ * always restarts).
+ */
+export function buildRebootRequest(choice, { mode, now = new Date() } = {}) {
+	const effectiveMode = mode || choice?.mode;
+	if (!choice || !effectiveMode || effectiveMode === "never") return null;
+	const body = { mode: effectiveMode };
+	if (choice.when === "at") {
+		body.at = nextOccurrence(choice.atTime, now).toISOString();
+	} else {
+		body.delay_minutes = Number(choice.delayMinutes);
+	}
+	const message = (choice.message || "").trim();
+	if (message) body.message = message;
+	return body;
+}
+
+/**
+ * Turn the server's answer to a restart or cancel command into a toast:
+ * { level: "success" | "warning", text }. 202 means the command went out but
+ * the agent did not answer in time, so nothing is confirmed.
+ */
+export function describeRestartAnswer(res, fallback) {
+	const data = res?.data || {};
+	if (res?.status === 202) {
+		return {
+			level: "warning",
+			text: data.message || "Sent to the agent, which did not answer",
+		};
+	}
+	const text = data.message || fallback;
+	return {
+		level: "success",
+		text: data.reboot_at
+			? `${text}, for ${new Date(data.reboot_at).toLocaleString()}`
+			: text,
+	};
+}
+
+/**
+ * Describe the restart option recorded on a run, for the run detail page.
+ */
+export function describeReboot(reboot) {
+	if (!reboot?.mode || reboot.mode === "never") return null;
+	const what =
+		reboot.mode === "always"
+			? "Restart after the run"
+			: "Restart after the run if one is needed";
+	const when = reboot.at
+		? `at ${new Date(reboot.at).toLocaleString()}`
+		: `${Math.max(reboot.delay_minutes || 0, REBOOT_MIN_DELAY_MINUTES)} min after it ends`;
+	return `${what}, ${when}`;
+}
+
 export const patchingAPI = {
 	getDashboard: () => api.get("/patching/dashboard").then((res) => res.data),
 	getRuns: (params = {}) =>
@@ -120,6 +231,7 @@ export const patchingAPI = {
 				...(opts.schedule_override
 					? { schedule_override: opts.schedule_override }
 					: {}),
+				...(opts.reboot ? { reboot: opts.reboot } : {}),
 			})
 			.then((res) => res.data),
 	approveRun: (id, opts = {}) =>
@@ -128,6 +240,7 @@ export const patchingAPI = {
 				...(opts.schedule_override
 					? { schedule_override: opts.schedule_override }
 					: {}),
+				...(opts.reboot ? { reboot: opts.reboot } : {}),
 			})
 			.then((res) => res.data),
 	retryValidation: (id) =>

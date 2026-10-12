@@ -30,6 +30,7 @@ import (
 	"patchmon-agent/internal/logutil"
 	"patchmon-agent/internal/packages"
 	"patchmon-agent/internal/pkgversion"
+	"patchmon-agent/internal/reboot"
 	"patchmon-agent/internal/system"
 	"patchmon-agent/internal/utils"
 	"patchmon-agent/pkg/models"
@@ -401,9 +402,13 @@ func runServiceLoop(stopCh <-chan struct{}) error {
 			case "docker_inventory_refresh":
 				logger.Info("Refreshing Docker inventory on server request...")
 				go refreshDockerInventory(ctx)
+			case "reboot":
+				go handleRestartCommand(m.reboot, m.requestID)
+			case "reboot_cancel":
+				go handleRestartCancel(m.requestID)
 			case "run_patch":
 				go func(msg wsMsg) {
-					if err := runPatch(msg.patchRunID, msg.patchType, msg.packageNames, msg.dryRun); err != nil {
+					if err := runPatch(msg.patchRunID, msg.patchType, msg.packageNames, msg.dryRun, msg.reboot); err != nil {
 						logger.WithError(err).Warn("run_patch failed")
 					} else {
 						logger.Info("run_patch completed successfully")
@@ -1174,6 +1179,10 @@ type wsMsg struct {
 	patchType    string
 	packageNames []string
 	dryRun       bool
+	// run_patch and reboot: whether and when to restart the host
+	reboot reboot.Options
+	// reboot and reboot_cancel: identifies the command in the agent's reply
+	requestID    string
 	sshProxyData string // SSH input data
 	// RDP proxy fields
 	rdpProxySessionID string // Unique session ID for RDP proxy
@@ -1702,6 +1711,10 @@ func connectOnce(out chan<- wsMsg, dockerEvents <-chan interface{}, backoff *tim
 			PackageName  string   `json:"package_name"`
 			PackageNames []string `json:"package_names"`
 			DryRun       bool     `json:"dry_run"`
+			// run_patch and reboot: restart options
+			Reboot *reboot.Options `json:"reboot"`
+			// reboot and reboot_cancel: echoed in the agent's reply
+			RequestID string `json:"request_id"`
 		}
 		if err := json.Unmarshal(data, &payload); err != nil {
 			logger.WithError(err).WithField("message_bytes", len(data)).Warn("Failed to parse WebSocket message")
@@ -1761,11 +1774,22 @@ func connectOnce(out chan<- wsMsg, dockerEvents <-chan interface{}, backoff *tim
 				logger.Warn("run_patch patch_package requires package_name or package_names")
 				continue
 			}
+			// Invalid restart options never restart the host; the run itself
+			// still goes ahead.
+			var restart reboot.Options
+			if payload.Reboot != nil && !payload.DryRun {
+				if err := payload.Reboot.Validate(); err != nil {
+					logger.WithError(err).Warn("Ignoring invalid restart options in run_patch")
+				} else {
+					restart = *payload.Reboot
+				}
+			}
 			logger.WithFields(logutil.SanitizeMap(map[string]interface{}{
 				"patch_run_id":  payload.PatchRunID,
 				"patch_type":    patchType,
 				"package_names": packageNames,
 				"dry_run":       payload.DryRun,
+				"restart":       string(restart.Mode),
 			})).Info("run_patch received")
 			dispatchWSMessage(out, wsMsg{
 				kind:         "run_patch",
@@ -1773,7 +1797,30 @@ func connectOnce(out chan<- wsMsg, dockerEvents <-chan interface{}, backoff *tim
 				patchType:    patchType,
 				packageNames: packageNames,
 				dryRun:       payload.DryRun,
+				reboot:       restart,
 			})
+		case "reboot", "reboot_cancel":
+			requestID := payload.RequestID
+			if requestID != "" && !requestIDPattern.MatchString(requestID) {
+				logger.Warn("Ignoring restart command with an invalid request_id")
+				continue
+			}
+			if payload.Type == "reboot_cancel" {
+				logger.Info("reboot_cancel received")
+				dispatchWSMessage(out, wsMsg{kind: "reboot_cancel", requestID: requestID})
+				continue
+			}
+			var restart reboot.Options
+			if payload.Reboot != nil {
+				restart = *payload.Reboot
+			}
+			if err := restart.Validate(); err != nil {
+				logger.WithError(err).Warn("Ignoring invalid reboot command")
+				sendRestartReply(restartReply{RequestID: requestID, Action: "reboot", Error: "invalid restart options"})
+				continue
+			}
+			logger.Info("reboot received")
+			dispatchWSMessage(out, wsMsg{kind: "reboot", reboot: restart, requestID: requestID})
 		case "compliance_scan":
 			// Validate profile ID to prevent command injection
 			if err := validateProfileID(payload.ProfileID); err != nil {
@@ -2328,15 +2375,20 @@ func aptOnlyUpgradeArgs(dryRun bool, packageNames []string) []string {
 // Supports apt-get (Debian/Ubuntu), dnf, yum (RHEL-based), pkg (FreeBSD), pacman (Arch),
 // and Windows (WinGet for applications + WUA COM API for OS updates, see serve_windows_patch.go).
 // When dryRun is true, simulates and sends dry_run_completed instead of completed.
-func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool) error {
+func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool, restart reboot.Options) error {
 	ctx, cancel := context.WithTimeout(context.Background(), patchRunTimeout())
 	defer cancel()
 
-	// Register cancel fn so the server can request an interrupt via "patch_run_stop".
-	patchRunCancels.Store(patchRunID, cancel)
-	defer patchRunCancels.Delete(patchRunID)
-
 	httpClient := client.New(cfgManager, logger)
+
+	// Register cancel fn so the server can request an interrupt via
+	// "patch_run_stop". A real run is refused when a restart scheduled on
+	// this host would cut it off.
+	if err := registerPatchRun(patchRunID, cancel, dryRun); err != nil {
+		_ = httpClient.SendPatchOutput(ctx, patchRunID, "failed", "", err.Error())
+		return err
+	}
+	defer patchRunCancels.Delete(patchRunID)
 	packageMgr := packages.New(logger, packages.CacheRefreshConfig{
 		Mode:   cfgManager.GetPackageCacheRefreshMode(),
 		MaxAge: cfgManager.GetPackageCacheRefreshMaxAge(),
@@ -2344,7 +2396,7 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool) 
 	pkgManager := packageMgr.DetectPackageManager()
 
 	if pkgManager == "windows" {
-		return runPatchWindows(ctx, httpClient, patchRunID, patchType, packageNames, dryRun)
+		return runPatchWindows(ctx, httpClient, patchRunID, patchType, packageNames, dryRun, restart)
 	}
 
 	if pkgManager != "apt" && pkgManager != "dnf" && pkgManager != "yum" && pkgManager != "pkg" && pkgManager != "pacman" {
@@ -2595,6 +2647,35 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool) 
 
 	_, wasStopped := patchRunStopped.LoadAndDelete(patchRunID)
 
+	// restartFailed: every package step went through, only the restart could
+	// not be scheduled, so the inventory is refreshed all the same.
+	restartFailed := false
+	// Restart last, once every package step is over. A failed run is left
+	// alone: a package manager that stopped midway can leave the host in a
+	// state a restart makes worse.
+	if !dryRun && restart.Enabled() {
+		blocked := ""
+		switch {
+		case wasStopped:
+			blocked = "the run was stopped"
+		case stepErr != nil:
+			blocked = "the run failed; restart by hand once the failure is fixed"
+		}
+		needed := false
+		if blocked == "" {
+			var reason string
+			needed, reason = system.New(logger).CheckRebootRequired()
+			if needed {
+				sink.WriteString(fmt.Sprintf("Restart required: yes (%s)\n", reason))
+			} else {
+				sink.WriteString("Restart required: no\n")
+			}
+		}
+		if err := scheduleRestart(sink, patchRunID, restart, needed, blocked, scheduleHostRestart); err != nil {
+			stepErr, restartFailed = err, true
+		}
+	}
+
 	// Append a short human-readable trailer so users watching the live
 	// terminal can tell at a glance that the run has finished instead of
 	// guessing whether the last package-manager line is really the end.
@@ -2620,7 +2701,9 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool) 
 		if err := httpClient.SendPatchOutput(finalCtx, patchRunID, "failed", fullOutput.String(), stepErr.Error()); err != nil {
 			logger.WithError(err).Warn("Failed to send patch failed output to server")
 		}
-		return stepErr
+		if !restartFailed {
+			return stepErr
+		}
 	default:
 		stage := "completed"
 		if dryRun {
@@ -2634,7 +2717,7 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool) 
 
 	// Post-patch inventory report: runs after success AND after user-triggered
 	// stop (a cancelled run may leave packages in a partially-changed state).
-	if !dryRun && (wasStopped || stepErr == nil) {
+	if !dryRun && (wasStopped || stepErr == nil || restartFailed) {
 		logger.Info("Sending post-patch report to refresh package lists...")
 		reportDone := make(chan error, 1)
 		go func() { reportDone <- sendReport(false) }()
@@ -2653,7 +2736,7 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool) 
 	if wasStopped {
 		return fmt.Errorf("patch run stopped by user")
 	}
-	return nil
+	return stepErr // nil, or the restart that could not be scheduled
 }
 
 // applyConfig applies a full config update from the server and restarts the service.

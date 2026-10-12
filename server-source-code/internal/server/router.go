@@ -539,6 +539,10 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore), hostctx.RequireModule("compliance")).Post("/hosts/{hostId}/integrations/compliance/scanners", hostsHandler.SetComplianceScanners)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore), hostctx.RequireModule("compliance")).Post("/hosts/{hostId}/integrations/compliance/default-profile", hostsHandler.SetComplianceDefaultProfile)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/{hostId}/integrations/apply-pending-config", hostsHandler.ApplyPendingConfig)
+			// Restarting a host belongs with patching, not with editing host
+			// records (can_manage_hosts), and is part of the patching module.
+			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot", hostsHandler.RebootHost)
+			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot/cancel", hostsHandler.CancelHostReboot)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/{hostId}/integrations/{integrationName}/toggle", hostsHandler.ToggleIntegration)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore)).Get("/hosts/{hostId}", hostsHandler.GetByID)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/create", hostsHandler.Create)

@@ -196,6 +196,8 @@ export const adminHostsAPI = {
 	refreshIntegrationStatus: (hostId) =>
 		api.post(`/hosts/${hostId}/refresh-integration-status`),
 	fetchReport: (hostId) => api.post(`/hosts/${hostId}/fetch-report`),
+	rebootHost: (hostId, reboot) => api.post(`/hosts/${hostId}/reboot`, reboot),
+	cancelHostReboot: (hostId) => api.post(`/hosts/${hostId}/reboot/cancel`),
 	fetchReportBulk: (hostIds) =>
 		api.post("/hosts/bulk/fetch-report", { hostIds }),
 	updateFriendlyName: (hostId, friendlyName) =>
