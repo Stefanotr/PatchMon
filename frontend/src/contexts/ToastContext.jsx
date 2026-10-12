@@ -54,7 +54,7 @@ function ToastContainer({ toasts, onRemove }) {
 	if (toasts.length === 0) return null;
 
 	return (
-		<div className="fixed bottom-4 right-4 z-[130] flex flex-col gap-2 max-w-sm">
+		<div className="fixed bottom-4 right-4 left-4 sm:left-auto z-[130] flex flex-col gap-2 sm:max-w-sm">
 			{toasts.map((toast) => (
 				<Toast key={toast.id} toast={toast} onRemove={onRemove} />
 			))}
@@ -82,7 +82,10 @@ function Toast({ toast, onRemove }) {
 			className={`flex items-start gap-3 p-4 rounded-lg border shadow-lg animate-slide-in ${bgColors[toast.type] || bgColors.info}`}
 		>
 			{icons[toast.type] || icons.info}
-			<p className="flex-1 text-sm text-gray-100">{toast.message}</p>
+			{/* Long server messages (an agent's reason) wrap, even unbroken paths. */}
+			<p className="flex-1 min-w-0 text-sm text-gray-100 break-words">
+				{toast.message}
+			</p>
 			<button
 				onClick={() => onRemove(toast.id)}
 				className="text-gray-400 hover:text-gray-200 transition-colors"

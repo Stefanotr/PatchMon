@@ -5912,7 +5912,10 @@ const HostDetail = () => {
 				</div>
 			</div>
 
+			{/* Keyed by host: the page stays mounted when it moves to another
+			    host, and the dialog's state must not follow. */}
 			<RestartHostModal
+				key={hostId}
 				hostId={hostId}
 				hostName={host?.friendly_name || host?.hostname}
 				isOpen={showRestartModal}

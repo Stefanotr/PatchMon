@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { History, Info, Power, RotateCcw, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { useToast } from "../contexts/ToastContext";
@@ -15,6 +15,11 @@ import RestartOptions from "./RestartOptions";
 import ModalPortal from "./ui/ModalPortal";
 
 const errorText = (err) => err?.response?.data?.error || err?.message;
+
+// Long messages (an agent's reason for refusing) stay up long enough to be
+// read: 5 s, plus time for each character, up to 15 s.
+export const toastDuration = (text) =>
+	Math.min(15000, Math.max(5000, 1500 + 60 * String(text || "").length));
 
 // Restart commands and the restarts patch runs schedule are recorded in the
 // host's Agent Activity under these job names.
@@ -49,11 +54,28 @@ export default function RestartHostModal({
 		mode: "always",
 	});
 
+	// The answer can come after the dialog was closed, or reopened for
+	// another host (each host gets its own instance, see key in Hosts.jsx):
+	// it then names its host and leaves the dialog that is open alone.
+	const mounted = useRef(true);
+	useEffect(() => {
+		mounted.current = true;
+		return () => {
+			mounted.current = false;
+		};
+	}, []);
+	const notify = (level, text) => {
+		const message = mounted.current
+			? text
+			: t("{{host}}: {{message}}", { host: hostName, message: text });
+		toast[level](message, toastDuration(message));
+	};
+
 	const report = (res, fallback) => {
 		const answer = describeRestartAnswer(res, fallback);
-		toast[answer.level](answer.text);
+		notify(answer.level, answer.text);
 		refreshHistory();
-		if (answer.level === "success") onClose();
+		if (answer.level === "success" && mounted.current) onClose();
 	};
 
 	const restart = useMutation({
@@ -64,7 +86,7 @@ export default function RestartHostModal({
 			),
 		onSuccess: (res) => report(res, t("Restart scheduled")),
 		onError: (err) => {
-			toast.error(errorText(err) || t("Restart failed"));
+			notify("error", errorText(err) || t("Restart failed"));
 			refreshHistory();
 		},
 	});
@@ -73,7 +95,7 @@ export default function RestartHostModal({
 		mutationFn: () => adminHostsAPI.cancelHostReboot(hostId),
 		onSuccess: (res) => report(res, t("Scheduled restart cancelled")),
 		onError: (err) => {
-			toast.error(errorText(err) || t("Cancel failed"));
+			notify("error", errorText(err) || t("Cancel failed"));
 			refreshHistory();
 		},
 	});

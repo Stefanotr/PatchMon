@@ -2838,7 +2838,10 @@ const Hosts = () => {
 			</div>
 
 			{/* Modals */}
+			{/* Keyed by host: its state (a command still being sent) must not
+			    carry over from one host to the next. */}
 			<RestartHostModal
+				key={restartHost?.id}
 				hostId={restartHost?.id}
 				hostName={restartHost?.friendly_name || restartHost?.hostname}
 				isOpen={!!restartHost}

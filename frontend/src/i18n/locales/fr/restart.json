@@ -28,6 +28,7 @@
 	"Restart failed": "Échec du redémarrage",
 	"Cancel failed": "Échec de l'annulation",
 	"Restart host": "Redémarrer l'hôte",
+	"{{host}}: {{message}}": "{{host}}\u00a0: {{message}}",
 	"Restart Hosts": "Redémarrer les hôtes",
 	"Restart hosts now or later, cancel scheduled restarts, and restart hosts after a patch run": "Redémarrer les hôtes maintenant ou plus tard, annuler les redémarrages planifiés et redémarrer les hôtes après une exécution de patch",
 	"A restart is pending on this host: {{reason}}": "Un redémarrage est en attente sur cet hôte\u00a0: {{reason}}",
