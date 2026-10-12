@@ -1,13 +1,14 @@
 # Fork Stefanotr/PatchMon
 
-Ce dépôt est un fork de [PatchMon/PatchMon](https://github.com/PatchMon/PatchMon).
-Il ajoute :
+Ce dépôt est un fork de [PatchMon/PatchMon](https://github.com/PatchMon/PatchMon). Il suit les versions officielles et ajoute :
 
-- le patching Windows (Windows Update + WinGet) avec dry run, comme sur Linux ;
-- la mémoire des mises à jour que WinGet refuse de faire sur place ;
-- la gestion des redémarrages, après un patch ou à la demande (voir « Restarting the Host » dans `docs/patchmon-admin-guide.md`) ;
-- une sécurité qui empêche l'agent de se mettre à jour pendant un patch ;
-- le tampon du fork : le serveur sait de quel dépôt il vient, il cherche ses mises à jour dans les releases du fork et l'interface renvoie vers le fork.
+- le patching Windows (Windows Update + WinGet) avec dry run, et la mémoire des mises à jour que WinGet refuse de faire sur place ;
+- la gestion des redémarrages, après un patch ou à la demande, avec leur historique ;
+- un agent qui ne se met jamais à jour pendant un patch ;
+- le tampon du fork : le serveur sait de quel dépôt il vient et suit les releases du fork ;
+- une veille des versions officielles.
+
+Le détail de ces fonctionnalités, et les liens vers leur documentation, sont dans le [README](README.md#what-this-fork-adds). Ce fichier explique comment maintenir le fork : branches, versions, releases, serveurs.
 
 ## Branches
 
@@ -37,9 +38,16 @@ La CI (`.github/workflows/docker.yml`) grave dans le binaire du serveur le dép�
 - **build officiel** (`PatchMon/PatchMon`) : rien ne change, les vérifications de mise à jour utilisent les enregistrements DNS de patchmon.net ;
 - **build du fork** : le serveur lit les releases GitHub du fork pour savoir si une mise à jour existe, pour lui comme pour les agents. Les liens « release » et « repository » de l'interface pointent vers le fork. *Settings > Server Version* affiche « Fork build: Stefanotr/PatchMon @ commit, based on PatchMon/PatchMon ».
 
-Le serveur interroge l'API GitHub sans jeton, au plus une fois tous les quarts d'heure (une fois par minute après une erreur). Si le fork devient privé, la vérification échoue proprement : il faudra alors un jeton.
+Le serveur interroge l'API GitHub sans jeton, et GitHub limite ces appels à 60 par heure et par adresse IP. Toutes les vérifications passent donc par un même cache :
+
+- les vérifications automatiques (alertes, pages) réutilisent une réponse pendant un quart d'heure, et une minute seulement après une erreur ;
+- le bouton *Check for updates* relit les releases, mais au plus une fois par minute : une release publiée apparaît tout de suite, et cliquer en boucle ne dépasse pas la limite.
+
+Si le fork devient privé, la vérification échoue proprement : il faudra alors un jeton.
 
 ## Mise en place (une seule fois)
+
+Les étapes 1 à 5 sont faites. Elles restent ici pour refaire un fork de zéro.
 
 1. **Mettre en place les branches.** Renomme `feat/windows-patching-dry-run` en `fork` depuis la liste des branches : onglet *Code*, menu des branches, *View all branches*, crayon *Rename branch*. GitHub garde une redirection depuis l'ancien nom et `fork` reste la branche par défaut.
    - La branche par défaut compte : GitHub ne lance les workflows planifiés, et n'affiche le bouton *Run workflow*, qu'avec les fichiers de cette branche.
@@ -66,6 +74,18 @@ Le serveur interroge l'API GitHub sans jeton, au plus une fois tous les quarts d
    git remote add upstream https://github.com/PatchMon/PatchMon.git
    ```
 5. **Publier la première release** (voir plus bas). Ensuite, rends l'image publique dans *github.com/users/Stefanotr/packages/container/patchmon-server/settings*. Autre option : la laisser privée et faire `docker login ghcr.io` sur le serveur avec un jeton qui n'a que le droit `read:packages`.
+6. **Protéger les branches et les tags.** Va dans *Settings > Rules > Rulesets*, puis crée trois rulesets avec *Enforcement status* sur *Active* :
+
+   | Ruleset | Cible | Règles |
+   |---|---|---|
+   | `fork` (*New branch ruleset*) | *Include default branch* | *Restrict deletions*, *Block force pushes*, *Require a pull request before merging* avec 0 approbation (tu ne peux pas approuver ta propre PR), *Require status checks to pass* |
+   | `main` (*New branch ruleset*) | *Include by pattern* : `main` | *Restrict deletions*, *Block force pushes*. Pas de PR obligatoire, sinon *Sync fork* ne passe plus. |
+   | `tags` (*New tag ruleset*) | *Include by pattern* : `v*` | *Restrict updates*, *Restrict deletions* : une release publiée ne bouge plus. |
+
+   - Pour *Require status checks to pass*, ajoute `Test (server)`, `Lint (server)`, `Build (server)`, `Agent Tests`, `Agent Lint`, `Agent Tests (windows-latest)` et `Secrets (Gitleaks)`. Ces checks tournent sur toutes les PR vers `fork`.
+   - N'ajoute pas `Biome (frontend)` : il ne tourne pas sur une PR qui ne touche que `docker/`, et cette PR resterait bloquée.
+   - Une PR ne peut alors plus être fusionnée avant la fin des checks. En cas d'urgence, ajoute le rôle *Repository admin* dans la *Bypass list* du ruleset `fork`.
+   - Pour supprimer ou déplacer un tag, désactive le ruleset `tags` le temps de l'opération.
 
 ## Ajouter une fonctionnalité
 
@@ -99,7 +119,27 @@ Le script calcule le tag suivant, le crée sur `HEAD` et le pousse. La CI constr
 - l'image `ghcr.io/stefanotr/patchmon-server:<version>` et le tag flottant `:fork`, avec les agents de toutes les plateformes ;
 - la release GitHub avec les binaires, les sommes de contrôle et l'attestation de provenance.
 
-Les serveurs voient la nouvelle release au plus tard un quart d'heure après sa publication. Le bouton *Check for updates* force la vérification.
+La release GitHub n'est créée qu'à la fin du build, environ six minutes après le push du tag : suis-le avec `gh run watch`. Les serveurs la voient ensuite au plus tard un quart d'heure après, et tout de suite avec le bouton *Check for updates* (*Settings > Server Version*).
+
+Les serveurs jusqu'à `2.1.4-fork.4` gardent leur réponse un quart d'heure, même avec le bouton : attends ce délai, ou redémarre le conteneur.
+
+## Serveur : installer le fork sur une nouvelle machine
+
+On installe PatchMon normalement, puis on remplace l'image du service `server` avant le premier démarrage :
+
+```bash
+mkdir patchmon && cd patchmon
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/PatchMon/PatchMon/refs/heads/main/docker/setup-env.sh)"
+cat > docker-compose.override.yml <<'YAML'
+services:
+  server:
+    image: ghcr.io/stefanotr/patchmon-server:fork
+YAML
+docker compose pull server
+docker compose up -d
+```
+
+Le script d'installation est celui de PatchMon : il génère les secrets et le `docker-compose.yml` officiel, et l'override n'en change que l'image.
 
 ## Serveur : passer sur l'image du fork (une seule fois)
 

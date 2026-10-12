@@ -342,6 +342,8 @@ Upload a custom logo and favicon. The assets are stored in the database and serv
 
 Shows the running PatchMon server version, the latest upstream version (checked daily by the `version-update-check` automation job, see Background jobs and automation), and a manual "Check for updates" button. It does not perform the upgrade. To upgrade, PatchMon is a container-image swap (see Installing PatchMon Server on Docker).
 
+A server built from a fork says so under its version (*Fork build: owner/name @ commit, based on PatchMon/PatchMon*) and follows the fork's releases instead: it reads the highest version among the fork's published GitHub releases, for the server and for the agents, and the release links open the fork. Background checks reuse an answer for up to 15 minutes; "Check for updates" reads the releases again (at most once a minute, to stay within GitHub's limit for unauthenticated requests), so a release shows up as soon as its build has published it.
+
 #### Metrics
 
 **Path:** `/settings/metrics`

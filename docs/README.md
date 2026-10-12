@@ -1,5 +1,20 @@
 # PatchMon Documentation
 
+> [!NOTE]
+> **Fork [Stefanotr/PatchMon](https://github.com/Stefanotr/PatchMon).** In
+> this fork the books also document the features the fork adds. The website
+> publishes the books of `PatchMon/PatchMon`, without them: read them here.
+>
+> | Fork feature | Where it is documented |
+> | --- | --- |
+> | Windows patching with dry run, WinGet refusals remembered | Admin Guide, Chapter 8: [Windows patching](patchmon-admin-guide.md#windows-patching) |
+> | Restart after a patch run or on demand, restart history | Admin Guide, Chapter 9: [Restarting the Host](patchmon-admin-guide.md#restarting-the-host) |
+> | Update checks against the fork's releases | Admin Guide, Chapter 2: [Server Version](patchmon-admin-guide.md#server-version) |
+> | No agent self-update during a patch run | Operator Guide: [Update Safety Features](patchmon-operator-guide.md#update-safety-features) |
+> | Branches, releases, server install and updates, upstream releases | [FORK.md](../FORK.md) (in French) |
+>
+> The overview of the fork is in the [README](../README.md#what-this-fork-adds).
+
 This directory is the **source of truth** for the public-facing documentation
 published at <https://patchmon.net/docs>. The website pulls these files from
 the `main` branch of `PatchMon/PatchMon` at build time, so changes here go
