@@ -84,7 +84,14 @@ Fusionne la PR dans `fork`, puis publie une release.
 ```bash
 git checkout fork
 git pull
-fork/release.sh --push
+tools/fork-release.sh --push
+```
+
+Sous Windows, lance-le avec le bash de Git for Windows. Le `bash` de PowerShell est celui de WSL.
+
+```powershell
+$gitBash = Join-Path (Split-Path (Split-Path (Get-Command git).Source)) 'bin\bash.exe'
+& $gitBash tools/fork-release.sh --push
 ```
 
 Le script calcule le tag suivant, le crée sur `HEAD` et le pousse. La CI construit alors :
@@ -135,7 +142,7 @@ git fetch upstream --tags
 git checkout fork
 git merge vX.Y.Z           # résoudre les conflits, lancer les tests
 git push origin fork
-fork/release.sh --push     # tag v(X.Y.Z+1)-fork.1
+tools/fork-release.sh --push   # tag v(X.Y.Z+1)-fork.1
 ```
 
 Puis ferme l'issue, et remets `main` à jour avec *Sync fork*.

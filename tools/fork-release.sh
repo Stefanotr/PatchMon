@@ -10,7 +10,8 @@
 # ghcr.io/<owner>/patchmon-server:<version> and :fork, agents included, and
 # publish the GitHub release the instances' update check follows.
 #
-# Usage: fork/release.sh [--push]
+# Usage: tools/fork-release.sh [--push]
+#   Windows: run it with the bash of Git for Windows, not the WSL one.
 set -euo pipefail
 
 die() { echo "error: $*" >&2; exit 1; }

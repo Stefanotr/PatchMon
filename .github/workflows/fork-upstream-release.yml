@@ -99,7 +99,7 @@ jobs:
             echo "git checkout $branch"
             echo "git merge $tag            # résoudre les conflits, lancer les tests"
             echo "git push origin $branch"
-            echo "fork/release.sh --push    # tag v$next-fork.1 : la CI construit l'image"
+            echo "tools/fork-release.sh --push  # tag v$next-fork.1 : la CI construit l'image"
             echo '```'
             echo
             echo "Puis sur le serveur : \`docker compose pull server && docker compose up -d server\`, et **Update Now** sur les hosts."
