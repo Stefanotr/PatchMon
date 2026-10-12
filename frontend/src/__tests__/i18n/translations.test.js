@@ -46,11 +46,32 @@ const KEY_PATTERNS = [
 	new RegExp(String.raw`\bi18nKey=\{?\s*${LITERAL}`, "g"),
 ];
 
-// unquote turns the body of a JS string literal into its value.
+// unquote turns the body of a JS string literal (either quote) into its
+// value, decoding each escape sequence once.
+const ESCAPES = {
+	n: "\n",
+	t: "\t",
+	r: "\r",
+	b: "\b",
+	f: "\f",
+	v: "\v",
+	0: "\0",
+	"\n": "",
+};
 const unquote = (double, single) =>
-	double !== undefined
-		? JSON.parse(`"${double}"`)
-		: JSON.parse(`"${single.replace(/\\'/g, "'").replace(/"/g, '\\"')}"`);
+	(double ?? single).replace(
+		/\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g,
+		(_, e) => {
+			if (e.length > 1 && e[0] === "u") {
+				const hex = e[1] === "{" ? e.slice(2, -1) : e.slice(1);
+				return String.fromCodePoint(Number.parseInt(hex, 16));
+			}
+			if (e.length > 1 && e[0] === "x") {
+				return String.fromCharCode(Number.parseInt(e.slice(1), 16));
+			}
+			return ESCAPES[e] ?? e;
+		},
+	);
 
 const usedKeys = () => {
 	const keys = new Map();
@@ -142,6 +163,20 @@ describe("translations", () => {
 			}
 		}
 		expect(conflicts).toEqual([]);
+	});
+
+	it("reads the keys of JS string literals", () => {
+		// String.raw holds the literal's body exactly as written in a source file.
+		expect(unquote(String.raw`Click \"Add Host\" to start`)).toBe(
+			'Click "Add Host" to start',
+		);
+		expect(unquote(undefined, String.raw`It\'s \"{{name}}\"`)).toBe(
+			`It's "{{name}}"`,
+		);
+		expect(unquote(String.raw`a\\b \\" \\'`)).toBe(String.raw`a\b \" \'`);
+		expect(unquote(String.raw`C\u00e9 \u{1F600} \x41\n`)).toBe(
+			"C\u00e9 \u{1F600} A\n",
+		);
 	});
 
 	it("leaves the escaping of <Trans> values alone", () => {
