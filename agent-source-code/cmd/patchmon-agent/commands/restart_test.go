@@ -146,7 +146,8 @@ func TestScheduleRestart(t *testing.T) {
 	}{
 		{name: "never: silent", opts: reboot.Options{Mode: reboot.ModeNever}, needed: true},
 		{name: "unset: silent", opts: reboot.Options{}, needed: true},
-		{name: "blocked", opts: reboot.Options{Mode: reboot.ModeAlways}, blocked: "the run was stopped", wantLine: "Restart: not scheduled, the run was stopped"},
+		{name: "blocked", opts: reboot.Options{Mode: reboot.ModeAlways}, blocked: "the run was stopped", wantLine: "Restart: not scheduled, the run was stopped", wantReport: "skipped: the run was stopped"},
+		{name: "blocked, if needed", opts: reboot.Options{Mode: reboot.ModeIfNeeded}, blocked: "the run failed", wantLine: "Restart: not scheduled, the run failed", wantReport: "skipped: the run failed"},
 		{name: "if needed, none pending", opts: reboot.Options{Mode: reboot.ModeIfNeeded}, wantLine: "Restart: not needed"},
 		{name: "if needed, pending", opts: reboot.Options{Mode: reboot.ModeIfNeeded, DelayMinutes: 10}, needed: true, wantCalls: 1, wantLine: "Restart: scheduled for", wantReport: "ok"},
 		{name: "always", opts: reboot.Options{Mode: reboot.ModeAlways}, wantCalls: 1, wantLine: "(in 5m0s)", wantReport: "ok"},

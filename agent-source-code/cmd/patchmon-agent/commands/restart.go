@@ -335,19 +335,12 @@ func (s skippedRestart) Error() string { return s.reason }
 // scheduleRestart applies a run's restart option once the run is over and
 // writes what it did to out. needed says whether the host reports a pending
 // restart; blocked says why the run must not restart it ("" when it may).
-// A wanted restart left out, because of another run, a restart or shutdown
-// already pending, or the host's opt-in, is reported as skipped. It returns
+// A restart left out, because the run was stopped or failed, another run is
+// in progress, a restart or shutdown is already pending, or the host's opt-in
+// is off, is reported as skipped. It returns
 // an error when a wanted restart could not be scheduled.
 func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bool, blocked string, schedule func(time.Duration, string) error) error {
 	if !opts.Enabled() {
-		return nil
-	}
-	if blocked != "" {
-		_, _ = fmt.Fprintf(out, "Restart: not scheduled, %s\n", blocked)
-		return nil
-	}
-	if !opts.Wanted(needed) {
-		_, _ = fmt.Fprintf(out, "Restart: not needed\n")
 		return nil
 	}
 
@@ -362,6 +355,16 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 	skip := func(line, reason string) {
 		_, _ = fmt.Fprintln(out, line)
 		report = func() { reportRunRestart(runID, time.Time{}, skippedRestart{reason}) }
+	}
+	if blocked != "" {
+		// A stopped or failed run: the restart it asked for is reported as
+		// skipped, so the restart history says why the host did not restart.
+		skip("Restart: not scheduled, "+blocked, blocked)
+		return nil
+	}
+	if !opts.Wanted(needed) {
+		_, _ = fmt.Fprintf(out, "Restart: not needed\n")
+		return nil
 	}
 	if !remoteRestartsAllowed() {
 		reason := remoteRestartsDisabled()
