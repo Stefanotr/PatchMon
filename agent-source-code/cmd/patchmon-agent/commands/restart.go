@@ -34,7 +34,8 @@ import (
 // touches. A restart or shutdown scheduled outside PatchMon is left alone.
 
 const (
-	restartCommandTimeout = 30 * time.Second
+	// runRestartTimeout bounds scheduling the restart of a patch run.
+	runRestartTimeout = 30 * time.Second
 	// pendingRestartGrace: a restart still "pending" this long after its
 	// time did not happen (aborted on the host, or the clock moved), so it
 	// no longer holds runs back.
@@ -44,6 +45,21 @@ const (
 	// and the post-patch report go out.
 	runOverrun = windowsMinItemTimeout + 5*time.Minute
 )
+
+// Limits for a restart or cancel command, whose answer the server waits 20
+// seconds for; variables for tests.
+var (
+	// commandWorkLimit bounds what the command does: waiting for the lock,
+	// asking the operating system, recording the restart.
+	commandWorkLimit = 12 * time.Second
+	// commandReplyLimit is when the answer leaves at the latest, the work
+	// done or not.
+	commandReplyLimit = 15 * time.Second
+)
+
+// errRestartBusy: another restart decision held the lock for all the time a
+// command has.
+var errRestartBusy = errors.New("the agent is busy with another restart or patch run decision; try again in a moment")
 
 var restartGate struct {
 	sync.Mutex
@@ -59,18 +75,18 @@ var restartGate struct {
 
 // Seams for tests: the restart itself goes to the operating system.
 var (
+	// scheduleHostRestart schedules the restart of a patch run.
 	scheduleHostRestart = func(d time.Duration, msg string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), restartCommandTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), runRestartTimeout)
 		defer cancel()
 		return reboot.Schedule(ctx, d, msg)
 	}
+	// scheduleCommandRestart schedules the restart of a server command,
+	// within ctx.
+	scheduleCommandRestart = reboot.Schedule
 	// cancelHostRestart cancels the restart this agent scheduled, only if
-	// it is the one pending.
-	cancelHostRestart = func(s reboot.Scheduled) error {
-		ctx, cancel := context.WithTimeout(context.Background(), restartCommandTimeout)
-		defer cancel()
-		return reboot.CancelScheduled(ctx, s)
-	}
+	// it is the one pending, within ctx.
+	cancelHostRestart = reboot.CancelScheduled
 	// osPendingRestart reports a restart the operating system has
 	// scheduled, whoever asked for it, including one this agent scheduled
 	// before it was restarted itself.
@@ -375,9 +391,21 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 	return nil
 }
 
+// lockRestartGate takes restartGate, waiting no longer than ctx allows.
+func lockRestartGate(ctx context.Context) error {
+	for !restartGate.TryLock() {
+		select {
+		case <-ctx.Done():
+			return errRestartBusy
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	return nil
+}
+
 // restartCommand schedules the restart the server asked for and returns its
-// time, or why it was refused.
-func restartCommand(opts reboot.Options) (time.Time, error) {
+// time, or why it was refused, within ctx.
+func restartCommand(ctx context.Context, opts reboot.Options) (time.Time, error) {
 	if opts.Mode != reboot.ModeAlways {
 		return time.Time{}, errors.New("invalid restart command")
 	}
@@ -385,7 +413,9 @@ func restartCommand(opts reboot.Options) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("remote restarts are disabled on this host: set \"%s: true\" under integrations in %s to allow them",
 			config.RemoteRestartIntegration, localConfigPath())
 	}
-	restartGate.Lock()
+	if err := lockRestartGate(ctx); err != nil {
+		return time.Time{}, err
+	}
 	defer restartGate.Unlock()
 	now := time.Now()
 	if otherPatchRunInProgress("") {
@@ -398,7 +428,7 @@ func restartCommand(opts reboot.Options) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	if err := scheduleHostRestart(at.Sub(now), opts.ShutdownMessage()); err != nil {
+	if err := scheduleCommandRestart(ctx, at.Sub(now), opts.ShutdownMessage()); err != nil {
 		if errors.Is(err, reboot.ErrAlreadyScheduled) {
 			return time.Time{}, fmt.Errorf("%w; cancel it first to choose another time", err)
 		}
@@ -410,15 +440,17 @@ func restartCommand(opts reboot.Options) (time.Time, error) {
 
 // cancelRestartCommand cancels the restart this agent scheduled, and nothing
 // else: without a record of one still pending, it refuses with
-// reboot.ErrNotScheduledByPatchMon.
-func cancelRestartCommand() error {
-	restartGate.Lock()
+// reboot.ErrNotScheduledByPatchMon. It works within ctx.
+func cancelRestartCommand(ctx context.Context) error {
+	if err := lockRestartGate(ctx); err != nil {
+		return err
+	}
 	defer restartGate.Unlock()
 	own, ok := ownRestartLocked(time.Now())
 	if !ok {
 		return reboot.ErrNotScheduledByPatchMon
 	}
-	switch err := cancelHostRestart(own); {
+	switch err := cancelHostRestart(ctx, own); {
 	case err == nil:
 		clearRestartRecordLocked("cancelled on server request")
 		return nil
@@ -499,36 +531,78 @@ func writeRestartMessage(r restartReply) {
 	}
 }
 
+// answerCommand runs a restart or cancel command and returns its answer
+// within commandReplyLimit, whatever happens: the work has commandWorkLimit,
+// and should something not honour it, an answer still goes out at the limit
+// (the work carries on and logs its outcome).
+func answerCommand(action, late string, work func(context.Context) restartReply) restartReply {
+	ctx, cancel := context.WithTimeout(context.Background(), commandWorkLimit)
+	done := make(chan restartReply, 1)
+	go func() {
+		defer cancel()
+		done <- work(ctx)
+	}()
+	timer := time.NewTimer(commandReplyLimit)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r
+	case <-timer.C:
+		logger.WithField("action", action).Warn("Restart command still running at its time limit; answering the server now")
+		return restartReply{Action: action, Error: late}
+	}
+}
+
+// restartCommandReply runs the server's restart command.
+func restartCommandReply(opts reboot.Options) restartReply {
+	late := "the operating system did not answer in time; the restart may still be scheduled, check the host"
+	return answerCommand("reboot", late, func(ctx context.Context) restartReply {
+		reply := restartReply{Action: "reboot"}
+		at, err := restartCommand(ctx, opts)
+		if err != nil {
+			logger.WithError(err).Warn("Restart command refused")
+			reply.Error = packages.OneLine(err.Error())
+		} else {
+			logger.WithField("at", formatRestartTime(at)).Info("Restart scheduled on server request")
+			reply.OK, reply.RebootAt = true, at.UTC().Format(time.RFC3339)
+		}
+		return reply
+	})
+}
+
+// cancelCommandReply runs the server's cancel command.
+func cancelCommandReply() restartReply {
+	late := "the operating system did not answer in time; the restart may still be pending, check the host"
+	return answerCommand("cancel", late, func(ctx context.Context) restartReply {
+		reply := restartReply{Action: "cancel"}
+		switch err := cancelRestartCommand(ctx); {
+		case errors.Is(err, reboot.ErrNothingScheduled):
+			logger.Info("Restart cancel requested, but no restart was scheduled")
+			reply.Error = "no restart is scheduled on this host"
+		case errors.Is(err, reboot.ErrNotScheduledByPatchMon):
+			logger.Info("Restart cancel requested, but no restart scheduled by PatchMon is pending; anything else is left alone")
+			reply.Error = err.Error()
+		case err != nil:
+			logger.WithError(err).Warn("Restart cancel failed")
+			reply.Error = packages.OneLine(err.Error())
+		default:
+			logger.Info("Scheduled restart cancelled on server request")
+			reply.OK = true
+		}
+		return reply
+	})
+}
+
 // handleRestartCommand runs the server's restart command and answers it.
 func handleRestartCommand(opts reboot.Options, requestID string) {
-	reply := restartReply{RequestID: requestID, Action: "reboot"}
-	at, err := restartCommand(opts)
-	if err != nil {
-		logger.WithError(err).Warn("Restart command refused")
-		reply.Error = packages.OneLine(err.Error())
-	} else {
-		logger.WithField("at", formatRestartTime(at)).Info("Restart scheduled on server request")
-		reply.OK, reply.RebootAt = true, at.UTC().Format(time.RFC3339)
-	}
+	reply := restartCommandReply(opts)
+	reply.RequestID = requestID
 	sendRestartReply(reply)
 }
 
 // handleRestartCancel runs the server's cancel command and answers it.
 func handleRestartCancel(requestID string) {
-	reply := restartReply{RequestID: requestID, Action: "cancel"}
-	switch err := cancelRestartCommand(); {
-	case errors.Is(err, reboot.ErrNothingScheduled):
-		logger.Info("Restart cancel requested, but no restart was scheduled")
-		reply.Error = "no restart is scheduled on this host"
-	case errors.Is(err, reboot.ErrNotScheduledByPatchMon):
-		logger.Info("Restart cancel requested, but no restart scheduled by PatchMon is pending; anything else is left alone")
-		reply.Error = err.Error()
-	case err != nil:
-		logger.WithError(err).Warn("Restart cancel failed")
-		reply.Error = packages.OneLine(err.Error())
-	default:
-		logger.Info("Scheduled restart cancelled on server request")
-		reply.OK = true
-	}
+	reply := cancelCommandReply()
+	reply.RequestID = requestID
 	sendRestartReply(reply)
 }

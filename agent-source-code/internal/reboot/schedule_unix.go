@@ -315,6 +315,11 @@ func runShutdown(ctx context.Context, countdown bool, args ...string) error {
 	if err != nil {
 		return err
 	}
+	// Out of time already: not started, rather than started and killed
+	// before anyone knows what it did.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("not run, no time left: %w", err)
+	}
 	out, err := os.CreateTemp("", "patchmon-shutdown-*")
 	if err != nil {
 		return err

@@ -376,3 +376,17 @@ func TestShutdownProcessesFromPS(t *testing.T) {
 		t.Fatal("a failing ps(1) listed no process")
 	}
 }
+
+// Out of time before it starts, shutdown(8) is not run at all: killing it
+// once started could leave a restart scheduled that nobody knows of.
+func TestShutdownNotRunWithoutTimeLeft(t *testing.T) {
+	log := fakeShutdown(t, "exit 0")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := Schedule(ctx, MinDelay, "PatchMon: x"); err == nil {
+		t.Fatal("no error without time left")
+	}
+	if _, err := os.Stat(log); err == nil {
+		t.Fatal("shutdown(8) was run")
+	}
+}

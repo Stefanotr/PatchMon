@@ -38,7 +38,10 @@ func PendingOwner(s Scheduled) Owner {
 // Schedule asks Windows to restart the host after d. Windows shows msg and the
 // countdown to signed-in users, then closes applications and restarts. The
 // restart is recorded as planned, for a security fix, in the event log.
-func Schedule(_ context.Context, d time.Duration, msg string) error {
+func Schedule(ctx context.Context, d time.Duration, msg string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := enableShutdownPrivilege(); err != nil {
 		return fmt.Errorf("enable the shutdown privilege: %w", err)
 	}

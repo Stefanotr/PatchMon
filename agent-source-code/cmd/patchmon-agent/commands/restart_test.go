@@ -77,12 +77,14 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	oldSchedule, oldCancel, oldPending, oldReport := scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart
 	oldAgentRestart, oldAllowed := restartAgentService, remoteRestartsAllowed
 	oldRecordPath, oldOwner := restartRecordPath, pendingRestartOwner
+	oldCommandSchedule, oldWork, oldReply := scheduleCommandRestart, commandWorkLimit, commandReplyLimit
 	recordPath := filepath.Join(t.TempDir(), restartRecordFile)
 	restartRecordPath = func() string { return recordPath }
 	pendingRestartOwner = func(reboot.Scheduled) reboot.Owner { return reboot.OwnerPatchMon }
 	remoteRestartsAllowed = func() bool { return true }
 	scheduleHostRestart = s.schedule
-	cancelHostRestart = s.cancel
+	scheduleCommandRestart = func(_ context.Context, d time.Duration, msg string) error { return s.schedule(d, msg) }
+	cancelHostRestart = func(_ context.Context, r reboot.Scheduled) error { return s.cancel(r) }
 	osPendingRestart = func() (time.Time, bool) { return time.Time{}, false }
 	reportRunRestart = s.report
 	restartAgentService = func() error {
@@ -93,6 +95,7 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 		scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart = oldSchedule, oldCancel, oldPending, oldReport
 		restartAgentService, remoteRestartsAllowed = oldAgentRestart, oldAllowed
 		restartRecordPath, pendingRestartOwner = oldRecordPath, oldOwner
+		scheduleCommandRestart, commandWorkLimit, commandReplyLimit = oldCommandSchedule, oldWork, oldReply
 		clearGate()
 	})
 	return s
@@ -344,7 +347,7 @@ func TestAgentUpdateAndPatchRunsExcludeEachOther(t *testing.T) {
 func TestRestartCommandWhenTheSystemHasOnePending(t *testing.T) {
 	s := resetRestartState(t)
 	s.err = reboot.ErrAlreadyScheduled
-	_, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways})
+	_, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways})
 	if !errors.Is(err, reboot.ErrAlreadyScheduled) || !strings.Contains(err.Error(), "cancel it first") {
 		t.Fatalf("err = %v", err)
 	}
@@ -356,36 +359,36 @@ func TestRestartCommandWhenTheSystemHasOnePending(t *testing.T) {
 func TestRestartCommand(t *testing.T) {
 	s := resetRestartState(t)
 
-	if _, err := restartCommand(reboot.Options{Mode: reboot.ModeIfNeeded}); err == nil {
+	if _, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeIfNeeded}); err == nil {
 		t.Error("a command without mode always was accepted")
 	}
 
 	patchRunCancels.Store("run", &patchRun{cancel: func() {}})
-	if _, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways}); err == nil || !strings.Contains(err.Error(), "patch run is in progress") {
+	if _, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways}); err == nil || !strings.Contains(err.Error(), "patch run is in progress") {
 		t.Fatalf("restart scheduled during a run: %v", err)
 	}
 	patchRunCancels.Delete("run")
 
-	at, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways, DelayMinutes: 30})
+	at, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways, DelayMinutes: 30})
 	if err != nil || s.calls != 1 || time.Until(at) < 29*time.Minute {
 		t.Fatalf("restart: at %s, err %v, calls %d", at, err, s.calls)
 	}
-	if _, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways}); err == nil || !strings.Contains(err.Error(), "already scheduled") {
+	if _, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways}); err == nil || !strings.Contains(err.Error(), "already scheduled") {
 		t.Fatalf("second restart accepted: %v", err)
 	}
 
-	if err := cancelRestartCommand(); err != nil {
+	if err := cancelRestartCommand(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.cancels) != 1 || !s.cancels[0].At.Equal(at) {
 		t.Fatalf("cancelled %+v, want the restart scheduled for %s", s.cancels, at)
 	}
-	if _, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways}); err != nil {
+	if _, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways}); err != nil {
 		t.Fatalf("restart refused after the cancel: %v", err)
 	}
 
 	s.cancelErr = errors.New("not supported")
-	if err := cancelRestartCommand(); err == nil {
+	if err := cancelRestartCommand(context.Background()); err == nil {
 		t.Fatal("cancel failure swallowed")
 	}
 	if _, ok := recordedRestart(); !ok {
@@ -557,7 +560,7 @@ func TestRemoteRestartsDisabled(t *testing.T) {
 	remoteRestartsAllowed = remoteRestartsEnabledInConfig
 	path := cfgManager.GetConfigFile()
 
-	_, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways})
+	_, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways})
 	want := `remote restarts are disabled on this host: set "remote-restart-enabled: true" under integrations in ` + path + ` to allow them`
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %q", err, want)
@@ -578,7 +581,7 @@ func TestRemoteRestartsDisabled(t *testing.T) {
 	}
 
 	recordRestart(time.Now().Add(time.Hour))
-	if err := cancelRestartCommand(); err != nil || len(s.cancels) != 1 {
+	if err := cancelRestartCommand(context.Background()); err != nil || len(s.cancels) != 1 {
 		t.Fatalf("cancel refused: %v", err)
 	}
 }
@@ -613,7 +616,7 @@ func TestApplyConfigCannotEnableRemoteRestarts(t *testing.T) {
 // agent's user alone, and still holds after the agent restarted.
 func TestRestartRecordSurvivesAgentRestart(t *testing.T) {
 	s := resetRestartState(t)
-	at, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways, DelayMinutes: 30})
+	at, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways, DelayMinutes: 30})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +630,7 @@ func TestRestartRecordSurvivesAgentRestart(t *testing.T) {
 	}
 
 	restartAgentMemory()
-	if _, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways}); err == nil || !strings.Contains(err.Error(), "already scheduled") {
+	if _, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways}); err == nil || !strings.Contains(err.Error(), "already scheduled") {
 		t.Fatalf("the record was lost with the agent's memory: %v", err)
 	}
 	if _, err := registerPatchRun("real", func() {}, false); err == nil {
@@ -635,7 +638,7 @@ func TestRestartRecordSurvivesAgentRestart(t *testing.T) {
 	}
 
 	restartAgentMemory()
-	if err := cancelRestartCommand(); err != nil {
+	if err := cancelRestartCommand(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.cancels) != 1 || !s.cancels[0].At.Equal(at) {
@@ -676,7 +679,7 @@ func TestCancelOnlyWhatPatchMonScheduled(t *testing.T) {
 			if tt.record {
 				recordRestart(time.Now().Add(time.Hour))
 			}
-			err := cancelRestartCommand()
+			err := cancelRestartCommand(context.Background())
 			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) || tt.wantErr == nil && (err == nil) != (tt.cancelErr == nil) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
@@ -766,5 +769,101 @@ func TestRestartRecordNeedsAPrivateDirectory(t *testing.T) {
 	}
 	if _, err := readRestartRecord(restartRecordPath()); err == nil || errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("read from a directory others can write to: %v", err)
+	}
+}
+
+// The server waits 20 seconds for the answer to a restart or cancel
+// command: the answer leaves within 15, the work itself has less.
+func TestCommandLimitsFitTheServersWait(t *testing.T) {
+	if commandReplyLimit > 15*time.Second || commandWorkLimit >= commandReplyLimit {
+		t.Fatalf("work limit %s, reply limit %s", commandWorkLimit, commandReplyLimit)
+	}
+}
+
+// A command answers within its limit even when the operating system never
+// does, and says the outcome is unknown.
+func TestCommandAnswersWhenTheSystemHangs(t *testing.T) {
+	resetRestartState(t)
+	commandWorkLimit, commandReplyLimit = 50*time.Millisecond, 200*time.Millisecond
+	release := make(chan struct{})
+	scheduleCommandRestart = func(context.Context, time.Duration, string) error {
+		<-release // ignores its deadline
+		return nil
+	}
+	cancelHostRestart = func(context.Context, reboot.Scheduled) error {
+		<-release
+		return nil
+	}
+	// Let the hung calls finish before the next test takes the lock.
+	defer func() {
+		close(release)
+		restartGate.Lock()
+		restartGate.Unlock()
+	}()
+
+	start := time.Now()
+	r := restartCommandReply(reboot.Options{Mode: reboot.ModeAlways})
+	if elapsed := time.Since(start); elapsed > time.Second || r.OK || !strings.Contains(r.Error, "may still be scheduled") || r.Action != "reboot" {
+		t.Fatalf("after %s: %+v", elapsed, r)
+	}
+}
+
+// The work itself honours its deadline: an operating system call that
+// takes too long is given up, and nothing is recorded.
+func TestCommandWorkHonoursItsDeadline(t *testing.T) {
+	resetRestartState(t)
+	commandWorkLimit, commandReplyLimit = 50*time.Millisecond, 5*time.Second
+	scheduleCommandRestart = func(ctx context.Context, _ time.Duration, _ string) error {
+		<-ctx.Done()
+		return errors.New("shutdown -r +5: no answer in time")
+	}
+	start := time.Now()
+	r := restartCommandReply(reboot.Options{Mode: reboot.ModeAlways})
+	if elapsed := time.Since(start); elapsed > time.Second || r.OK || !strings.Contains(r.Error, "no answer in time") {
+		t.Fatalf("after %s: %+v", elapsed, r)
+	}
+	if _, ok := recordedRestart(); ok {
+		t.Fatal("a restart that was not scheduled was recorded")
+	}
+}
+
+// A command waits for the lock no longer than its limit.
+func TestCommandDoesNotWaitForeverForTheLock(t *testing.T) {
+	s := resetRestartState(t)
+	commandWorkLimit, commandReplyLimit = 50*time.Millisecond, 5*time.Second
+	recordRestart(time.Now().Add(time.Hour))
+	restartGate.Lock()
+	start := time.Now()
+	restart := restartCommandReply(reboot.Options{Mode: reboot.ModeAlways})
+	cancel := cancelCommandReply()
+	restartGate.Unlock()
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("waited %s", elapsed)
+	}
+	for _, r := range []restartReply{restart, cancel} {
+		if r.OK || r.Error != errRestartBusy.Error() {
+			t.Errorf("%s: %+v", r.Action, r)
+		}
+	}
+	if s.calls != 0 || len(s.cancels) != 0 {
+		t.Fatal("the host was touched without the lock")
+	}
+}
+
+// The cancel's answers, as the server receives them.
+func TestCancelCommandReply(t *testing.T) {
+	s := resetRestartState(t)
+	if r := cancelCommandReply(); r.OK || r.Action != "cancel" || r.Error != reboot.ErrNotScheduledByPatchMon.Error() {
+		t.Fatalf("without a record: %+v", r)
+	}
+	recordRestart(time.Now().Add(time.Hour))
+	s.cancelErr = reboot.ErrNothingScheduled
+	if r := cancelCommandReply(); r.OK || r.Error != "no restart is scheduled on this host" {
+		t.Fatalf("nothing pending: %+v", r)
+	}
+	recordRestart(time.Now().Add(time.Hour))
+	s.cancelErr = nil
+	if r := cancelCommandReply(); !r.OK || r.Error != "" {
+		t.Fatalf("cancelled: %+v", r)
 	}
 }
