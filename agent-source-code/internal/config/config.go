@@ -75,8 +75,10 @@ var AvailableIntegrations = []string{
 }
 
 // LocalOnlyIntegrations let the server reach into the host (a shell, a
-// desktop, a restart). Only editing config.yml on the host changes them:
-// the server can never set them, so a compromised server cannot turn them on.
+// desktop, a restart). Only editing config.yml on the host changes them: the
+// server's configuration messages (apply_config, the startup integration
+// sync) cannot. That does not protect against a server able to push an agent
+// update, which replaces the agent itself.
 var LocalOnlyIntegrations = []string{"ssh-proxy-enabled", "rdp-proxy-enabled", RemoteRestartIntegration}
 
 // IsLocalOnlyIntegration reports whether only config.yml on the host can

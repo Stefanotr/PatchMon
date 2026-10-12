@@ -255,7 +255,7 @@ integrations:
 
 ### Remote Restarts
 
-Lets PatchMon restart the host: the restart command from the host page and the restart option of patch runs. Off by default, it must be enabled manually in `config.yml`, then the agent service restarted; it cannot be pushed from the server. While it is off, restart commands are refused and a patch run's restart is skipped. Cancelling a restart PatchMon scheduled stays possible.
+Lets PatchMon restart the host: the restart command from the host page and the restart option of patch runs. Off by default, it must be enabled manually in `config.yml`, then the agent service restarted; the server's configuration messages cannot change it (this does not guard against a server able to push an agent update). While it is off, restart commands are refused and a patch run's restart is skipped. Cancelling a restart PatchMon scheduled stays possible.
 
 ```yaml
 integrations:
