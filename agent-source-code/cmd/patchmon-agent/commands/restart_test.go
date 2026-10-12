@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"patchmon-agent/internal/config"
 	"patchmon-agent/internal/reboot"
 )
 
@@ -19,6 +20,10 @@ type scheduledRestart struct {
 	err   error
 	// reports holds the restarts reported to the server: "ok" or the error.
 	reports []string
+	// agentRestarts counts restarts of the agent's own service, which fail
+	// with agentRestartErr.
+	agentRestarts   atomic.Int32
+	agentRestartErr error
 }
 
 func (s *scheduledRestart) report(runID string, _ time.Time, err error) {
@@ -41,6 +46,7 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	t.Helper()
 	restartGate.Lock()
 	restartGate.pendingAt = time.Time{}
+	restartGate.agentRestartWaiting = false
 	restartGate.Unlock()
 	patchRunCancels.Range(func(k, _ any) bool {
 		patchRunCancels.Delete(k)
@@ -49,13 +55,20 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	updateInFlight.Store(false)
 	s := &scheduledRestart{}
 	oldSchedule, oldCancel, oldPending, oldReport := scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart
+	oldAgentRestart := restartAgentService
 	scheduleHostRestart = s.schedule
 	osPendingRestart = func() (time.Time, bool) { return time.Time{}, false }
 	reportRunRestart = s.report
+	restartAgentService = func() error {
+		s.agentRestarts.Add(1)
+		return s.agentRestartErr
+	}
 	t.Cleanup(func() {
 		scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart = oldSchedule, oldCancel, oldPending, oldReport
+		restartAgentService = oldAgentRestart
 		restartGate.Lock()
 		restartGate.pendingAt = time.Time{}
+		restartGate.agentRestartWaiting = false
 		restartGate.Unlock()
 	})
 	return s
@@ -376,5 +389,75 @@ func TestConcurrentDuplicatePatchRuns(t *testing.T) {
 	wg.Wait()
 	if won.Load() != 1 || refusals.Load() != 0 {
 		t.Fatalf("%d run(s) registered, %d refusal(s) sent; want 1 and 0", won.Load(), refusals.Load())
+	}
+}
+
+// apply_config saves the configuration at once but restarts the agent only
+// once no patch run, dry runs included, is in progress; no run starts while
+// the restart waits.
+func TestApplyConfigWaitsForPatchRuns(t *testing.T) {
+	s := resetRestartState(t)
+	m := withTestConfig(t, "on-demand")
+	noop := context.CancelFunc(func() {})
+
+	if err := applyConfig(map[string]interface{}{"docker": true}); err != nil {
+		t.Fatal(err)
+	}
+	if s.agentRestarts.Load() != 1 {
+		t.Fatalf("agent restarted %d time(s) with no run in progress, want 1", s.agentRestarts.Load())
+	}
+	// The fake restart returns; the real one ends the process.
+	restartGate.Lock()
+	restartGate.agentRestartWaiting = false
+	restartGate.Unlock()
+
+	dry, err := registerPatchRun("dry", noop, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	real, err := registerPatchRun("real", noop, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyConfig(map[string]interface{}{"docker": false}); err != nil {
+		t.Fatal(err)
+	}
+	if s.agentRestarts.Load() != 1 {
+		t.Fatal("the agent restarted during a patch run")
+	}
+	saved := config.New()
+	saved.SetConfigFile(m.GetConfigFile())
+	if err := saved.LoadConfig(); err != nil || saved.IsIntegrationEnabled("docker") {
+		t.Fatalf("the configuration was not saved straight away: docker %v, %v", saved.IsIntegrationEnabled("docker"), err)
+	}
+	for _, dryRun := range []bool{true, false} {
+		if _, err := registerPatchRun("next", noop, dryRun); err == nil || !strings.Contains(err.Error(), "restarts to apply a new configuration") {
+			t.Fatalf("a run (dry run %v) started while the agent restart waits: %v", dryRun, err)
+		}
+	}
+	if err := applyConfig(map[string]interface{}{"docker": true}); err != nil {
+		t.Fatal(err)
+	}
+
+	unregisterPatchRun("dry", dry)
+	if s.agentRestarts.Load() != 1 {
+		t.Fatal("the agent restarted while a run was still in progress")
+	}
+	unregisterPatchRun("real", real)
+	if s.agentRestarts.Load() != 2 {
+		t.Fatalf("agent restarted %d time(s) in all, want 2: once after the last run", s.agentRestarts.Load())
+	}
+}
+
+// When the agent cannot restart itself, runs start again; the configuration
+// applies at the agent's next start.
+func TestFailedAgentRestartLetsRunsStart(t *testing.T) {
+	s := resetRestartState(t)
+	s.agentRestartErr = errors.New("no init system")
+	if err := restartAgentForConfig(); err == nil {
+		t.Fatal("the failure was swallowed")
+	}
+	if _, err := registerPatchRun("run", context.CancelFunc(func() {}), true); err != nil {
+		t.Fatalf("runs still refused after a failed agent restart: %v", err)
 	}
 }

@@ -621,7 +621,7 @@ func runServiceLoop(stopCh <-chan struct{}) error {
 				if err := applyConfig(m.applyConfig); err != nil {
 					logger.WithError(err).Warn("apply_config failed")
 				} else {
-					logger.Info("apply_config completed, service will restart")
+					logger.Info("apply_config completed")
 				}
 			case "ssh_proxy":
 				logger.WithField("session_id", logutil.Sanitize(m.sshProxySessionID)).Info("Handling SSH proxy connection request")
@@ -2920,7 +2920,9 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool, 
 	return stepErr // nil, or the restart that could not be scheduled
 }
 
-// applyConfig applies a full config update from the server and restarts the service.
+// applyConfig applies a full config update from the server and restarts the
+// service, at once or, while a patch run is in progress, once it is over. The
+// configuration is saved straight away either way.
 func applyConfig(cfg map[string]interface{}) error {
 	if cfg == nil {
 		return fmt.Errorf("config is nil")
@@ -3004,8 +3006,7 @@ func applyConfig(cfg map[string]interface{}) error {
 	}
 	logger.WithFields(logutil.SanitizeMap(map[string]interface{}{"openscap": openscap, "docker_bench": dockerBench})).Info("Compliance scanner toggles updated")
 
-	logger.Info("Config updated, restarting patchmon-agent service...")
-	return restartService("", "")
+	return restartAgentForConfig()
 }
 
 // sendComplianceProgress sends a progress update via the global channel

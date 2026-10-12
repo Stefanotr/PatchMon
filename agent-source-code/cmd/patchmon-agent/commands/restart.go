@@ -24,7 +24,9 @@ import (
 // cut it off, and no restart is scheduled while a run is in progress or
 // another restart is pending. The agent's self-update, which restarts the
 // agent, follows the same rule: it waits for runs to end, and no run starts
-// while it is in progress.
+// while it is in progress. So does the agent restart that applies a
+// configuration from the server: it waits for the runs in progress to end,
+// and no run starts while it waits.
 
 const (
 	restartCommandTimeout = 30 * time.Second
@@ -41,6 +43,9 @@ const (
 var restartGate struct {
 	sync.Mutex
 	pendingAt time.Time
+	// agentRestartWaiting: apply_config saved a configuration and the
+	// agent restarts to apply it once no patch run is in progress.
+	agentRestartWaiting bool
 }
 
 // Seams for tests: the restart itself goes to the operating system.
@@ -62,6 +67,10 @@ var (
 	// reportRunRestart tells the server about a restart a patch run
 	// scheduled, or failed to schedule, for the host's activity history.
 	reportRunRestart = sendRunRestartEvent
+	// restartAgentService restarts the agent's own service. It normally
+	// ends this process; it returns only when the restart failed, or will
+	// happen in a moment.
+	restartAgentService = func() error { return restartService("", "") }
 )
 
 // pendingRestartLocked returns the restart this agent scheduled, if it is
@@ -105,6 +114,9 @@ func registerPatchRun(id string, cancel context.CancelFunc, dryRun bool) (*patch
 	if updateInFlight.Load() {
 		return nil, errors.New("the agent is updating itself; run the patch again in a few minutes")
 	}
+	if restartGate.agentRestartWaiting {
+		return nil, errors.New("the agent restarts to apply a new configuration once the patch run in progress is over; run the patch again in a few minutes")
+	}
 	if !dryRun {
 		if err := restartWouldCutRunLocked(time.Now()); err != nil {
 			return nil, err
@@ -118,11 +130,54 @@ func registerPatchRun(id string, cancel context.CancelFunc, dryRun bool) (*patch
 }
 
 // unregisterPatchRun removes a run's own entry, never one a later run stored
-// under the same id.
+// under the same id. The last run to end restarts the agent when a new
+// configuration waits for it.
 func unregisterPatchRun(id string, run *patchRun) {
 	restartGate.Lock()
-	defer restartGate.Unlock()
 	patchRunCancels.CompareAndDelete(id, run)
+	restartNow := restartGate.agentRestartWaiting && !otherPatchRunInProgress("")
+	restartGate.Unlock()
+	if restartNow {
+		logger.Info("The last patch run is over; restarting the agent to apply the new configuration")
+		_ = restartAgentNow()
+	}
+}
+
+// restartAgentForConfig restarts the agent so the configuration apply_config
+// saved takes effect. The restart would cut a patch run off (on Linux,
+// systemd stops the package manager with the agent; on Windows the run's
+// status is lost), so while one is in progress, dry runs included, it waits
+// for the last one to end, and no run starts meanwhile.
+func restartAgentForConfig() error {
+	restartGate.Lock()
+	if restartGate.agentRestartWaiting {
+		restartGate.Unlock()
+		logger.Info("Configuration saved; the agent restart to apply it already waits for the patch run in progress")
+		return nil
+	}
+	// Set before deciding, so no run starts between now and the restart.
+	restartGate.agentRestartWaiting = true
+	busy := otherPatchRunInProgress("")
+	restartGate.Unlock()
+	if busy {
+		logger.Info("Configuration saved; the agent restarts to apply it once the patch run in progress is over")
+		return nil
+	}
+	return restartAgentNow()
+}
+
+// restartAgentNow restarts the agent for a new configuration. Runs stay
+// refused unless the restart failed.
+func restartAgentNow() error {
+	logger.Info("Config updated, restarting patchmon-agent service...")
+	if err := restartAgentService(); err != nil {
+		restartGate.Lock()
+		restartGate.agentRestartWaiting = false
+		restartGate.Unlock()
+		logger.WithError(err).Error("Could not restart the agent; the new configuration applies at its next start")
+		return fmt.Errorf("restart the agent: %w", err)
+	}
+	return nil
 }
 
 // lookupPatchRun returns the run in progress with this id.
