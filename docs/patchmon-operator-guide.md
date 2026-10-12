@@ -3836,7 +3836,7 @@ This guide covers everything you need to manage the agent after installation: CL
 | Property | Value |
 |----------|-------|
 | **Binary location** | `C:\Program Files\PatchMon\patchmon-agent.exe` |
-| **Configuration directory** | `C:\ProgramData\PatchMon\` |
+| **Configuration directory** | `C:\ProgramData\PatchMon\`, readable and writable by SYSTEM and Administrators only. The installer sets it (owner, permissions, entries other accounts added) and stops if it cannot; the agent sets the permissions again each time the service starts, except on a folder that is a link or that another account owns, which it leaves alone with a warning in its log (reinstall to repair it) |
 | **Config file** | `C:\ProgramData\PatchMon\config.yml` |
 | **Credentials file** | `C:\ProgramData\PatchMon\credentials.yml` |
 | **Log file** | `C:\ProgramData\PatchMon\patchmon-agent.log` |
