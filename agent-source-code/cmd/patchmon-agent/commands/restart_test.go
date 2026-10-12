@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 
 	"patchmon-agent/internal/config"
 	"patchmon-agent/internal/reboot"
+
+	"github.com/gorilla/websocket"
 )
 
 type scheduledRestart struct {
@@ -865,5 +868,72 @@ func TestCancelCommandReply(t *testing.T) {
 	s.cancelErr = nil
 	if r := cancelCommandReply(); !r.OK || r.Error != "" {
 		t.Fatalf("cancelled: %+v", r)
+	}
+}
+
+// Restart commands are answered from the WebSocket reader itself, never
+// through the service loop, so a busy loop neither delays nor drops them;
+// the reader does not wait for the command either.
+func TestRestartMessagesBypassTheServiceLoop(t *testing.T) {
+	resetRestartState(t)
+	replies := make(chan restartReply, 4)
+	client := newWSTestClient(t, func(conn *websocket.Conn, _ <-chan struct{}) {
+		for {
+			_, b, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var r restartReply
+			if json.Unmarshal(b, &r) == nil {
+				replies <- r
+			}
+		}
+	})
+	globalWsConnMu.Lock()
+	oldConn := globalWsConn
+	globalWsConn = client
+	globalWsConnMu.Unlock()
+	t.Cleanup(func() {
+		globalWsConnMu.Lock()
+		globalWsConn = oldConn
+		globalWsConnMu.Unlock()
+	})
+	next := func() restartReply {
+		t.Helper()
+		select {
+		case r := <-replies:
+			return r
+		case <-time.After(5 * time.Second):
+			t.Fatal("no answer")
+			return restartReply{}
+		}
+	}
+
+	handleRestartMessage("reboot", "req-1", &reboot.Options{Mode: reboot.ModeAlways, DelayMinutes: 30})
+	if r := next(); r.Type != "reboot_result" || r.RequestID != "req-1" || r.Action != "reboot" || !r.OK {
+		t.Fatalf("restart: %+v", r)
+	}
+	handleRestartMessage("reboot_cancel", "req-2", nil)
+	if r := next(); r.RequestID != "req-2" || r.Action != "cancel" || !r.OK {
+		t.Fatalf("cancel: %+v", r)
+	}
+	handleRestartMessage("reboot", "req-3", &reboot.Options{Mode: "now"})
+	if r := next(); r.RequestID != "req-3" || r.OK || r.Error != "invalid restart options" {
+		t.Fatalf("invalid options: %+v", r)
+	}
+
+	release := make(chan struct{})
+	defer close(release)
+	startRestartCommand = func(reboot.Options, string) { <-release }
+	defer func() { startRestartCommand = handleRestartCommand }()
+	done := make(chan struct{})
+	go func() {
+		handleRestartMessage("reboot", "req-4", &reboot.Options{Mode: reboot.ModeAlways})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("the WebSocket reader waited for the restart command")
 	}
 }

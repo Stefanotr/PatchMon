@@ -593,6 +593,41 @@ func cancelCommandReply() restartReply {
 	})
 }
 
+// Seams for tests: the command handlers started by handleRestartMessage.
+var (
+	startRestartCommand = handleRestartCommand
+	startRestartCancel  = handleRestartCancel
+)
+
+// handleRestartMessage takes a "reboot" or "reboot_cancel" message from the
+// WebSocket reader and starts its handler at once. It does not go through
+// the service loop, which runs check-ins, reports, agent updates and
+// apply_config inline: the answer could miss the 20 seconds the server
+// waits, or the command be dropped while the loop's buffer is full. The
+// handlers are serialised by restartGate and bounded in time.
+func handleRestartMessage(msgType, requestID string, opts *reboot.Options) {
+	if requestID != "" && !requestIDPattern.MatchString(requestID) {
+		logger.Warn("Ignoring restart command with an invalid request_id")
+		return
+	}
+	if msgType == "reboot_cancel" {
+		logger.Info("reboot_cancel received")
+		go startRestartCancel(requestID)
+		return
+	}
+	var restart reboot.Options
+	if opts != nil {
+		restart = *opts
+	}
+	if err := restart.Validate(); err != nil {
+		logger.WithError(err).Warn("Ignoring invalid reboot command")
+		go sendRestartReply(restartReply{RequestID: requestID, Action: "reboot", Error: "invalid restart options"})
+		return
+	}
+	logger.Info("reboot received")
+	go startRestartCommand(restart, requestID)
+}
+
 // handleRestartCommand runs the server's restart command and answers it.
 func handleRestartCommand(opts reboot.Options, requestID string) {
 	reply := restartCommandReply(opts)

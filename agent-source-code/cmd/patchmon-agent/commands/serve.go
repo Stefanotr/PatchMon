@@ -451,10 +451,6 @@ func runServiceLoop(stopCh <-chan struct{}) error {
 			case "docker_inventory_refresh":
 				logger.Info("Refreshing Docker inventory on server request...")
 				go refreshDockerInventory(ctx)
-			case "reboot":
-				go handleRestartCommand(m.reboot, m.requestID)
-			case "reboot_cancel":
-				go handleRestartCancel(m.requestID)
 			case "run_patch":
 				go func(msg wsMsg) {
 					switch err := runPatch(msg.patchRunID, msg.patchType, msg.packageNames, msg.dryRun, msg.reboot); {
@@ -1355,10 +1351,8 @@ type wsMsg struct {
 	patchType    string
 	packageNames []string
 	dryRun       bool
-	// run_patch and reboot: whether and when to restart the host
-	reboot reboot.Options
-	// reboot and reboot_cancel: identifies the command in the agent's reply
-	requestID    string
+	// run_patch: whether and when to restart the host
+	reboot       reboot.Options
 	sshProxyData string // SSH input data
 	// RDP proxy fields
 	rdpProxySessionID string // Unique session ID for RDP proxy
@@ -1982,27 +1976,9 @@ func connectOnce(out chan<- wsMsg, dockerEvents <-chan interface{}, backoff *tim
 				reboot:       restart,
 			})
 		case "reboot", "reboot_cancel":
-			requestID := payload.RequestID
-			if requestID != "" && !requestIDPattern.MatchString(requestID) {
-				logger.Warn("Ignoring restart command with an invalid request_id")
-				continue
-			}
-			if payload.Type == "reboot_cancel" {
-				logger.Info("reboot_cancel received")
-				dispatchWSMessage(out, wsMsg{kind: "reboot_cancel", requestID: requestID})
-				continue
-			}
-			var restart reboot.Options
-			if payload.Reboot != nil {
-				restart = *payload.Reboot
-			}
-			if err := restart.Validate(); err != nil {
-				logger.WithError(err).Warn("Ignoring invalid reboot command")
-				sendRestartReply(restartReply{RequestID: requestID, Action: "reboot", Error: "invalid restart options"})
-				continue
-			}
-			logger.Info("reboot received")
-			dispatchWSMessage(out, wsMsg{kind: "reboot", reboot: restart, requestID: requestID})
+			// Answered from here, not through the service loop: see
+			// handleRestartMessage.
+			handleRestartMessage(payload.Type, payload.RequestID, payload.Reboot)
 		case "compliance_scan":
 			// Validate profile ID to prevent command injection
 			if err := validateProfileID(payload.ProfileID); err != nil {
