@@ -119,6 +119,7 @@ func runWindowsService() error {
 
 // runAsService determines if running as service or interactive and runs appropriately
 func runAsService() error {
+	secureDataDir()
 	isService := isWindowsService()
 
 	if isService {
