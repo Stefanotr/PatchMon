@@ -55,7 +55,8 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	updateInFlight.Store(false)
 	s := &scheduledRestart{}
 	oldSchedule, oldCancel, oldPending, oldReport := scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart
-	oldAgentRestart := restartAgentService
+	oldAgentRestart, oldAllowed := restartAgentService, remoteRestartsAllowed
+	remoteRestartsAllowed = func() bool { return true }
 	scheduleHostRestart = s.schedule
 	osPendingRestart = func() (time.Time, bool) { return time.Time{}, false }
 	reportRunRestart = s.report
@@ -65,7 +66,7 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	}
 	t.Cleanup(func() {
 		scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart = oldSchedule, oldCancel, oldPending, oldReport
-		restartAgentService = oldAgentRestart
+		restartAgentService, remoteRestartsAllowed = oldAgentRestart, oldAllowed
 		restartGate.Lock()
 		restartGate.pendingAt = time.Time{}
 		restartGate.agentRestartWaiting = false
@@ -459,5 +460,62 @@ func TestFailedAgentRestartLetsRunsStart(t *testing.T) {
 	}
 	if _, err := registerPatchRun("run", context.CancelFunc(func() {}), true); err != nil {
 		t.Fatalf("runs still refused after a failed agent restart: %v", err)
+	}
+}
+
+// A host that has not opted in refuses the server's restart command and
+// skips the restart of patch runs; cancelling stays allowed.
+func TestRemoteRestartsDisabled(t *testing.T) {
+	s := resetRestartState(t)
+	withTestConfig(t, "on-demand")
+	remoteRestartsAllowed = remoteRestartsEnabledInConfig
+	path := cfgManager.GetConfigFile()
+
+	_, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways})
+	want := `remote restarts are disabled on this host: set "remote-restart-enabled: true" under integrations in ` + path + ` to allow them`
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+
+	var out strings.Builder
+	if err := scheduleRestart(&out, "run-1", reboot.Options{Mode: reboot.ModeAlways}, false, "", s.schedule); err != nil {
+		t.Fatalf("a skipped restart failed the run: %v", err)
+	}
+	if line := "Restart: skipped, remote restarts are disabled on this host (remote-restart-enabled in " + path + ")\n"; out.String() != line {
+		t.Fatalf("output %q, want %q", out.String(), line)
+	}
+	if s.calls != 0 {
+		t.Fatal("the host was restarted")
+	}
+
+	cancelHostRestart = func() error { return nil }
+	if err := cancelRestartCommand(); err != nil {
+		t.Fatalf("cancel refused: %v", err)
+	}
+}
+
+// The opt-in is local: apply_config cannot turn it, or the other local-only
+// switches, on.
+func TestApplyConfigCannotEnableRemoteRestarts(t *testing.T) {
+	resetRestartState(t)
+	m := withTestConfig(t, "on-demand")
+	err := applyConfig(map[string]interface{}{
+		"remote-restart-enabled": true,
+		"ssh-proxy-enabled":      true,
+		"rdp-proxy-enabled":      true,
+		"integrations":           map[string]interface{}{"remote-restart-enabled": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := config.New()
+	saved.SetConfigFile(m.GetConfigFile())
+	if err := saved.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range config.LocalOnlyIntegrations {
+		if m.IsIntegrationEnabled(name) || saved.IsIntegrationEnabled(name) {
+			t.Errorf("apply_config turned %s on", name)
+		}
 	}
 }

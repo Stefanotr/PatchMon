@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"patchmon-agent/internal/config"
 	"patchmon-agent/internal/logutil"
 	"patchmon-agent/internal/packages"
 	"patchmon-agent/internal/reboot"
@@ -67,6 +68,9 @@ var (
 	// reportRunRestart tells the server about a restart a patch run
 	// scheduled, or failed to schedule, for the host's activity history.
 	reportRunRestart = sendRunRestartEvent
+	// remoteRestartsAllowed reports the host's opt-in for the restarts
+	// PatchMon asks for, set in config.yml only.
+	remoteRestartsAllowed = remoteRestartsEnabledInConfig
 	// restartAgentService restarts the agent's own service. It normally
 	// ends this process; it returns only when the restart failed, or will
 	// happen in a moment.
@@ -81,6 +85,24 @@ func pendingRestartLocked(now time.Time) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return at, true
+}
+
+func remoteRestartsEnabledInConfig() bool {
+	return cfgManager != nil && cfgManager.IsIntegrationEnabled(config.RemoteRestartIntegration)
+}
+
+// localConfigPath is the config.yml the host's administrator edits.
+func localConfigPath() string {
+	if cfgManager == nil {
+		return config.DefaultConfigFilePath()
+	}
+	return cfgManager.GetConfigFile()
+}
+
+// remoteRestartsDisabled says why a patch run's restart was skipped on a host
+// that has not opted in.
+func remoteRestartsDisabled() string {
+	return fmt.Sprintf("remote restarts are disabled on this host (%s in %s)", config.RemoteRestartIntegration, localConfigPath())
 }
 
 func formatRestartTime(t time.Time) string {
@@ -265,6 +287,10 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 		_, _ = fmt.Fprintf(out, "Restart: not needed\n")
 		return nil
 	}
+	if !remoteRestartsAllowed() {
+		_, _ = fmt.Fprintf(out, "Restart: skipped, %s\n", remoteRestartsDisabled())
+		return nil
+	}
 
 	// The report goes to the server over the network: send it once the lock
 	// is released (deferred first, so it runs after the unlock).
@@ -312,6 +338,10 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 func restartCommand(opts reboot.Options) (time.Time, error) {
 	if opts.Mode != reboot.ModeAlways {
 		return time.Time{}, errors.New("invalid restart command")
+	}
+	if !remoteRestartsAllowed() {
+		return time.Time{}, fmt.Errorf("remote restarts are disabled on this host: set \"%s: true\" under integrations in %s to allow them",
+			config.RemoteRestartIntegration, localConfigPath())
 	}
 	restartGate.Lock()
 	defer restartGate.Unlock()

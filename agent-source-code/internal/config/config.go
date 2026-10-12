@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 
 	"patchmon-agent/pkg/models"
@@ -57,6 +58,11 @@ func DefaultLogFilePath() string {
 	return log
 }
 
+// RemoteRestartIntegration is the host's own opt-in for restarts PatchMon
+// asks for: the server's restart command and the restart option of patch
+// runs. Off by default.
+const RemoteRestartIntegration = "remote-restart-enabled"
+
 // AvailableIntegrations lists all integrations that can be enabled/disabled
 // Add new integrations here as they are implemented
 var AvailableIntegrations = []string{
@@ -64,7 +70,19 @@ var AvailableIntegrations = []string{
 	"compliance",
 	"ssh-proxy-enabled",
 	"rdp-proxy-enabled",
+	RemoteRestartIntegration,
 	// Future: "proxmox", "kubernetes", etc.
+}
+
+// LocalOnlyIntegrations let the server reach into the host (a shell, a
+// desktop, a restart). Only editing config.yml on the host changes them:
+// the server can never set them, so a compromised server cannot turn them on.
+var LocalOnlyIntegrations = []string{"ssh-proxy-enabled", "rdp-proxy-enabled", RemoteRestartIntegration}
+
+// IsLocalOnlyIntegration reports whether only config.yml on the host can
+// change the integration.
+func IsLocalOnlyIntegration(name string) bool {
+	return slices.Contains(LocalOnlyIntegrations, name)
 }
 
 // ErrConfigUnreadable is returned by a save when the config file exists but the
@@ -466,6 +484,8 @@ func (m *Manager) saveConfigLocked() error {
 				m.config.Integrations[integrationName] = false
 			case "rdp-proxy-enabled":
 				m.config.Integrations[integrationName] = false
+			case RemoteRestartIntegration:
+				m.config.Integrations[integrationName] = false
 			default:
 				m.config.Integrations[integrationName] = false
 			}
@@ -651,9 +671,14 @@ func (m *Manager) IsIntegrationEnabled(name string) bool {
 
 // SetIntegrationEnabled sets the enabled status for an integration
 // For compliance, use SetComplianceMode() instead for three-state control
+// It refuses the local-only integrations, which only editing config.yml on
+// the host changes.
 func (m *Manager) SetIntegrationEnabled(name string, enabled bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if IsLocalOnlyIntegration(name) {
+		return fmt.Errorf("%s can only be changed by editing %s on the host", name, m.configFile)
+	}
 	if m.config.Integrations == nil {
 		m.config.Integrations = make(map[string]interface{})
 	}

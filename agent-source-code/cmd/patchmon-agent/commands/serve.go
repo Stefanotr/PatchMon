@@ -94,6 +94,13 @@ func syncIntegrationStatus(integrationResp *models.IntegrationStatusResponse) {
 		if integrationName == "compliance" && integrationResp.ComplianceMode != "" {
 			continue
 		}
+		// The local-only switches let the server into the host; only
+		// config.yml on the host changes them.
+		if config.IsLocalOnlyIntegration(integrationName) {
+			logger.WithField("integration", logutil.Sanitize(integrationName)).
+				Warn("Ignoring the server's value for a setting only config.yml on the host can change")
+			continue
+		}
 		configEnabled := cfgManager.IsIntegrationEnabled(integrationName)
 		if serverEnabled != configEnabled {
 			logger.WithFields(logutil.SanitizeMap(map[string]interface{}{
