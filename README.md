@@ -1,3 +1,12 @@
+> [!NOTE]
+> **This is a fork: [Stefanotr/PatchMon](https://github.com/Stefanotr/PatchMon)**, built on the official [PatchMon/PatchMon](https://github.com/PatchMon/PatchMon).
+> It follows the official releases and adds Windows patching with dry run, restart management and fork-aware updates: see [What this fork adds](#what-this-fork-adds).
+> The rest of this page is the upstream README; maintaining the fork is covered in [FORK.md](FORK.md).
+>
+> [![Fork release](https://img.shields.io/github/v/release/Stefanotr/PatchMon?style=flat-square&label=fork%20release&color=teal)](https://github.com/Stefanotr/PatchMon/releases)
+> [![Server image](https://img.shields.io/badge/image-ghcr.io%2Fstefanotr%2Fpatchmon--server-teal?style=flat-square&logo=docker&logoColor=white)](https://github.com/Stefanotr/PatchMon/pkgs/container/patchmon-server)
+> [![Upstream](https://img.shields.io/badge/upstream-PatchMon%2FPatchMon-black?style=flat-square&logo=github)](https://github.com/PatchMon/PatchMon)
+
 <div align="center">
 
 # PatchMon
@@ -18,6 +27,37 @@
 [![AI-DECLARATION: assist](https://img.shields.io/badge/AI--DECLARATION-assist-fef9c3?style=for-the-badge&labelColor=333333)](AI-DECLARATION.md)
 
 </div>
+
+---
+
+## What this fork adds
+
+| Feature | What it does |
+|---|---|
+| **Windows patching with dry run** | Patch runs on Windows go through Windows Update and WinGet, with the same validate, approve and run flow as Linux. The dry run prints the exact plan (size, version change, restart expected) without installing anything. |
+| **WinGet refusals remembered** | An app WinGet will not upgrade in place (another installer technology, a pin) is skipped with the reason instead of failing every run, and later runs show it as skipped up front. |
+| **Restart management** | Restart hosts after a patch run (never, if one is needed, always) or on demand, after a delay or at a time of day, with a warning for signed-in users, and cancel a scheduled restart. The *Required* badge of the Hosts list opens the restart dialog, which says when a restart is optional. |
+| **Restart history** | Every restart command, and every restart a patch run schedules, is recorded in the host's *Agent Activity*: who asked, the outcome, the restart time. |
+| **Safe agent self-update** | The agent never updates itself during a patch run, dry runs included, so *Update Now* cannot cut an install off. |
+| **Fork-aware updates** | Builds are stamped with the fork's repository and commit. The server checks the fork's GitHub releases, for itself and for its agents, instead of upstream's version records; *Check for updates* sees a new release right away, and the UI links to the fork. |
+| **Upstream release watch** | A daily workflow opens an issue when PatchMon publishes an official version the fork does not contain yet. |
+
+Releases are named `vX.Y.Z-fork.N`, above the official version the fork is based on and below the next one, so servers and agents move up to each fork release. Each release publishes the server image `ghcr.io/stefanotr/patchmon-server:<version>`, also tagged `:fork`, with the agents for every platform.
+
+**Running the fork:** install PatchMon with the [Quick Start](#quick-start), then point the `server` service at the fork's image and recreate it:
+
+```yaml
+# docker-compose.override.yml, next to docker-compose.yml
+services:
+  server:
+    image: ghcr.io/stefanotr/patchmon-server:fork
+```
+
+```bash
+docker compose pull server && docker compose up -d server
+```
+
+Moving an existing server to the fork, updating and going back to the official image are covered in [FORK.md](FORK.md) (in French). The features are documented in the guides: [Windows patching](docs/patchmon-admin-guide.md#windows-patching), [Restarting the Host](docs/patchmon-admin-guide.md#restarting-the-host), [Update Safety Features](docs/patchmon-operator-guide.md#update-safety-features).
 
 ---
 

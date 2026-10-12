@@ -94,21 +94,37 @@ func Describe() Info {
 // the TXT record at dnsDomain (server.vcheck.patchmon.net or
 // agent.vcheck.patchmon.net). A fork reads the highest version among its
 // published GitHub releases: its server and its agents ship in the same
-// release, so both checks get the same answer.
+// release, so both checks get the same answer. A fork's answer may be up to
+// releasesTTL old, which suits background checks and page loads.
 func LatestVersion(ctx context.Context, dnsDomain string) (string, error) {
+	return latestVersion(ctx, dnsDomain, releasesTTL)
+}
+
+// CheckLatestVersion answers a check an admin asked for ("Check for
+// updates"). A fork reads its releases again unless they were read less than
+// refreshFloor ago, so a release published minutes earlier shows up at once
+// while repeated clicks stay within GitHub's limit. The fresh answer also
+// serves the next LatestVersion calls.
+func CheckLatestVersion(ctx context.Context, dnsDomain string) (string, error) {
+	return latestVersion(ctx, dnsDomain, refreshFloor)
+}
+
+func latestVersion(ctx context.Context, dnsDomain string, maxAge time.Duration) (string, error) {
 	if !IsFork() {
 		return lookupDNS(dnsDomain)
 	}
-	return releases.latest(ctx, Repo())
+	return releases.latest(ctx, Repo(), maxAge)
 }
 
 // lookupDNS is a variable so tests do not touch the network.
 var lookupDNS = util.LookupVersionFromDNS
 
 const (
-	// releasesTTL keeps the server well inside GitHub's unauthenticated
-	// limit (60 requests an hour per address) whatever calls the check.
+	// GitHub allows 60 unauthenticated requests an hour per address. Every
+	// read goes through one cache and two reads are at least refreshFloor
+	// apart, so the server stays within that limit whatever calls the check.
 	releasesTTL      = 15 * time.Minute
+	refreshFloor     = time.Minute
 	releasesErrorTTL = time.Minute
 	releasesTimeout  = 10 * time.Second
 	maxReleasesBody  = 1 << 20
@@ -127,14 +143,15 @@ type releaseCache struct {
 
 var releases releaseCache
 
-func (c *releaseCache) latest(ctx context.Context, repo string) (string, error) {
+// latest returns the cached answer when it is younger than maxAge (at most
+// releasesErrorTTL for an error), and reads the releases again otherwise.
+func (c *releaseCache) latest(ctx context.Context, repo string, maxAge time.Duration) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ttl := releasesTTL
-	if c.err != nil {
-		ttl = releasesErrorTTL
+	if c.err != nil && maxAge > releasesErrorTTL {
+		maxAge = releasesErrorTTL
 	}
-	if c.repo == repo && !c.at.IsZero() && time.Since(c.at) < ttl {
+	if c.repo == repo && !c.at.IsZero() && time.Since(c.at) < maxAge {
 		return c.version, c.err
 	}
 	c.version, c.err = fetchLatestRelease(ctx, repo)

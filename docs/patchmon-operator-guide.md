@@ -4751,6 +4751,7 @@ On Windows the `update-agent` flow stops the `PatchMonAgent` service, atomically
 - **Automatic backup**: creates a timestamped backup before replacing the binary
 - **Rollback**: if the new binary fails validation, the update is aborted
 - **Version verification**: checks that the downloaded binary reports the expected version
+- **No update during a patch run**: the update restarts the agent, so it is postponed while a patch run (dry run included) is in progress on the host, and no run starts while an update is under way. An auto-update waits for the next check. **Update Now** pressed during a run is dropped (the agent log says "Agent update postponed"): press it again once the run is over
 
 #### Backup Files
 
