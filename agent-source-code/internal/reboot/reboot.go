@@ -5,7 +5,8 @@
 // three are bounded here, and the restart itself goes through the operating
 // system's own scheduler (InitiateSystemShutdownEx on Windows, shutdown(8)
 // elsewhere) with an argument vector, never a shell. The OS scheduler warns
-// signed-in users and survives the agent being restarted.
+// signed-in users and survives the agent being restarted. A cancel only
+// touches the restart PatchMon scheduled, as the caller recorded it.
 package reboot
 
 import (
@@ -47,12 +48,49 @@ const (
 	defaultMessage = "this computer restarts to finish installing updates"
 )
 
-// ErrNothingScheduled is returned by Cancel when no restart was pending.
+// ErrNothingScheduled is returned by CancelScheduled when no restart was
+// pending.
 var ErrNothingScheduled = errors.New("no restart is scheduled")
 
 // ErrAlreadyScheduled is returned by Schedule when the operating system
 // already has a restart or shutdown pending, whoever asked for it.
 var ErrAlreadyScheduled = errors.New("a restart or shutdown is already pending on this host")
+
+// ErrNotScheduledByPatchMon is returned by CancelScheduled when the restart
+// or shutdown pending, if any, is not the one PatchMon scheduled.
+var ErrNotScheduledByPatchMon = errors.New("no restart scheduled by PatchMon is pending on this host; a restart or shutdown scheduled outside PatchMon is left alone")
+
+// scheduleTolerance is how far the time the system records for a restart
+// can be from the time asked for: shutdown(8) counts whole minutes, rounded
+// up.
+const scheduleTolerance = 2 * time.Minute
+
+// Scheduled is the record of a restart PatchMon scheduled, what tells it
+// apart from one scheduled outside PatchMon.
+type Scheduled struct {
+	// At is when the restart happens.
+	At time.Time
+	// Since is when it was scheduled.
+	Since time.Time
+}
+
+// Owner says whether the restart the operating system has pending is the
+// one PatchMon recorded.
+type Owner int
+
+const (
+	// OwnerNone: the recorded restart is no longer pending. Nothing is
+	// (Linux, FreeBSD), or the host restarted since (Windows).
+	OwnerNone Owner = iota
+	// OwnerPatchMon: the pending restart is the recorded one.
+	OwnerPatchMon
+	// OwnerOther: a restart or shutdown scheduled outside PatchMon is
+	// pending.
+	OwnerOther
+	// OwnerUnknown: the system does not tell (Windows), its state could not
+	// be read, or PatchMon's restart is pending alongside someone else's.
+	OwnerUnknown
+)
 
 // Options is the restart part of a patch run or of a restart command, as the
 // server sends it.

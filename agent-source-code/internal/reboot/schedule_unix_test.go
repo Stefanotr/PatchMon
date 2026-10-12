@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,14 +54,34 @@ func fakeSystemd(t *testing.T) string {
 	return systemdScheduledFile
 }
 
-// fakeShutdownProcess shows a shutdown(8) process waiting for its time.
-func fakeShutdownProcess(t *testing.T) {
+// fakeShutdownProcess shows a shutdown(8) process waiting for its time,
+// started with args; it returns its /proc directory.
+func fakeShutdownProcess(t *testing.T, pid string, args ...string) string {
 	t.Helper()
-	p := filepath.Join(procDir, "4242")
+	p := filepath.Join(procDir, pid)
 	if err := os.Mkdir(p, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(p, "comm"), []byte("shutdown\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p, "cmdline"), []byte(strings.Join(args, "\x00")+"\x00"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// A restart PatchMon scheduled, and one an administrator did.
+var (
+	patchMonShutdown = []string{"/sbin/shutdown", "-r", "+6", "PatchMon: this computer restarts to finish installing updates"}
+	adminShutdown    = []string{"/sbin/shutdown", "-h", "+30", "disk swap"}
+)
+
+// logindRecord writes logind's record of a scheduled shutdown.
+func logindRecord(t *testing.T, file string, at time.Time, mode string) {
+	t.Helper()
+	body := fmt.Sprintf("USEC=%d\nWARN_WALL=1\nMODE=%s\n", at.UnixMicro(), mode)
+	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -126,7 +147,7 @@ func TestShutdownNotFound(t *testing.T) {
 func TestScheduleRefusesWhenAShutdownIsPending(t *testing.T) {
 	t.Run("sysv", func(t *testing.T) {
 		log := fakeShutdown(t, "exit 0")
-		fakeShutdownProcess(t)
+		fakeShutdownProcess(t, "4242", adminShutdown...)
 		if err := Schedule(context.Background(), MinDelay, "PatchMon: x"); !errors.Is(err, ErrAlreadyScheduled) {
 			t.Fatalf("err = %v, want ErrAlreadyScheduled", err)
 		}
@@ -168,7 +189,7 @@ func TestScheduleOnSystemdWaitsForTheAnswer(t *testing.T) {
 
 func TestCancelWithNothingPending(t *testing.T) {
 	log := fakeShutdown(t, "exit 0")
-	if err := Cancel(context.Background()); !errors.Is(err, ErrNothingScheduled) {
+	if err := CancelScheduled(context.Background(), Scheduled{At: time.Now().Add(time.Hour)}); !errors.Is(err, ErrNothingScheduled) {
 		t.Fatalf("err = %v, want ErrNothingScheduled", err)
 	}
 	if _, err := os.Stat(log); err == nil {
@@ -176,45 +197,182 @@ func TestCancelWithNothingPending(t *testing.T) {
 	}
 }
 
-func TestCancelOnSystemd(t *testing.T) {
-	file := ""
-	t.Run("done", func(t *testing.T) {
+func TestPendingOwnerSysV(t *testing.T) {
+	s := Scheduled{At: time.Now().Add(time.Hour)}
+	t.Run("none", func(t *testing.T) {
+		fakeShutdown(t, "exit 0")
+		if got := PendingOwner(s); got != OwnerNone {
+			t.Fatalf("owner = %v, want none", got)
+		}
+	})
+	t.Run("patchmon", func(t *testing.T) {
+		fakeShutdown(t, "exit 0")
+		fakeShutdownProcess(t, "4242", patchMonShutdown...)
+		if got := PendingOwner(s); got != OwnerPatchMon {
+			t.Fatalf("owner = %v, want PatchMon", got)
+		}
+	})
+	t.Run("administrator", func(t *testing.T) {
+		fakeShutdown(t, "exit 0")
+		fakeShutdownProcess(t, "4343", adminShutdown...)
+		if got := PendingOwner(s); got != OwnerOther {
+			t.Fatalf("owner = %v, want other", got)
+		}
+	})
+	t.Run("both", func(t *testing.T) {
+		fakeShutdown(t, "exit 0")
+		fakeShutdownProcess(t, "4242", patchMonShutdown...)
+		fakeShutdownProcess(t, "4343", adminShutdown...)
+		if got := PendingOwner(s); got != OwnerUnknown {
+			t.Fatalf("owner = %v, want unknown", got)
+		}
+	})
+}
+
+func TestPendingOwnerSystemd(t *testing.T) {
+	at := time.Date(2026, 10, 12, 1, 0, 0, 0, time.UTC)
+	s := Scheduled{At: at, Since: at.Add(-time.Hour)}
+	for _, tt := range []struct {
+		name  string
+		write func(file string)
+		want  Owner
+	}{
+		{"none", func(string) {}, OwnerNone},
+		// shutdown -r +N rounds up to whole minutes.
+		{"patchmon", func(f string) { logindRecord(t, f, at.Add(50*time.Second), "reboot") }, OwnerPatchMon},
+		{"another time", func(f string) { logindRecord(t, f, at.Add(10*time.Minute), "reboot") }, OwnerOther},
+		{"a power-off", func(f string) { logindRecord(t, f, at, "poweroff") }, OwnerOther},
+		{"no time", func(f string) { _ = os.WriteFile(f, []byte("MODE=reboot\n"), 0o644) }, OwnerUnknown},
+		{"unreadable", func(f string) { _ = os.Mkdir(f, 0o755) }, OwnerUnknown},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeShutdown(t, "exit 0")
+			file := fakeSystemd(t)
+			tt.write(file)
+			if got := PendingOwner(s); got != tt.want {
+				t.Fatalf("owner = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// On SysV init, only a shutdown carrying the PatchMon message is cancelled.
+func TestCancelScheduledSysV(t *testing.T) {
+	s := Scheduled{At: time.Now().Add(time.Hour)}
+	t.Run("patchmon", func(t *testing.T) {
 		log := fakeShutdown(t, "")
-		file = fakeSystemd(t)
-		if err := os.WriteFile(file, []byte("USEC=1\n"), 0o644); err != nil {
+		proc := fakeShutdownProcess(t, "4242", patchMonShutdown...)
+		// The fake cancels the way SysV init does: the waiting process ends.
+		if err := os.WriteFile(shutdownCandidates[1], []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >> '"+log+"'\nrm -f '"+proc+"/comm' '"+proc+"/cmdline'\nrmdir '"+proc+"'\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		// The fake cancels the way logind does: by removing the record.
-		if err := os.WriteFile(shutdownCandidates[1], []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >> '"+log+"'\nrm -f '"+file+"'\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := Cancel(context.Background()); err != nil {
+		if err := CancelScheduled(context.Background(), s); err != nil {
 			t.Fatal(err)
 		}
 		if got, _ := os.ReadFile(log); string(got) != "-c\n" {
 			t.Fatalf("argv = %q", got)
 		}
 	})
-	t.Run("still pending", func(t *testing.T) {
-		fakeShutdown(t, "exit 0")
-		file = fakeSystemd(t)
-		if err := os.WriteFile(file, []byte("USEC=1\n"), 0o644); err != nil {
+	t.Run("administrator", func(t *testing.T) {
+		log := fakeShutdown(t, "exit 0")
+		fakeShutdownProcess(t, "4343", adminShutdown...)
+		if err := CancelScheduled(context.Background(), s); !errors.Is(err, ErrNotScheduledByPatchMon) {
+			t.Fatalf("err = %v, want ErrNotScheduledByPatchMon", err)
+		}
+		if _, err := os.Stat(log); err == nil {
+			t.Fatal("shutdown(8) was run")
+		}
+	})
+	// "shutdown -c" would cancel the administrator's along with PatchMon's.
+	t.Run("both", func(t *testing.T) {
+		log := fakeShutdown(t, "exit 0")
+		fakeShutdownProcess(t, "4242", patchMonShutdown...)
+		fakeShutdownProcess(t, "4343", adminShutdown...)
+		if err := CancelScheduled(context.Background(), s); !errors.Is(err, ErrNotScheduledByPatchMon) {
+			t.Fatalf("err = %v, want ErrNotScheduledByPatchMon", err)
+		}
+		if _, err := os.Stat(log); err == nil {
+			t.Fatal("shutdown(8) was run")
+		}
+	})
+}
+
+func TestCancelOnSystemd(t *testing.T) {
+	at := time.Date(2026, 10, 12, 1, 0, 0, 0, time.UTC)
+	s := Scheduled{At: at, Since: at.Add(-time.Hour)}
+	t.Run("done", func(t *testing.T) {
+		log := fakeShutdown(t, "")
+		file := fakeSystemd(t)
+		logindRecord(t, file, at, "reboot")
+		// The fake cancels the way logind does: by removing the record.
+		if err := os.WriteFile(shutdownCandidates[1], []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >> '"+log+"'\nrm -f '"+file+"'\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := Cancel(context.Background()); err == nil {
+		if err := CancelScheduled(context.Background(), s); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := os.ReadFile(log); string(got) != "-c\n" {
+			t.Fatalf("argv = %q", got)
+		}
+	})
+	t.Run("not PatchMon's", func(t *testing.T) {
+		log := fakeShutdown(t, "exit 0")
+		file := fakeSystemd(t)
+		logindRecord(t, file, at.Add(time.Hour), "reboot")
+		if err := CancelScheduled(context.Background(), s); !errors.Is(err, ErrNotScheduledByPatchMon) {
+			t.Fatalf("err = %v, want ErrNotScheduledByPatchMon", err)
+		}
+		if _, err := os.Stat(log); err == nil {
+			t.Fatal("shutdown(8) was run")
+		}
+	})
+	t.Run("still pending", func(t *testing.T) {
+		fakeShutdown(t, "exit 0")
+		logindRecord(t, fakeSystemd(t), at, "reboot")
+		if err := CancelScheduled(context.Background(), s); err == nil {
 			t.Fatal("a restart still pending was reported cancelled")
 		}
 	})
 	t.Run("no answer", func(t *testing.T) {
 		fakeShutdown(t, "sleep 30")
-		file = fakeSystemd(t)
-		if err := os.WriteFile(file, []byte("USEC=1\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		logindRecord(t, fakeSystemd(t), at, "reboot")
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := Cancel(ctx); err == nil {
+		if err := CancelScheduled(ctx, s); err == nil {
 			t.Fatal("a shutdown -c that never answered counted as done")
 		}
 	})
+}
+
+// FreeBSD lists its processes with ps(1); the PatchMon message is found in
+// the arguments ps joins with spaces.
+func TestShutdownProcessesFromPS(t *testing.T) {
+	out := strings.Join([]string{
+		"    1 init     /sbin/init",
+		" 4242 shutdown shutdown -r +6 PatchMon: this computer restarts to finish installing updates",
+		" 4343 shutdown /sbin/shutdown -p +30 disk swap",
+		" 4444 sh       /bin/sh -c shutdown -r +5 PatchMon: x",
+		"garbage",
+		"",
+	}, "\n")
+	want := []shutdownProcess{{pid: 4242, patchMon: true}, {pid: 4343}}
+	if got := parseShutdownProcesses([]byte(out)); !slices.Equal(got, want) {
+		t.Fatalf("parsed %+v, want %+v", got, want)
+	}
+
+	dir := t.TempDir()
+	ps := filepath.Join(dir, "ps")
+	if err := os.WriteFile(ps, []byte("#!/bin/sh\ncat <<'EOF'\n"+out+"EOF\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := psPath
+	psPath = ps
+	defer func() { psPath = old }()
+	if got, err := psShutdownProcesses(); err != nil || !slices.Equal(got, want) {
+		t.Fatalf("listed %+v, %v; want %+v", got, err, want)
+	}
+	psPath = filepath.Join(dir, "missing")
+	if _, err := psShutdownProcesses(); err == nil {
+		t.Fatal("a failing ps(1) listed no process")
+	}
 }

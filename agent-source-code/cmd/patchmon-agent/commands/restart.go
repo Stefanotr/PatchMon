@@ -28,6 +28,10 @@ import (
 // while it is in progress. So does the agent restart that applies a
 // configuration from the server: it waits for the runs in progress to end,
 // and no run starts while it waits.
+//
+// The restart this agent scheduled is recorded (restartrecord.go): it holds
+// runs and other restarts back, and it is the only restart a cancel
+// touches. A restart or shutdown scheduled outside PatchMon is left alone.
 
 const (
 	restartCommandTimeout = 30 * time.Second
@@ -43,7 +47,11 @@ const (
 
 var restartGate struct {
 	sync.Mutex
-	pendingAt time.Time
+	// record is the restart this agent scheduled, as last read from or
+	// written to restartRecordPath (nil: none); recordLoaded says the file
+	// was read.
+	record       *reboot.Scheduled
+	recordLoaded bool
 	// agentRestartWaiting: apply_config saved a configuration and the
 	// agent restarts to apply it once no patch run is in progress.
 	agentRestartWaiting bool
@@ -56,15 +64,20 @@ var (
 		defer cancel()
 		return reboot.Schedule(ctx, d, msg)
 	}
-	cancelHostRestart = func() error {
+	// cancelHostRestart cancels the restart this agent scheduled, only if
+	// it is the one pending.
+	cancelHostRestart = func(s reboot.Scheduled) error {
 		ctx, cancel := context.WithTimeout(context.Background(), restartCommandTimeout)
 		defer cancel()
-		return reboot.Cancel(ctx)
+		return reboot.CancelScheduled(ctx, s)
 	}
 	// osPendingRestart reports a restart the operating system has
 	// scheduled, whoever asked for it, including one this agent scheduled
 	// before it was restarted itself.
 	osPendingRestart = reboot.Pending
+	// pendingRestartOwner says whether the restart the operating system has
+	// pending is the one this agent recorded.
+	pendingRestartOwner = reboot.PendingOwner
 	// reportRunRestart tells the server about a restart a patch run
 	// scheduled, or failed to schedule, for the host's activity history.
 	reportRunRestart = sendRunRestartEvent
@@ -77,14 +90,28 @@ var (
 	restartAgentService = func() error { return restartService("", "") }
 )
 
-// pendingRestartLocked returns the restart this agent scheduled, if it is
-// still to come. The caller holds restartGate.
-func pendingRestartLocked(now time.Time) (time.Time, bool) {
-	at := restartGate.pendingAt
-	if at.IsZero() || now.After(at.Add(pendingRestartGrace)) {
-		return time.Time{}, false
+// ownRestartLocked returns the restart this agent scheduled, if it is still
+// to come: recorded, its time not past by more than pendingRestartGrace, and
+// still the one pending as far as the operating system tells. A record that
+// no longer holds is cleared. The caller holds restartGate.
+func ownRestartLocked(now time.Time) (reboot.Scheduled, bool) {
+	s, ok := restartRecordLocked()
+	if !ok {
+		return reboot.Scheduled{}, false
 	}
-	return at, true
+	if now.After(s.At.Add(pendingRestartGrace)) {
+		clearRestartRecordLocked("its time has passed")
+		return reboot.Scheduled{}, false
+	}
+	switch pendingRestartOwner(s) {
+	case reboot.OwnerNone:
+		clearRestartRecordLocked("the host no longer has it pending")
+		return reboot.Scheduled{}, false
+	case reboot.OwnerOther:
+		clearRestartRecordLocked("the restart or shutdown pending on the host was scheduled outside PatchMon")
+		return reboot.Scheduled{}, false
+	}
+	return s, true
 }
 
 func remoteRestartsEnabledInConfig() bool {
@@ -228,11 +255,11 @@ func beginPatchRun(id string, cancel context.CancelFunc, dryRun bool, refuse fun
 
 func restartWouldCutRunLocked(now time.Time) error {
 	finish := now.Add(patchRunTimeout() + runOverrun)
-	if at, ok := pendingRestartLocked(now); ok && at.Before(finish) {
-		return fmt.Errorf("a restart is scheduled for %s, before this run could finish; cancel it from the host page or run the patch after it", formatRestartTime(at))
+	own, mine := ownRestartLocked(now)
+	if mine && own.At.Before(finish) {
+		return fmt.Errorf("a restart is scheduled for %s, before this run could finish; cancel it from the host page or run the patch after it", formatRestartTime(own.At))
 	}
 	at, ok := osPendingRestart()
-	_, mine := pendingRestartLocked(now)
 	switch {
 	case !ok:
 		return nil
@@ -322,8 +349,8 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 			"another patch run is in progress on this host")
 		return nil
 	}
-	if at, ok := pendingRestartLocked(now); ok {
-		skip("Restart: already scheduled for "+formatRestartTime(at), "a restart is already scheduled for "+formatRestartTime(at))
+	if own, ok := ownRestartLocked(now); ok {
+		skip("Restart: already scheduled for "+formatRestartTime(own.At), "a restart is already scheduled for "+formatRestartTime(own.At))
 		return nil
 	}
 	at, err := opts.When(now)
@@ -341,7 +368,7 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 		report = func() { reportRunRestart(runID, time.Time{}, err) }
 		return fmt.Errorf("restart could not be scheduled: %w", err)
 	}
-	restartGate.pendingAt = at
+	setRestartRecordLocked(reboot.Scheduled{At: at, Since: now})
 	_, _ = fmt.Fprintf(out, "Restart: scheduled for %s (in %s); signed-in users are warned\n",
 		formatRestartTime(at), at.Sub(now).Round(time.Minute))
 	report = func() { reportRunRestart(runID, at, nil) }
@@ -364,8 +391,8 @@ func restartCommand(opts reboot.Options) (time.Time, error) {
 	if otherPatchRunInProgress("") {
 		return time.Time{}, errors.New("a patch run is in progress on this host; try again once it is over")
 	}
-	if at, ok := pendingRestartLocked(now); ok {
-		return time.Time{}, fmt.Errorf("a restart is already scheduled for %s; cancel it first to choose another time", formatRestartTime(at))
+	if own, ok := ownRestartLocked(now); ok {
+		return time.Time{}, fmt.Errorf("a restart is already scheduled for %s; cancel it first to choose another time", formatRestartTime(own.At))
 	}
 	at, err := opts.When(now)
 	if err != nil {
@@ -377,19 +404,30 @@ func restartCommand(opts reboot.Options) (time.Time, error) {
 		}
 		return time.Time{}, err
 	}
-	restartGate.pendingAt = at
+	setRestartRecordLocked(reboot.Scheduled{At: at, Since: now})
 	return at, nil
 }
 
-// cancelRestartCommand cancels a pending restart, whoever scheduled it.
+// cancelRestartCommand cancels the restart this agent scheduled, and nothing
+// else: without a record of one still pending, it refuses with
+// reboot.ErrNotScheduledByPatchMon.
 func cancelRestartCommand() error {
 	restartGate.Lock()
 	defer restartGate.Unlock()
-	err := cancelHostRestart()
-	if err == nil || errors.Is(err, reboot.ErrNothingScheduled) {
-		restartGate.pendingAt = time.Time{}
+	own, ok := ownRestartLocked(time.Now())
+	if !ok {
+		return reboot.ErrNotScheduledByPatchMon
 	}
-	return err
+	switch err := cancelHostRestart(own); {
+	case err == nil:
+		clearRestartRecordLocked("cancelled on server request")
+		return nil
+	case errors.Is(err, reboot.ErrNothingScheduled):
+		clearRestartRecordLocked("the host no longer has it pending")
+		return err
+	default:
+		return err
+	}
 }
 
 // requestIDPattern bounds the identifier the server attaches to a command
@@ -482,6 +520,9 @@ func handleRestartCancel(requestID string) {
 	case errors.Is(err, reboot.ErrNothingScheduled):
 		logger.Info("Restart cancel requested, but no restart was scheduled")
 		reply.Error = "no restart is scheduled on this host"
+	case errors.Is(err, reboot.ErrNotScheduledByPatchMon):
+		logger.Info("Restart cancel requested, but no restart scheduled by PatchMon is pending; anything else is left alone")
+		reply.Error = err.Error()
 	case err != nil:
 		logger.WithError(err).Warn("Restart cancel failed")
 		reply.Error = packages.OneLine(err.Error())

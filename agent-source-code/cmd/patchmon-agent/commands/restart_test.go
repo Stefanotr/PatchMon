@@ -3,6 +3,8 @@ package commands
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -25,6 +27,15 @@ type scheduledRestart struct {
 	// with agentRestartErr.
 	agentRestarts   atomic.Int32
 	agentRestartErr error
+	// cancels holds the restarts cancelled on the host, which fail with
+	// cancelErr.
+	cancels   []reboot.Scheduled
+	cancelErr error
+}
+
+func (s *scheduledRestart) cancel(r reboot.Scheduled) error {
+	s.cancels = append(s.cancels, r)
+	return s.cancelErr
 }
 
 func (s *scheduledRestart) report(runID string, _ time.Time, err error) {
@@ -46,13 +57,17 @@ func (s *scheduledRestart) schedule(d time.Duration, msg string) error {
 }
 
 // resetRestartState clears what earlier tests left behind and fakes the
-// operating system for the command paths.
+// operating system for the command paths: the restart record goes to a
+// temporary directory, and the host has the recorded restart pending.
 func resetRestartState(t *testing.T) *scheduledRestart {
 	t.Helper()
-	restartGate.Lock()
-	restartGate.pendingAt = time.Time{}
-	restartGate.agentRestartWaiting = false
-	restartGate.Unlock()
+	clearGate := func() {
+		restartGate.Lock()
+		restartGate.record, restartGate.recordLoaded = nil, false
+		restartGate.agentRestartWaiting = false
+		restartGate.Unlock()
+	}
+	clearGate()
 	patchRunCancels.Range(func(k, _ any) bool {
 		patchRunCancels.Delete(k)
 		return true
@@ -61,8 +76,13 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	s := &scheduledRestart{}
 	oldSchedule, oldCancel, oldPending, oldReport := scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart
 	oldAgentRestart, oldAllowed := restartAgentService, remoteRestartsAllowed
+	oldRecordPath, oldOwner := restartRecordPath, pendingRestartOwner
+	recordPath := filepath.Join(t.TempDir(), restartRecordFile)
+	restartRecordPath = func() string { return recordPath }
+	pendingRestartOwner = func(reboot.Scheduled) reboot.Owner { return reboot.OwnerPatchMon }
 	remoteRestartsAllowed = func() bool { return true }
 	scheduleHostRestart = s.schedule
+	cancelHostRestart = s.cancel
 	osPendingRestart = func() (time.Time, bool) { return time.Time{}, false }
 	reportRunRestart = s.report
 	restartAgentService = func() error {
@@ -72,12 +92,35 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	t.Cleanup(func() {
 		scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart = oldSchedule, oldCancel, oldPending, oldReport
 		restartAgentService, remoteRestartsAllowed = oldAgentRestart, oldAllowed
-		restartGate.Lock()
-		restartGate.pendingAt = time.Time{}
-		restartGate.agentRestartWaiting = false
-		restartGate.Unlock()
+		restartRecordPath, pendingRestartOwner = oldRecordPath, oldOwner
+		clearGate()
 	})
 	return s
+}
+
+// recordRestart records a restart this agent scheduled for at.
+func recordRestart(at time.Time) {
+	restartGate.Lock()
+	defer restartGate.Unlock()
+	setRestartRecordLocked(reboot.Scheduled{At: at, Since: at.Add(-time.Hour)})
+}
+
+// recordedRestart returns the restart the agent holds as its own.
+func recordedRestart() (reboot.Scheduled, bool) {
+	restartGate.Lock()
+	defer restartGate.Unlock()
+	if restartGate.record == nil {
+		return reboot.Scheduled{}, false
+	}
+	return *restartGate.record, true
+}
+
+// restartAgentMemory makes the agent read its record again, as after the
+// agent restarted.
+func restartAgentMemory() {
+	restartGate.Lock()
+	defer restartGate.Unlock()
+	restartGate.record, restartGate.recordLoaded = nil, false
 }
 
 func TestScheduleRestart(t *testing.T) {
@@ -203,7 +246,7 @@ func TestRegisterPatchRunAndPendingRestart(t *testing.T) {
 	resetRestartState(t)
 	noop := context.CancelFunc(func() {})
 
-	restartGate.pendingAt = time.Now().Add(10 * time.Minute)
+	recordRestart(time.Now().Add(10 * time.Minute))
 	if _, err := registerPatchRun("real", noop, false); err == nil || !strings.Contains(err.Error(), "a restart is scheduled for") {
 		t.Fatalf("real run started under a pending restart: %v", err)
 	}
@@ -212,16 +255,19 @@ func TestRegisterPatchRunAndPendingRestart(t *testing.T) {
 	}
 	patchRunCancels.Delete("dry")
 
-	restartGate.pendingAt = time.Now().Add(patchRunTimeout() + time.Hour)
+	recordRestart(time.Now().Add(patchRunTimeout() + time.Hour))
 	if _, err := registerPatchRun("later", noop, false); err != nil {
 		t.Fatalf("a restart after the run's time limit blocked it: %v", err)
 	}
 	patchRunCancels.Delete("later")
 
 	// A restart long past its time did not happen and holds nothing back.
-	restartGate.pendingAt = time.Now().Add(-time.Hour)
+	recordRestart(time.Now().Add(-time.Hour))
 	if _, err := registerPatchRun("stale", noop, false); err != nil {
 		t.Fatalf("a stale restart blocked the run: %v", err)
+	}
+	if _, ok := recordedRestart(); ok {
+		t.Error("the stale record was kept")
 	}
 }
 
@@ -263,7 +309,7 @@ func TestRegisterPatchRunWithItsOwnRestartOfUnknownTime(t *testing.T) {
 	resetRestartState(t)
 	noop := context.CancelFunc(func() {})
 	osPendingRestart = func() (time.Time, bool) { return time.Time{}, true }
-	restartGate.pendingAt = time.Now().Add(patchRunTimeout() + time.Hour)
+	recordRestart(time.Now().Add(patchRunTimeout() + time.Hour))
 	if _, err := registerPatchRun("real", noop, false); err != nil {
 		t.Fatalf("run refused under its own far restart: %v", err)
 	}
@@ -302,9 +348,7 @@ func TestRestartCommandWhenTheSystemHasOnePending(t *testing.T) {
 	if !errors.Is(err, reboot.ErrAlreadyScheduled) || !strings.Contains(err.Error(), "cancel it first") {
 		t.Fatalf("err = %v", err)
 	}
-	restartGate.Lock()
-	defer restartGate.Unlock()
-	if !restartGate.pendingAt.IsZero() {
+	if _, ok := recordedRestart(); ok {
 		t.Error("a restart that was not scheduled is recorded as pending")
 	}
 }
@@ -330,22 +374,21 @@ func TestRestartCommand(t *testing.T) {
 		t.Fatalf("second restart accepted: %v", err)
 	}
 
-	cancelHostRestart = func() error { return nil }
 	if err := cancelRestartCommand(); err != nil {
 		t.Fatal(err)
+	}
+	if len(s.cancels) != 1 || !s.cancels[0].At.Equal(at) {
+		t.Fatalf("cancelled %+v, want the restart scheduled for %s", s.cancels, at)
 	}
 	if _, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways}); err != nil {
 		t.Fatalf("restart refused after the cancel: %v", err)
 	}
 
-	cancelHostRestart = func() error { return errors.New("not supported") }
+	s.cancelErr = errors.New("not supported")
 	if err := cancelRestartCommand(); err == nil {
 		t.Fatal("cancel failure swallowed")
 	}
-	restartGate.Lock()
-	stillPending := !restartGate.pendingAt.IsZero()
-	restartGate.Unlock()
-	if !stillPending {
+	if _, ok := recordedRestart(); !ok {
 		t.Error("a failed cancel forgot the pending restart")
 	}
 }
@@ -534,8 +577,8 @@ func TestRemoteRestartsDisabled(t *testing.T) {
 		t.Fatalf("reported %q, want %q", s.reports, want)
 	}
 
-	cancelHostRestart = func() error { return nil }
-	if err := cancelRestartCommand(); err != nil {
+	recordRestart(time.Now().Add(time.Hour))
+	if err := cancelRestartCommand(); err != nil || len(s.cancels) != 1 {
 		t.Fatalf("cancel refused: %v", err)
 	}
 }
@@ -563,5 +606,165 @@ func TestApplyConfigCannotEnableRemoteRestarts(t *testing.T) {
 		if m.IsIntegrationEnabled(name) || saved.IsIntegrationEnabled(name) {
 			t.Errorf("apply_config turned %s on", name)
 		}
+	}
+}
+
+// The restart the agent scheduled is recorded on disk, readable by the
+// agent's user alone, and still holds after the agent restarted.
+func TestRestartRecordSurvivesAgentRestart(t *testing.T) {
+	s := resetRestartState(t)
+	at, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways, DelayMinutes: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Lstat(restartRecordPath())
+	if err != nil || fi.Mode().Perm() != 0o600 || !fi.Mode().IsRegular() {
+		t.Fatalf("record file: %v, %v", fi, err)
+	}
+	b, _ := os.ReadFile(restartRecordPath())
+	if !strings.HasPrefix(string(b), `{"version":1,"at":"`+at.UTC().Format(time.RFC3339Nano)+`","scheduled_at":"`) {
+		t.Fatalf("record = %s", b)
+	}
+
+	restartAgentMemory()
+	if _, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways}); err == nil || !strings.Contains(err.Error(), "already scheduled") {
+		t.Fatalf("the record was lost with the agent's memory: %v", err)
+	}
+	if _, err := registerPatchRun("real", func() {}, false); err == nil {
+		t.Fatal("a run started under the recorded restart")
+	}
+
+	restartAgentMemory()
+	if err := cancelRestartCommand(); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.cancels) != 1 || !s.cancels[0].At.Equal(at) {
+		t.Fatalf("cancelled %+v, want the restart scheduled for %s", s.cancels, at)
+	}
+	if _, err := os.Lstat(restartRecordPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("record kept after the cancel: %v", err)
+	}
+}
+
+// A cancel touches the restart PatchMon scheduled, and nothing else.
+func TestCancelOnlyWhatPatchMonScheduled(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		// record says a restart was recorded; owner is what the host has
+		// pending; cancelErr is the host's answer to the cancel.
+		record     bool
+		owner      reboot.Owner
+		cancelErr  error
+		wantErr    error
+		wantCancel bool
+		wantRecord bool
+	}{
+		{name: "nothing recorded", owner: reboot.OwnerOther, wantErr: reboot.ErrNotScheduledByPatchMon},
+		{name: "scheduled outside PatchMon", record: true, owner: reboot.OwnerOther, wantErr: reboot.ErrNotScheduledByPatchMon},
+		{name: "no longer pending", record: true, owner: reboot.OwnerNone, wantErr: reboot.ErrNotScheduledByPatchMon},
+		{name: "PatchMon's", record: true, owner: reboot.OwnerPatchMon, wantCancel: true},
+		// Windows does not tell: the host checks the recorded time.
+		{name: "the system does not tell", record: true, owner: reboot.OwnerUnknown, wantCancel: true},
+		{name: "gone meanwhile", record: true, owner: reboot.OwnerPatchMon, cancelErr: reboot.ErrNothingScheduled, wantErr: reboot.ErrNothingScheduled, wantCancel: true},
+		{name: "the host refuses", record: true, owner: reboot.OwnerUnknown, cancelErr: reboot.ErrNotScheduledByPatchMon, wantErr: reboot.ErrNotScheduledByPatchMon, wantCancel: true, wantRecord: true},
+		{name: "the cancel fails", record: true, owner: reboot.OwnerPatchMon, cancelErr: errors.New("access denied"), wantCancel: true, wantRecord: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := resetRestartState(t)
+			s.cancelErr = tt.cancelErr
+			pendingRestartOwner = func(reboot.Scheduled) reboot.Owner { return tt.owner }
+			if tt.record {
+				recordRestart(time.Now().Add(time.Hour))
+			}
+			err := cancelRestartCommand()
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) || tt.wantErr == nil && (err == nil) != (tt.cancelErr == nil) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if got := len(s.cancels) == 1; got != tt.wantCancel {
+				t.Fatalf("cancelled on the host: %v, want %v", got, tt.wantCancel)
+			}
+			if _, got := recordedRestart(); got != tt.wantRecord {
+				t.Fatalf("record kept: %v, want %v", got, tt.wantRecord)
+			}
+			if _, err := os.Lstat(restartRecordPath()); (err == nil) != tt.wantRecord {
+				t.Fatalf("record file: %v, want kept %v", err, tt.wantRecord)
+			}
+		})
+	}
+	if want := "no restart scheduled by PatchMon is pending on this host; a restart or shutdown scheduled outside PatchMon is left alone"; reboot.ErrNotScheduledByPatchMon.Error() != want {
+		t.Errorf("refusal = %q, want %q", reboot.ErrNotScheduledByPatchMon, want)
+	}
+}
+
+// A record that cannot be trusted, or does not hold together, is dropped
+// and holds nothing back.
+func TestUntrustedRestartRecordIsDropped(t *testing.T) {
+	// Soon enough to hold a real run back.
+	at := time.Now().Add(10 * time.Minute).UTC()
+	valid := `{"version":1,"at":"` + at.Format(time.RFC3339) + `","scheduled_at":"` + at.Add(-time.Hour).Format(time.RFC3339) + `"}`
+	for _, tt := range []struct {
+		name    string
+		content string
+		mode    os.FileMode
+		link    bool
+		trusted bool
+	}{
+		{name: "valid", content: valid, mode: 0o600, trusted: true},
+		{name: "readable by others", content: valid, mode: 0o644},
+		{name: "a link", content: valid, mode: 0o600, link: true},
+		{name: "not JSON", content: "restart soon", mode: 0o600},
+		{name: "unknown field", content: strings.Replace(valid, `"version":1`, `"version":1,"cmd":"x"`, 1), mode: 0o600},
+		{name: "unknown version", content: strings.Replace(valid, `"version":1`, `"version":2`, 1), mode: 0o600},
+		{name: "no time", content: `{"version":1}`, mode: 0o600},
+		{name: "scheduled after its time", content: `{"version":1,"at":"` + at.Format(time.RFC3339) + `","scheduled_at":"` + at.Add(time.Hour).Format(time.RFC3339) + `"}`, mode: 0o600},
+		{name: "too far ahead", content: `{"version":1,"at":"` + at.Format(time.RFC3339) + `","scheduled_at":"` + at.Add(-reboot.MaxDelay-time.Hour).Format(time.RFC3339) + `"}`, mode: 0o600},
+		{name: "trailing data", content: valid + `{}`, mode: 0o600},
+		{name: "too large", content: valid + strings.Repeat(" ", restartRecordMaxBytes), mode: 0o600},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resetRestartState(t)
+			path := restartRecordPath()
+			target := path
+			if tt.link {
+				target = filepath.Join(t.TempDir(), "elsewhere.json")
+				if err := os.Symlink(target, path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(target, []byte(tt.content), tt.mode); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(target, tt.mode); err != nil {
+				t.Fatal(err)
+			}
+			_, err := registerPatchRun("real", func() {}, false)
+			if refused := err != nil; refused != tt.trusted {
+				t.Fatalf("run refused: %v (%v), want %v", refused, err, tt.trusted)
+			}
+			if _, err := os.Lstat(path); (err == nil) != tt.trusted {
+				t.Fatalf("record file kept: %v, want %v", err == nil, tt.trusted)
+			}
+			if tt.link {
+				if _, err := os.Stat(target); err != nil {
+					t.Fatalf("the link's target was removed: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// The record is read from, and written to, a directory only the agent's
+// user can write to.
+func TestRestartRecordNeedsAPrivateDirectory(t *testing.T) {
+	resetRestartState(t)
+	dir := filepath.Dir(restartRecordPath())
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRestartRecordFile(restartRecordPath(), []byte("{}")); err == nil {
+		t.Fatal("the record was written to a directory others can write to")
+	}
+	if _, err := readRestartRecord(restartRecordPath()); err == nil || errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("read from a directory others can write to: %v", err)
 	}
 }

@@ -14,11 +14,25 @@ import (
 // AbortSystemShutdownW is not wrapped by x/sys/windows.
 var procAbortSystemShutdown = windows.NewLazySystemDLL("advapi32.dll").NewProc("AbortSystemShutdownW")
 
+// bootTime is when the host started, a variable so tests can fake it.
+var bootTime = func() time.Time { return time.Now().Add(-windows.DurationSinceBoot()) }
+
 // Pending reports a restart the operating system has scheduled. Windows has
 // no call to ask: Schedule learns of one when InitiateSystemShutdownEx
-// fails with ERROR_SHUTDOWN_IN_PROGRESS, and Cancel from AbortSystemShutdown.
+// fails with ERROR_SHUTDOWN_IN_PROGRESS, and CancelScheduled from
+// AbortSystemShutdown.
 func Pending() (at time.Time, ok bool) {
 	return time.Time{}, false
+}
+
+// PendingOwner reports whether the restart pending is s, the one PatchMon
+// recorded. Windows does not tell what is pending: s is gone once the host
+// restarted after scheduling it, and unknown otherwise.
+func PendingOwner(s Scheduled) Owner {
+	if bootTime().After(s.Since) {
+		return OwnerNone
+	}
+	return OwnerUnknown
 }
 
 // Schedule asks Windows to restart the host after d. Windows shows msg and the
@@ -40,8 +54,17 @@ func Schedule(_ context.Context, d time.Duration, msg string) error {
 	return err
 }
 
-// Cancel aborts a scheduled restart.
-func Cancel(_ context.Context) error {
+// CancelScheduled aborts the restart s, PatchMon's. InitiateSystemShutdownEx
+// cannot be stacked, so until s.At, on a host that has not restarted since
+// s was scheduled, the shutdown Windows has pending, if any, is s. Otherwise
+// it returns ErrNotScheduledByPatchMon without aborting anything.
+func CancelScheduled(ctx context.Context, s Scheduled) error {
+	if PendingOwner(s) == OwnerNone || !time.Now().Before(s.At) {
+		return ErrNotScheduledByPatchMon
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := enableShutdownPrivilege(); err != nil {
 		return fmt.Errorf("enable the shutdown privilege: %w", err)
 	}

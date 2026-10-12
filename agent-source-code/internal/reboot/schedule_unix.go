@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -33,7 +34,10 @@ var (
 	// systemdScheduledFile is where logind records a scheduled shutdown.
 	systemdScheduledFile = "/run/systemd/shutdown/scheduled"
 	procDir              = "/proc"
-	pgrepPath            = "/bin/pgrep"
+	// psPath lists processes on FreeBSD, which has no /proc by default.
+	psPath = "/bin/ps"
+	// processListTimeout bounds listing processes with ps(1).
+	processListTimeout = 5 * time.Second
 )
 
 func shutdownPath() (string, error) {
@@ -50,59 +54,188 @@ func isSystemd() bool {
 	return err == nil && fi.IsDir()
 }
 
+// usesLogind reports a host where logind keeps scheduled shutdowns.
+func usesLogind() bool {
+	return runtime.GOOS == "linux" && isSystemd()
+}
+
 // Pending reports a restart or shutdown the operating system has scheduled,
 // whoever asked for it. at is its time when the system records it
-// (systemd), zero otherwise.
+// (systemd), zero otherwise. A state it cannot read counts as pending:
+// guessing "none" could let a restart replace one an administrator
+// scheduled.
 func Pending() (at time.Time, ok bool) {
-	if runtime.GOOS == "linux" && isSystemd() {
-		return systemdPending()
+	if usesLogind() {
+		at, _, exists, _ := logindSchedule()
+		return at, exists
 	}
-	return time.Time{}, shutdownProcessRunning()
+	procs, err := shutdownProcesses()
+	return time.Time{}, err != nil || len(procs) > 0
 }
 
-// systemdPending reads logind's record of a scheduled shutdown. A record it
-// cannot read counts as pending: guessing "none" could let a restart replace
-// one an administrator scheduled.
-func systemdPending() (time.Time, bool) {
+// PendingOwner reports whether the restart the operating system has pending
+// is s, the one PatchMon recorded: on systemd, logind's record holds a
+// restart within a couple of minutes of s.At; on SysV init and FreeBSD,
+// every shutdown(8) process waiting for its time carries the PatchMon
+// message, which Schedule always passes.
+func PendingOwner(s Scheduled) Owner {
+	owner, _ := pendingOwner(s)
+	return owner
+}
+
+// pendingOwner is PendingOwner, with the shutdown(8) processes it judged.
+func pendingOwner(s Scheduled) (Owner, []shutdownProcess) {
+	switch {
+	case usesLogind():
+		return logindOwner(s), nil
+	case runtime.GOOS == "linux" || runtime.GOOS == "freebsd":
+		return processOwner()
+	}
+	return OwnerUnknown, nil
+}
+
+func logindOwner(s Scheduled) Owner {
+	at, mode, exists, err := logindSchedule()
+	switch {
+	case !exists:
+		return OwnerNone
+	case err != nil || at.IsZero():
+		return OwnerUnknown
+	case mode != "" && mode != "reboot":
+		return OwnerOther
+	case at.Sub(s.At).Abs() <= scheduleTolerance:
+		return OwnerPatchMon
+	}
+	return OwnerOther
+}
+
+// logindSchedule reads logind's record of a scheduled shutdown: its time
+// (zero when the record does not say) and mode. exists is false when no
+// shutdown is scheduled, true with err when the record cannot be read.
+func logindSchedule() (at time.Time, mode string, exists bool, err error) {
 	b, err := os.ReadFile(systemdScheduledFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return time.Time{}, "", false, nil
+	}
 	if err != nil {
-		return time.Time{}, !errors.Is(err, fs.ErrNotExist)
+		return time.Time{}, "", true, err
 	}
 	for line := range strings.SplitSeq(string(b), "\n") {
-		if v, found := strings.CutPrefix(strings.TrimSpace(line), "USEC="); found {
-			if us, err := strconv.ParseInt(v, 10, 64); err == nil && us > 0 {
-				return time.UnixMicro(us), true
+		key, value, _ := strings.Cut(strings.TrimSpace(line), "=")
+		switch key {
+		case "USEC":
+			if us, err := strconv.ParseInt(value, 10, 64); err == nil && us > 0 {
+				at = time.UnixMicro(us)
 			}
+		case "MODE":
+			mode = value
 		}
 	}
-	return time.Time{}, true
+	return at, mode, true, nil
 }
 
-// shutdownProcessRunning reports a shutdown(8) process waiting for its time:
-// how SysV init and FreeBSD keep a scheduled shutdown.
-func shutdownProcessRunning() bool {
+// processOwner judges the shutdown(8) processes waiting for their time: the
+// pending restart is PatchMon's when every one of them carries its message,
+// someone else's when none does. Both at once (FreeBSD runs several) cannot
+// be cancelled apart: "shutdown -c" or the wait for nothing to be pending
+// would take the other one along.
+func processOwner() (Owner, []shutdownProcess) {
+	procs, err := shutdownProcesses()
+	switch {
+	case err != nil:
+		return OwnerUnknown, nil
+	case len(procs) == 0:
+		return OwnerNone, nil
+	}
+	ours := 0
+	for _, p := range procs {
+		if p.patchMon {
+			ours++
+		}
+	}
+	switch ours {
+	case len(procs):
+		return OwnerPatchMon, procs
+	case 0:
+		return OwnerOther, procs
+	}
+	return OwnerUnknown, procs
+}
+
+// shutdownProcess is a shutdown(8) process waiting for its time: how SysV
+// init and FreeBSD keep a scheduled shutdown.
+type shutdownProcess struct {
+	pid int
+	// patchMon: its command line carries the PatchMon message.
+	patchMon bool
+}
+
+func shutdownProcesses() ([]shutdownProcess, error) {
 	switch runtime.GOOS {
 	case "linux":
-		entries, err := os.ReadDir(procDir)
-		if err != nil {
-			return false
-		}
-		for _, e := range entries {
-			if _, err := strconv.Atoi(e.Name()); err != nil {
-				continue
-			}
-			comm, err := os.ReadFile(filepath.Join(procDir, e.Name(), "comm"))
-			if err == nil && strings.TrimSpace(string(comm)) == "shutdown" {
-				return true
-			}
-		}
-		return false
+		return procShutdownProcesses()
 	case "freebsd":
-		// pgrep exits 0 when a process matched, 1 when none did.
-		return exec.Command(pgrepPath, "-x", "shutdown").Run() == nil
-	default:
-		return false
+		return psShutdownProcesses()
 	}
+	return nil, nil
+}
+
+// procShutdownProcesses reads them from /proc.
+func procShutdownProcesses() ([]shutdownProcess, error) {
+	entries, err := os.ReadDir(procDir)
+	if err != nil {
+		return nil, err
+	}
+	var procs []shutdownProcess
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil || pid <= 0 {
+			continue
+		}
+		comm, err := os.ReadFile(filepath.Join(procDir, e.Name(), "comm"))
+		if err != nil || strings.TrimSpace(string(comm)) != "shutdown" {
+			continue
+		}
+		cmdline, _ := os.ReadFile(filepath.Join(procDir, e.Name(), "cmdline"))
+		args := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
+		patchMon := len(args) > 1 && slices.ContainsFunc(args[1:], func(a string) bool {
+			return strings.HasPrefix(a, messagePrefix)
+		})
+		procs = append(procs, shutdownProcess{pid: pid, patchMon: patchMon})
+	}
+	return procs, nil
+}
+
+// psShutdownProcesses reads them from ps(1).
+func psShutdownProcesses() ([]shutdownProcess, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), processListTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, psPath, "-ax", "-ww", "-o", "pid=", "-o", "comm=", "-o", "args=").Output()
+	if err != nil {
+		return nil, fmt.Errorf("ps: %w", err)
+	}
+	return parseShutdownProcesses(out), nil
+}
+
+// parseShutdownProcesses reads ps(1) lines of pid, command name and
+// arguments. ps joins the arguments with spaces, so the message is found as
+// its first word.
+func parseShutdownProcesses(out []byte) []shutdownProcess {
+	word := strings.TrimSpace(messagePrefix)
+	var procs []shutdownProcess
+	for line := range strings.SplitSeq(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || f[1] != "shutdown" {
+			continue
+		}
+		pid, err := strconv.Atoi(f[0])
+		if err != nil || pid <= 0 {
+			continue
+		}
+		// f[2] is the program, the arguments follow.
+		procs = append(procs, shutdownProcess{pid: pid, patchMon: len(f) > 3 && slices.Contains(f[3:], word)})
+	}
+	return procs
 }
 
 // Schedule runs "shutdown -r +N message", N being d in whole minutes rounded
@@ -117,20 +250,27 @@ func Schedule(ctx context.Context, d time.Duration, msg string) error {
 	// systemd hands the restart to logind and returns, so it must exit
 	// cleanly. SysV init's shutdown counts down in the foreground; FreeBSD's
 	// forks a child that does and returns at once.
-	countdown := runtime.GOOS != "linux" || !isSystemd()
+	countdown := !usesLogind()
 	if err := runShutdown(ctx, countdown, "-r", fmt.Sprintf("+%d", minutes), msg); err != nil {
 		return fmt.Errorf("shutdown -r +%d: %w", minutes, err)
 	}
 	return nil
 }
 
-// Cancel cancels a pending restart, whoever scheduled it: "shutdown -c" on
-// Linux; on FreeBSD, where shutdown has no such option, by stopping the
-// shutdown process that waits for the time, as shutdown(8) documents. It
-// only reports success once the system no longer has one pending.
-func Cancel(ctx context.Context) error {
-	if _, ok := Pending(); !ok {
+// CancelScheduled cancels the restart s, PatchMon's, and nothing else (see
+// PendingOwner): "shutdown -c" on Linux; on FreeBSD, where shutdown has no
+// such option, by stopping the shutdown processes that carry the PatchMon
+// message, as shutdown(8) documents. It returns ErrNotScheduledByPatchMon
+// when what is pending is not s, or cannot be told apart, and only reports
+// success once the system no longer has a restart pending.
+func CancelScheduled(ctx context.Context, s Scheduled) error {
+	owner, procs := pendingOwner(s)
+	switch owner {
+	case OwnerNone:
 		return ErrNothingScheduled
+	case OwnerPatchMon:
+	default:
+		return ErrNotScheduledByPatchMon
 	}
 	switch runtime.GOOS {
 	case "linux":
@@ -138,13 +278,10 @@ func Cancel(ctx context.Context) error {
 			return fmt.Errorf("shutdown -c: %w", err)
 		}
 	case "freebsd":
-		err := exec.CommandContext(ctx, "/bin/pkill", "-TERM", "-x", "shutdown").Run()
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return ErrNothingScheduled // pkill: no process matched
-		}
-		if err != nil {
-			return err
+		for _, p := range procs {
+			if err := syscall.Kill(p.pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+				return fmt.Errorf("stop shutdown process %d: %w", p.pid, err)
+			}
 		}
 	default:
 		return fmt.Errorf("cancelling a scheduled restart is not supported on %s", runtime.GOOS)
