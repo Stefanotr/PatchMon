@@ -567,6 +567,49 @@ func TestWindowsPatchAllHoldsBackExplicitOnlyApps(t *testing.T) {
 	}
 }
 
+// patch_all, dry or not, leaves drivers and optional updates out even when
+// PatchMon lists them, and says how to install them; named, they install.
+func TestWindowsPatchAllSkipsDriversAndOptionalUpdates(t *testing.T) {
+	driver := packages.WUAUpdate{GUID: "99999999-8888-7777-6666-555555555555", Title: "Intel - Net - 1.2.3.4", Type: 2, EulaAccepted: true}
+	preview := packages.WUAUpdate{GUID: "cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee", Title: "2026-09 Cumulative Update Preview", KBs: []string{"KB5066000"}, Type: 1, BrowseOnly: true, EulaAccepted: true}
+	srv := &fakeWindowsServer{known: []string{testCU.GUID, testDefender.GUID, driver.GUID, preview.GUID}}
+	for _, dry := range []bool{true, false} {
+		be := newFakeHost()
+		be.scan.Updates = append(be.scan.Updates, driver, preview)
+
+		outcome, out := runWindows(context.Background(), t, windowsPatchRequest{patchType: "patch_all", dryRun: dry}, be, srv, fastWindowsOpts())
+
+		if outcome.err != nil {
+			t.Errorf("dry=%v: err = %v", dry, outcome.err)
+		}
+		for _, c := range be.recorded() {
+			if c == "install-wua "+driver.GUID || c == "install-wua "+preview.GUID {
+				t.Errorf("dry=%v: patch_all installed %s", dry, c)
+			}
+		}
+		for _, want := range []string{
+			"[skip] " + driver.DisplayName() + "\n" + packages.OutputIndent + "driver update",
+			"[skip] " + preview.DisplayName() + "\n" + packages.OutputIndent + "optional update",
+			"patch it by name to install it",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("dry=%v: output lacks %q:\n%s", dry, want, out)
+			}
+		}
+		if !dry && !slices.Contains(be.recorded(), "install-wua "+testCU.GUID) {
+			t.Errorf("the other updates were not installed: %v", be.recorded())
+		}
+	}
+
+	be := newFakeHost()
+	be.scan.Updates = append(be.scan.Updates, driver, preview)
+	req := windowsPatchRequest{patchType: "patch_package", names: []string{driver.DisplayName(), preview.DisplayName()}}
+	runWindows(context.Background(), t, req, be, srv, fastWindowsOpts())
+	if got := installCalls(be.recorded()); !slices.Equal(got, []string{"install-wua " + driver.GUID, "install-wua " + preview.GUID}) {
+		t.Errorf("named driver and optional update: installs %v", got)
+	}
+}
+
 // Apps on unreadable listing lines are left out, so the run cannot pass for
 // complete, dry or not.
 func TestWindowsUnreadableListingFailsTheRun(t *testing.T) {

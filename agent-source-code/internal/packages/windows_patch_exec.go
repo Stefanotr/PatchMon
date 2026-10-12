@@ -63,7 +63,9 @@ function Describe($err) {
 
 // wuaScanScript searches Windows Update online with the collector's criteria,
 // so the run sees the same set of updates the report did, and reads the
-// installer state that decides whether anything can install right now.
+// installer state that decides whether anything can install right now. The
+// criteria include driver and optional (BrowseOnly) updates; Type and
+// BrowseOnly let patch_all leave those out.
 const wuaScanScript = psPrelude + `
 try {
   $session = New-Object -ComObject Microsoft.Update.Session
@@ -95,6 +97,8 @@ foreach ($u in $found.Updates) {
     eula        = [bool]$u.EulaAccepted
     needs_input = $needsInput
     severity    = [string]$u.MsrcSeverity
+    type        = [int]$u.Type
+    browse_only = [bool]$u.BrowseOnly
   }
 }
 $busy = $false

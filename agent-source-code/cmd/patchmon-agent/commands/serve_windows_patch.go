@@ -521,8 +521,8 @@ func (r *windowsRun) selectAll(inv packages.WindowsInventory) []packages.Windows
 		}
 	}
 	targets, heldUpdates, heldApps := packages.SelectPatchAllTargets(inv, known)
-	for _, u := range heldUpdates {
-		r.status(packages.StatusSkip, u.DisplayName(), "not in PatchMon's pending list for this host yet; it will be offered once the next report includes it")
+	for _, h := range heldUpdates {
+		r.status(packages.StatusSkip, h.Update.DisplayName(), h.Reason)
 	}
 	for _, a := range heldApps {
 		r.status(packages.StatusSkip, a.Name, "winget "+a.ID+" | WinGet only upgrades it when it is named (pinned or explicit-upgrade package); patch it on its own to upgrade it")

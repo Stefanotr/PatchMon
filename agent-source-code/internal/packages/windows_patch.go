@@ -42,6 +42,10 @@ const (
 	wuaCanRequestReboot     = 2
 )
 
+// wuaDriverUpdate is the UpdateType of a driver in the WUA API (software
+// updates are 1).
+const wuaDriverUpdate = 2
+
 // WUAUpdate is one pending update returned by a Windows Update Agent search.
 type WUAUpdate struct {
 	GUID                string     `json:"guid"`
@@ -53,6 +57,11 @@ type WUAUpdate struct {
 	EulaAccepted        bool       `json:"eula"`
 	CanRequestUserInput bool       `json:"needs_input"`
 	Severity            string     `json:"severity"`
+	// Type is the WUA UpdateType: wuaDriverUpdate for a driver.
+	Type int `json:"type"`
+	// BrowseOnly: Windows Update offers the update as optional (a preview,
+	// for one) and does not install it on its own.
+	BrowseOnly bool `json:"browse_only"`
 }
 
 // DisplayName is the name the Windows Update collector reports for this
@@ -383,22 +392,46 @@ func filterWUA(pending []WUAUpdate, keep func(WUAUpdate) bool) []WUAUpdate {
 	return out
 }
 
+// HeldUpdate is a pending update a patch_all run leaves out, and why.
+type HeldUpdate struct {
+	Update WUAUpdate
+	Reason string
+}
+
+// patchAllExclusion says why patch_all never installs u, or "". Like Windows
+// Update itself, it leaves drivers and optional updates alone; naming the
+// update in a patch_package run installs it.
+func patchAllExclusion(u WUAUpdate) string {
+	switch {
+	case u.Type == wuaDriverUpdate:
+		return "driver update: Patch all leaves drivers out; patch it by name to install it"
+	case u.BrowseOnly:
+		return "optional update (a preview, or one Windows Update does not install on its own): Patch all leaves it out; patch it by name to install it"
+	}
+	return ""
+}
+
 // SelectPatchAllTargets picks what a patch_all run installs: every pending
 // update the server also lists as pending for this host, and every upgradable
-// WinGet app. An update the server has not seen is held back, so a run never
+// WinGet app. Drivers and optional updates are held back (patchAllExclusion).
+// An update the server has not seen is held back too, so a run never
 // installs something no operator was shown; the next report surfaces it. An
-// app WinGet only upgrades when named is held back too, as `winget upgrade
+// app WinGet only upgrades when named is held back as well, as `winget upgrade
 // --all` would; patching it by name upgrades it.
-func SelectPatchAllTargets(inv WindowsInventory, knownGUIDs []string) (targets []WindowsTarget, heldUpdates []WUAUpdate, heldApps []WinGetUpgrade) {
+func SelectPatchAllTargets(inv WindowsInventory, knownGUIDs []string) (targets []WindowsTarget, heldUpdates []HeldUpdate, heldApps []WinGetUpgrade) {
 	known := make(map[string]bool, len(knownGUIDs))
 	for _, g := range knownGUIDs {
 		known[strings.ToLower(strings.TrimSpace(g))] = true
 	}
 	for _, u := range inv.WUA.Updates {
-		if known[strings.ToLower(u.GUID)] {
+		switch why := patchAllExclusion(u); {
+		case why != "":
+			heldUpdates = append(heldUpdates, HeldUpdate{Update: u, Reason: why})
+		case !known[strings.ToLower(u.GUID)]:
+			heldUpdates = append(heldUpdates, HeldUpdate{Update: u,
+				Reason: "not in PatchMon's pending list for this host yet; it will be offered once the next report includes it"})
+		default:
 			targets = append(targets, WindowsTarget{Kind: TargetWUA, Name: u.DisplayName(), Update: u})
-		} else {
-			heldUpdates = append(heldUpdates, u)
 		}
 	}
 	for _, a := range inv.WinGet {

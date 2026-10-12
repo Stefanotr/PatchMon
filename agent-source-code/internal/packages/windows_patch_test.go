@@ -17,7 +17,7 @@ var (
 		GUID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", Title: "2026-09 Cumulative Update for .NET Framework 3.5 and 4.8.1",
 		KBs: stringList{"KB5064401", "KB5064400"}, SizeBytes: 70 << 20,
 	}
-	driverUpdate = WUAUpdate{GUID: "99999999-8888-7777-6666-555555555555", Title: "Intel - Net - 1.2.3.4"}
+	driverUpdate = WUAUpdate{GUID: "99999999-8888-7777-6666-555555555555", Title: "Intel - Net - 1.2.3.4", Type: wuaDriverUpdate}
 
 	firefox = WinGetUpgrade{Name: "Mozilla Firefox (x64 en-US)", ID: "Mozilla.Firefox", Version: "130.0", Available: "131.0.2", Source: "winget"}
 	vcX64   = WinGetUpgrade{Name: "Microsoft Visual C++ 2015-2022 Redist", ID: "Microsoft.VCRedist.2015+.x64", NameTruncated: true, Source: "winget"}
@@ -235,7 +235,8 @@ func TestSelectPatchAllTargetsHoldsBackUnreportedUpdates(t *testing.T) {
 	if got := refs(targets); !reflect.DeepEqual(got, want) {
 		t.Fatalf("targets = %v, want %v", got, want)
 	}
-	if len(held) != 2 || held[0].GUID != netUpdate.GUID || held[1].GUID != driverUpdate.GUID {
+	if len(held) != 2 || held[0].Update.GUID != netUpdate.GUID || held[1].Update.GUID != driverUpdate.GUID ||
+		!strings.Contains(held[0].Reason, "not in PatchMon's pending list") {
 		t.Fatalf("held = %+v, want the .NET and driver updates", held)
 	}
 	if len(heldApps) != 1 || heldApps[0].ID != pinned.ID {
@@ -243,6 +244,40 @@ func TestSelectPatchAllTargetsHoldsBackUnreportedUpdates(t *testing.T) {
 	}
 	if targets[0].Name != cuUpdate.DisplayName() {
 		t.Errorf("patch_all target name = %q, want the collector's display name", targets[0].Name)
+	}
+}
+
+// patch_all leaves drivers and optional updates out, as Windows Update does,
+// even when PatchMon lists them; named, they still resolve and install.
+func TestSelectPatchAllTargetsLeavesDriversAndOptionalUpdatesOut(t *testing.T) {
+	preview := WUAUpdate{GUID: "cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee", Title: "2026-09 Cumulative Update Preview", KBs: stringList{"KB5066000"}, Type: 1, BrowseOnly: true}
+	optionalDriver := driverUpdate
+	optionalDriver.BrowseOnly = true
+	optionalDriver.GUID, optionalDriver.Title = "dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee", "Realtek - Audio - 6.0.1"
+	inv := WindowsInventory{WUA: WUAScan{Updates: []WUAUpdate{cuUpdate, driverUpdate, preview, optionalDriver}}}
+
+	targets, held, _ := SelectPatchAllTargets(inv, []string{cuUpdate.GUID, driverUpdate.GUID, preview.GUID, optionalDriver.GUID})
+
+	if got := refs(targets); !reflect.DeepEqual(got, []string{"wua " + cuUpdate.GUID}) {
+		t.Fatalf("targets = %v, want only the cumulative update", got)
+	}
+	wantReasons := map[string]string{
+		driverUpdate.GUID:   "driver update",
+		preview.GUID:        "optional update",
+		optionalDriver.GUID: "driver update",
+	}
+	if len(held) != len(wantReasons) {
+		t.Fatalf("held = %+v", held)
+	}
+	for _, h := range held {
+		if want := wantReasons[h.Update.GUID]; !strings.HasPrefix(h.Reason, want) || !strings.Contains(h.Reason, "patch it by name") {
+			t.Errorf("held %s: reason %q, want %q and a pointer to patching it by name", h.Update.GUID, h.Reason, want)
+		}
+	}
+
+	named, unres := ResolveWindowsNames([]string{driverUpdate.Title, preview.DisplayName()}, inv)
+	if got := refs(named); len(unres) != 0 || !reflect.DeepEqual(got, []string{"wua " + driverUpdate.GUID, "wua " + preview.GUID}) {
+		t.Errorf("named targets = %v, unresolved %+v, want the driver and the preview", got, unres)
 	}
 }
 
