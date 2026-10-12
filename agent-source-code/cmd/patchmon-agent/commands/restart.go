@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"patchmon-agent/internal/logutil"
 	"patchmon-agent/internal/packages"
 	"patchmon-agent/internal/reboot"
 )
@@ -77,24 +78,75 @@ func formatRestartTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04 MST")
 }
 
+// patchRun is a run in progress, as registered in patchRunCancels. Entries
+// are pointers so a run removes its own entry and never another one stored
+// under the same id (func values are not comparable).
+type patchRun struct {
+	cancel context.CancelFunc
+}
+
+// errDuplicatePatchRun is returned for a run_patch whose run is already in
+// progress: the server delivered it twice. It is ignored without a word to
+// the server, which would otherwise record the real run as failed.
+var errDuplicatePatchRun = errors.New("this patch run is already in progress on this host")
+
 // registerPatchRun records a run so stop requests and restarts see it. A
 // real run is refused when a pending restart could cut it off: one this
 // agent scheduled, or one the operating system reports, before the run
 // could finish, or at a time it does not tell. A dry run changes nothing
-// and always starts.
-func registerPatchRun(id string, cancel context.CancelFunc, dryRun bool) error {
+// and always starts. A duplicate of a run in progress is refused first,
+// with errDuplicatePatchRun, and leaves that run's entry alone.
+func registerPatchRun(id string, cancel context.CancelFunc, dryRun bool) (*patchRun, error) {
 	restartGate.Lock()
 	defer restartGate.Unlock()
+	if _, ok := patchRunCancels.Load(id); ok {
+		return nil, errDuplicatePatchRun
+	}
 	if updateInFlight.Load() {
-		return errors.New("the agent is updating itself; run the patch again in a few minutes")
+		return nil, errors.New("the agent is updating itself; run the patch again in a few minutes")
 	}
 	if !dryRun {
 		if err := restartWouldCutRunLocked(time.Now()); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	patchRunCancels.Store(id, cancel)
-	return nil
+	run := &patchRun{cancel: cancel}
+	if _, loaded := patchRunCancels.LoadOrStore(id, run); loaded {
+		return nil, errDuplicatePatchRun
+	}
+	return run, nil
+}
+
+// unregisterPatchRun removes a run's own entry, never one a later run stored
+// under the same id.
+func unregisterPatchRun(id string, run *patchRun) {
+	restartGate.Lock()
+	defer restartGate.Unlock()
+	patchRunCancels.CompareAndDelete(id, run)
+}
+
+// lookupPatchRun returns the run in progress with this id.
+func lookupPatchRun(id string) (*patchRun, bool) {
+	v, ok := patchRunCancels.Load(id)
+	if !ok {
+		return nil, false
+	}
+	run, ok := v.(*patchRun)
+	return run, ok && run != nil
+}
+
+// beginPatchRun registers a run, or tells the server why it cannot start
+// through refuse. A duplicate of a run in progress is only logged: anything
+// sent for its id would land on the real run.
+func beginPatchRun(id string, cancel context.CancelFunc, dryRun bool, refuse func(reason string)) (*patchRun, error) {
+	run, err := registerPatchRun(id, cancel, dryRun)
+	switch {
+	case errors.Is(err, errDuplicatePatchRun):
+		logger.WithField("patch_run_id", logutil.Sanitize(id)).Warn("Ignoring a run_patch delivered again for a run in progress")
+	case err != nil:
+		refuse(err.Error())
+	}
+	return run, err
 }
 
 func restartWouldCutRunLocked(now time.Time) error {

@@ -450,9 +450,12 @@ func runServiceLoop(stopCh <-chan struct{}) error {
 				go handleRestartCancel(m.requestID)
 			case "run_patch":
 				go func(msg wsMsg) {
-					if err := runPatch(msg.patchRunID, msg.patchType, msg.packageNames, msg.dryRun, msg.reboot); err != nil {
+					switch err := runPatch(msg.patchRunID, msg.patchType, msg.packageNames, msg.dryRun, msg.reboot); {
+					case errors.Is(err, errDuplicatePatchRun):
+						// beginPatchRun logged it; the real run goes on.
+					case err != nil:
 						logger.WithError(err).Warn("run_patch failed")
-					} else {
+					default:
 						logger.Info("run_patch completed successfully")
 					}
 				}(m)
@@ -559,10 +562,10 @@ func runServiceLoop(stopCh <-chan struct{}) error {
 					logger.Debug("Compliance scan cancel requested but no scan is running")
 				}
 			case "patch_run_stop":
-				if v, ok := patchRunCancels.Load(m.patchRunID); ok {
-					if cancelFn, ok := v.(context.CancelFunc); ok && cancelFn != nil {
+				if run, ok := lookupPatchRun(m.patchRunID); ok {
+					if run.cancel != nil {
 						patchRunStopped.Store(m.patchRunID, true)
-						cancelFn()
+						run.cancel()
 						logger.WithField("patch_run_id", logutil.Sanitize(m.patchRunID)).Info("Patch run stop honored; interrupt sent")
 					}
 				} else {
@@ -2559,12 +2562,14 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool, 
 
 	// Register cancel fn so the server can request an interrupt via
 	// "patch_run_stop". A real run is refused when a restart scheduled on
-	// this host would cut it off.
-	if err := registerPatchRun(patchRunID, cancel, dryRun); err != nil {
-		_ = httpClient.SendPatchOutput(ctx, patchRunID, "failed", "", err.Error())
+	// this host would cut it off; a run_patch delivered twice is ignored.
+	run, err := beginPatchRun(patchRunID, cancel, dryRun, func(reason string) {
+		_ = httpClient.SendPatchOutput(ctx, patchRunID, "failed", "", reason)
+	})
+	if err != nil {
 		return err
 	}
-	defer patchRunCancels.Delete(patchRunID)
+	defer unregisterPatchRun(patchRunID, run)
 	packageMgr := packages.New(logger, packages.CacheRefreshConfig{
 		Mode:   cfgManager.GetPackageCacheRefreshMode(),
 		MaxAge: cfgManager.GetPackageCacheRefreshMaxAge(),

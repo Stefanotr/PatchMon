@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -118,7 +120,7 @@ func TestScheduleRestartRespectsOtherRunsAndPendingRestarts(t *testing.T) {
 	resetRestartState(t)
 	always := reboot.Options{Mode: reboot.ModeAlways}
 
-	patchRunCancels.Store("run-2", context.CancelFunc(func() {}))
+	patchRunCancels.Store("run-2", &patchRun{cancel: func() {}})
 	var out strings.Builder
 	s := &scheduledRestart{}
 	if err := scheduleRestart(&out, "run-1", always, false, "", s.schedule); err != nil || s.calls != 0 ||
@@ -127,7 +129,7 @@ func TestScheduleRestartRespectsOtherRunsAndPendingRestarts(t *testing.T) {
 	}
 	patchRunCancels.Delete("run-2")
 
-	patchRunCancels.Store("run-1", context.CancelFunc(func() {}))
+	patchRunCancels.Store("run-1", &patchRun{cancel: func() {}})
 	out.Reset()
 	if err := scheduleRestart(&out, "run-1", always, false, "", s.schedule); err != nil || s.calls != 1 {
 		t.Fatalf("the run's own registration blocked its restart: %q, %v", out.String(), err)
@@ -145,23 +147,23 @@ func TestRegisterPatchRunAndPendingRestart(t *testing.T) {
 	noop := context.CancelFunc(func() {})
 
 	restartGate.pendingAt = time.Now().Add(10 * time.Minute)
-	if err := registerPatchRun("real", noop, false); err == nil || !strings.Contains(err.Error(), "a restart is scheduled for") {
+	if _, err := registerPatchRun("real", noop, false); err == nil || !strings.Contains(err.Error(), "a restart is scheduled for") {
 		t.Fatalf("real run started under a pending restart: %v", err)
 	}
-	if err := registerPatchRun("dry", noop, true); err != nil {
+	if _, err := registerPatchRun("dry", noop, true); err != nil {
 		t.Fatalf("dry run refused: %v", err)
 	}
 	patchRunCancels.Delete("dry")
 
 	restartGate.pendingAt = time.Now().Add(patchRunTimeout() + time.Hour)
-	if err := registerPatchRun("later", noop, false); err != nil {
+	if _, err := registerPatchRun("later", noop, false); err != nil {
 		t.Fatalf("a restart after the run's time limit blocked it: %v", err)
 	}
 	patchRunCancels.Delete("later")
 
 	// A restart long past its time did not happen and holds nothing back.
 	restartGate.pendingAt = time.Now().Add(-time.Hour)
-	if err := registerPatchRun("stale", noop, false); err != nil {
+	if _, err := registerPatchRun("stale", noop, false); err != nil {
 		t.Fatalf("a stale restart blocked the run: %v", err)
 	}
 }
@@ -186,12 +188,12 @@ func TestRegisterPatchRunAndOSPendingRestart(t *testing.T) {
 		{name: "none"},
 	} {
 		osPendingRestart = func() (time.Time, bool) { return tt.at, tt.pending }
-		err := registerPatchRun("real", noop, false)
+		_, err := registerPatchRun("real", noop, false)
 		patchRunCancels.Delete("real")
 		if (err != nil) != tt.refused {
 			t.Errorf("%s: err = %v, refused want %v", tt.name, err, tt.refused)
 		}
-		if err := registerPatchRun("dry", noop, true); err != nil {
+		if _, err := registerPatchRun("dry", noop, true); err != nil {
 			t.Errorf("%s: dry run refused: %v", tt.name, err)
 		}
 		patchRunCancels.Delete("dry")
@@ -205,7 +207,7 @@ func TestRegisterPatchRunWithItsOwnRestartOfUnknownTime(t *testing.T) {
 	noop := context.CancelFunc(func() {})
 	osPendingRestart = func() (time.Time, bool) { return time.Time{}, true }
 	restartGate.pendingAt = time.Now().Add(patchRunTimeout() + time.Hour)
-	if err := registerPatchRun("real", noop, false); err != nil {
+	if _, err := registerPatchRun("real", noop, false); err != nil {
 		t.Fatalf("run refused under its own far restart: %v", err)
 	}
 }
@@ -218,7 +220,7 @@ func TestAgentUpdateAndPatchRunsExcludeEachOther(t *testing.T) {
 
 	updateInFlight.Store(true)
 	for _, dry := range []bool{false, true} {
-		if err := registerPatchRun("run", noop, dry); err == nil || !strings.Contains(err.Error(), "updating itself") {
+		if _, err := registerPatchRun("run", noop, dry); err == nil || !strings.Contains(err.Error(), "updating itself") {
 			t.Errorf("dry run %v started during an update: %v", dry, err)
 		}
 	}
@@ -227,7 +229,7 @@ func TestAgentUpdateAndPatchRunsExcludeEachOther(t *testing.T) {
 	if err := patchRunBlocksUpdate(); err != nil {
 		t.Fatalf("update refused with no run: %v", err)
 	}
-	if err := registerPatchRun("dry", noop, true); err != nil {
+	if _, err := registerPatchRun("dry", noop, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := patchRunBlocksUpdate(); err == nil {
@@ -257,7 +259,7 @@ func TestRestartCommand(t *testing.T) {
 		t.Error("a command without mode always was accepted")
 	}
 
-	patchRunCancels.Store("run", context.CancelFunc(func() {}))
+	patchRunCancels.Store("run", &patchRun{cancel: func() {}})
 	if _, err := restartCommand(reboot.Options{Mode: reboot.ModeAlways}); err == nil || !strings.Contains(err.Error(), "patch run is in progress") {
 		t.Fatalf("restart scheduled during a run: %v", err)
 	}
@@ -288,5 +290,91 @@ func TestRestartCommand(t *testing.T) {
 	restartGate.Unlock()
 	if !stillPending {
 		t.Error("a failed cancel forgot the pending restart")
+	}
+}
+
+// A run_patch delivered twice leaves the real run alone: its entry, what a
+// stop request reaches, and what the server hears about it.
+func TestDuplicatePatchRunIsIgnored(t *testing.T) {
+	resetRestartState(t)
+	stopped := false
+	real, err := registerPatchRun("run-1", func() { stopped = true }, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refused []string
+	refuse := func(reason string) { refused = append(refused, reason) }
+
+	dup, err := beginPatchRun("run-1", func() {}, false, refuse)
+	if !errors.Is(err, errDuplicatePatchRun) || dup != nil {
+		t.Fatalf("duplicate registered: %v, %v", dup, err)
+	}
+	// Even when a new run would be refused, a duplicate says nothing: the
+	// refusal would mark the real run failed.
+	updateInFlight.Store(true)
+	if _, err := beginPatchRun("run-1", func() {}, true, refuse); !errors.Is(err, errDuplicatePatchRun) {
+		t.Fatalf("err = %v, want errDuplicatePatchRun", err)
+	}
+	updateInFlight.Store(false)
+	if len(refused) != 0 {
+		t.Fatalf("a duplicate was reported to the server: %v", refused)
+	}
+
+	got, ok := lookupPatchRun("run-1")
+	if !ok || got != real {
+		t.Fatal("the duplicate replaced the real run's entry")
+	}
+	got.cancel()
+	if !stopped {
+		t.Fatal("a stop request did not reach the real run")
+	}
+
+	// Only the run's own entry is removed.
+	unregisterPatchRun("run-1", &patchRun{})
+	if _, ok := lookupPatchRun("run-1"); !ok {
+		t.Fatal("another entry removed the real run's")
+	}
+	unregisterPatchRun("run-1", real)
+	if _, ok := lookupPatchRun("run-1"); ok {
+		t.Fatal("the run's entry was not removed")
+	}
+	again, err := registerPatchRun("run-1", func() {}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unregisterPatchRun("run-1", real)
+	if got, ok := lookupPatchRun("run-1"); !ok || got != again {
+		t.Fatal("a finished run removed the entry of a later run with the same id")
+	}
+}
+
+// Deliveries racing each other register exactly one run.
+func TestConcurrentDuplicatePatchRuns(t *testing.T) {
+	resetRestartState(t)
+	const n = 16
+	var (
+		wg       sync.WaitGroup
+		won      atomic.Int32
+		refusals atomic.Int32
+	)
+	start := make(chan struct{})
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := beginPatchRun("run-1", func() {}, i%2 == 0, func(string) { refusals.Add(1) })
+			switch {
+			case err == nil:
+				won.Add(1)
+			case !errors.Is(err, errDuplicatePatchRun):
+				t.Errorf("err = %v, want errDuplicatePatchRun", err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if won.Load() != 1 || refusals.Load() != 0 {
+		t.Fatalf("%d run(s) registered, %d refusal(s) sent; want 1 and 0", won.Load(), refusals.Load())
 	}
 }
