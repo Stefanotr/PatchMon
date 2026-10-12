@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,11 +28,15 @@ type scheduledRestart struct {
 }
 
 func (s *scheduledRestart) report(runID string, _ time.Time, err error) {
-	if err != nil {
+	var skipped skippedRestart
+	switch {
+	case errors.As(err, &skipped):
+		s.reports = append(s.reports, runID+" skipped: "+skipped.reason)
+	case err != nil:
 		s.reports = append(s.reports, runID+" "+err.Error())
-		return
+	default:
+		s.reports = append(s.reports, runID+" ok")
 	}
-	s.reports = append(s.reports, runID+" ok")
 }
 
 func (s *scheduledRestart) schedule(d time.Duration, msg string) error {
@@ -85,7 +90,8 @@ func TestScheduleRestart(t *testing.T) {
 		wantCalls int
 		wantLine  string
 		wantErr   bool
-		// wantReport is what reaches the server: "" (nothing), "ok", or an error.
+		// wantReport is what reaches the server: "" (nothing), "ok",
+		// "skipped: " and the reason, or an error.
 		wantReport string
 	}{
 		{name: "never: silent", opts: reboot.Options{Mode: reboot.ModeNever}, needed: true},
@@ -94,7 +100,7 @@ func TestScheduleRestart(t *testing.T) {
 		{name: "if needed, none pending", opts: reboot.Options{Mode: reboot.ModeIfNeeded}, wantLine: "Restart: not needed"},
 		{name: "if needed, pending", opts: reboot.Options{Mode: reboot.ModeIfNeeded, DelayMinutes: 10}, needed: true, wantCalls: 1, wantLine: "Restart: scheduled for", wantReport: "ok"},
 		{name: "always", opts: reboot.Options{Mode: reboot.ModeAlways}, wantCalls: 1, wantLine: "(in 5m0s)", wantReport: "ok"},
-		{name: "something else already pending", opts: reboot.Options{Mode: reboot.ModeAlways}, failWith: reboot.ErrAlreadyScheduled, wantCalls: 1, wantLine: "already pending on this host (not by this run)"},
+		{name: "something else already pending", opts: reboot.Options{Mode: reboot.ModeAlways}, failWith: reboot.ErrAlreadyScheduled, wantCalls: 1, wantLine: "already pending on this host (not by this run)", wantReport: "skipped: a restart or shutdown is already pending on this host"},
 		{name: "scheduling fails", opts: reboot.Options{Mode: reboot.ModeAlways}, failWith: errors.New("access denied"), wantCalls: 1, wantLine: "Restart: could not be scheduled: access denied", wantErr: true, wantReport: "access denied"},
 		{name: "time too far", opts: reboot.Options{Mode: reboot.ModeAlways, At: time.Now().Add(reboot.MaxDelay + time.Hour)}, wantLine: "more than", wantErr: true, wantReport: "more than"},
 	} {
@@ -123,6 +129,8 @@ func TestScheduleRestart(t *testing.T) {
 				t.Errorf("reported %v, want nothing", reported.reports)
 			case tt.wantReport != "" && (len(reported.reports) != 1 || !strings.HasPrefix(reported.reports[0], "run-1 ") || !strings.Contains(reported.reports[0], tt.wantReport)):
 				t.Errorf("reported %v, want one report with %q", reported.reports, tt.wantReport)
+			case !strings.HasPrefix(tt.wantReport, "skipped: ") && slices.ContainsFunc(reported.reports, func(r string) bool { return strings.Contains(r, " skipped: ") }):
+				t.Errorf("reported %v as skipped", reported.reports)
 			}
 		})
 	}
@@ -131,7 +139,7 @@ func TestScheduleRestart(t *testing.T) {
 // A run's restart never cuts off another run, and never stacks on a restart
 // already scheduled.
 func TestScheduleRestartRespectsOtherRunsAndPendingRestarts(t *testing.T) {
-	resetRestartState(t)
+	reported := resetRestartState(t)
 	always := reboot.Options{Mode: reboot.ModeAlways}
 
 	patchRunCancels.Store("run-2", &patchRun{cancel: func() {}})
@@ -152,6 +160,41 @@ func TestScheduleRestartRespectsOtherRunsAndPendingRestarts(t *testing.T) {
 	if err := scheduleRestart(&out, "run-1", always, false, "", s.schedule); err != nil || s.calls != 1 ||
 		!strings.Contains(out.String(), "Restart: already scheduled for") {
 		t.Fatalf("a second restart was scheduled: calls %d, %q", s.calls, out.String())
+	}
+
+	// Each wanted restart left out is reported as skipped, with the reason.
+	want := []string{
+		"run-1 skipped: another patch run is in progress on this host",
+		"run-1 ok",
+		"run-1 skipped: a restart is already scheduled for ",
+	}
+	if len(reported.reports) != len(want) {
+		t.Fatalf("reported %q, want %q", reported.reports, want)
+	}
+	for i, w := range want {
+		if !strings.HasPrefix(reported.reports[i], w) {
+			t.Errorf("report %d = %q, want %q", i, reported.reports[i], w)
+		}
+	}
+}
+
+// The skipped event's exact shape, next to the scheduled and failed ones.
+func TestRunRestartEventJSON(t *testing.T) {
+	at := time.Date(2026, 10, 12, 1, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		name string
+		at   time.Time
+		err  error
+		want string
+	}{
+		{"scheduled", at, nil, `{"type":"reboot_result","action":"run","run_id":"run-1","ok":true,"reboot_at":"2026-10-12T01:00:00Z"}`},
+		{"skipped", time.Time{}, skippedRestart{"another patch run is in progress on this host"}, `{"type":"reboot_result","action":"run","run_id":"run-1","ok":false,"skipped":true,"error":"another patch run is in progress on this host"}`},
+		{"failed", time.Time{}, errors.New("access denied"), `{"type":"reboot_result","action":"run","run_id":"run-1","ok":false,"error":"access denied"}`},
+	} {
+		b, err := encodeRestartMessage(runRestartReply("run-1", tt.at, tt.err))
+		if err != nil || string(b) != tt.want {
+			t.Errorf("%s: %s, %v; want %s", tt.name, b, err, tt.want)
+		}
 	}
 }
 
@@ -486,6 +529,9 @@ func TestRemoteRestartsDisabled(t *testing.T) {
 	}
 	if s.calls != 0 {
 		t.Fatal("the host was restarted")
+	}
+	if want := "run-1 skipped: remote restarts are disabled on this host (remote-restart-enabled in " + path + ")"; len(s.reports) != 1 || s.reports[0] != want {
+		t.Fatalf("reported %q, want %q", s.reports, want)
 	}
 
 	cancelHostRestart = func() error { return nil }

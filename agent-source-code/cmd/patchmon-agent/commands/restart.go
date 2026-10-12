@@ -271,10 +271,19 @@ func otherPatchRunInProgress(id string) bool {
 	return busy
 }
 
+// skippedRestart is a restart a run wanted but left out, and why. It is
+// reported to the server as skipped and does not fail the run, whose output
+// says what happened.
+type skippedRestart struct{ reason string }
+
+func (s skippedRestart) Error() string { return s.reason }
+
 // scheduleRestart applies a run's restart option once the run is over and
 // writes what it did to out. needed says whether the host reports a pending
 // restart; blocked says why the run must not restart it ("" when it may).
-// It returns an error when a wanted restart could not be scheduled.
+// A wanted restart left out, because of another run, a restart or shutdown
+// already pending, or the host's opt-in, is reported as skipped. It returns
+// an error when a wanted restart could not be scheduled.
 func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bool, blocked string, schedule func(time.Duration, string) error) error {
 	if !opts.Enabled() {
 		return nil
@@ -287,10 +296,6 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 		_, _ = fmt.Fprintf(out, "Restart: not needed\n")
 		return nil
 	}
-	if !remoteRestartsAllowed() {
-		_, _ = fmt.Fprintf(out, "Restart: skipped, %s\n", remoteRestartsDisabled())
-		return nil
-	}
 
 	// The report goes to the server over the network: send it once the lock
 	// is released (deferred first, so it runs after the unlock).
@@ -300,15 +305,25 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 			report()
 		}
 	}()
+	skip := func(line, reason string) {
+		_, _ = fmt.Fprintln(out, line)
+		report = func() { reportRunRestart(runID, time.Time{}, skippedRestart{reason}) }
+	}
+	if !remoteRestartsAllowed() {
+		reason := remoteRestartsDisabled()
+		skip("Restart: skipped, "+reason, reason)
+		return nil
+	}
 	restartGate.Lock()
 	defer restartGate.Unlock()
 	now := time.Now()
 	if otherPatchRunInProgress(runID) {
-		_, _ = fmt.Fprintf(out, "Restart: not scheduled, another patch run is in progress on this host; restart it once that run is over\n")
+		skip("Restart: not scheduled, another patch run is in progress on this host; restart it once that run is over",
+			"another patch run is in progress on this host")
 		return nil
 	}
 	if at, ok := pendingRestartLocked(now); ok {
-		_, _ = fmt.Fprintf(out, "Restart: already scheduled for %s\n", formatRestartTime(at))
+		skip("Restart: already scheduled for "+formatRestartTime(at), "a restart is already scheduled for "+formatRestartTime(at))
 		return nil
 	}
 	at, err := opts.When(now)
@@ -319,7 +334,7 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 	}
 	switch err := schedule(at.Sub(now), opts.ShutdownMessage()); {
 	case errors.Is(err, reboot.ErrAlreadyScheduled):
-		_, _ = fmt.Fprintf(out, "Restart: not scheduled, %s (not by this run)\n", reboot.ErrAlreadyScheduled)
+		skip(fmt.Sprintf("Restart: not scheduled, %s (not by this run)", reboot.ErrAlreadyScheduled), reboot.ErrAlreadyScheduled.Error())
 		return nil
 	case err != nil:
 		_, _ = fmt.Fprintf(out, "Restart: could not be scheduled: %s\n", packages.OneLine(err.Error()))
@@ -382,14 +397,16 @@ func cancelRestartCommand() error {
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
 // restartReply is the agent's answer to a restart or cancel command
-// (RequestID set), or its report of a restart a patch run scheduled
-// (Action "run", RunID set).
+// (RequestID set), or its report of the restart of a patch run (Action
+// "run", RunID set): scheduled (OK), skipped (Skipped, Error says why) or
+// failed (Error).
 type restartReply struct {
 	Type      string `json:"type"`
 	RequestID string `json:"request_id,omitempty"`
-	RunID     string `json:"run_id,omitempty"`
 	Action    string `json:"action"`
+	RunID     string `json:"run_id,omitempty"`
 	OK        bool   `json:"ok"`
+	Skipped   bool   `json:"skipped,omitempty"`
 	Error     string `json:"error,omitempty"`
 	RebootAt  string `json:"reboot_at,omitempty"`
 }
@@ -404,18 +421,32 @@ func sendRestartReply(r restartReply) {
 // sendRunRestartEvent reports a patch run's restart. Best effort: without a
 // connection the run's output still says what happened.
 func sendRunRestartEvent(runID string, at time.Time, err error) {
+	writeRestartMessage(runRestartReply(runID, at, err))
+}
+
+// runRestartReply is the report of a run's restart: scheduled for at when
+// err is nil, skipped when err is a skippedRestart, failed otherwise.
+func runRestartReply(runID string, at time.Time, err error) restartReply {
 	r := restartReply{RunID: runID, Action: "run"}
-	if err != nil {
+	var skipped skippedRestart
+	switch {
+	case errors.As(err, &skipped):
+		r.Skipped, r.Error = true, packages.OneLine(skipped.reason)
+	case err != nil:
 		r.Error = packages.OneLine(err.Error())
-	} else {
+	default:
 		r.OK, r.RebootAt = true, at.UTC().Format(time.RFC3339)
 	}
-	writeRestartMessage(r)
+	return r
+}
+
+func encodeRestartMessage(r restartReply) ([]byte, error) {
+	r.Type = "reboot_result"
+	return json.Marshal(r)
 }
 
 func writeRestartMessage(r restartReply) {
-	r.Type = "reboot_result"
-	b, err := json.Marshal(r)
+	b, err := encodeRestartMessage(r)
 	if err != nil {
 		return
 	}
