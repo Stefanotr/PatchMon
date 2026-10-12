@@ -29,6 +29,12 @@ git fetch -q --tags origin
 git branch -r --contains HEAD | grep -q '^ *origin/' ||
   die "HEAD is not on any branch of origin; push it first"
 
+# Tagging a commit already released publishes the same code under a new
+# version, typically because the pull request was not merged yet.
+released="$(git tag --points-at HEAD -l 'v*-fork.*' | tr '\n' ' ')"
+[ -z "$released" ] ||
+  die "HEAD ($(git rev-parse --short HEAD)) is already released as ${released% }: merge the pending pull requests, pull, then run this again"
+
 base_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' HEAD 2>/dev/null)" ||
   die "no official release tag in the history of HEAD"
 printf '%s' "$base_tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || die "unexpected base tag $base_tag"
