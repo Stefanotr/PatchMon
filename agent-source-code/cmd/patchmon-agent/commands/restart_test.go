@@ -34,6 +34,7 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 		patchRunCancels.Delete(k)
 		return true
 	})
+	updateInFlight.Store(false)
 	s := &scheduledRestart{}
 	oldSchedule, oldCancel, oldPending := scheduleHostRestart, cancelHostRestart, osPendingRestart
 	scheduleHostRestart = s.schedule
@@ -188,6 +189,32 @@ func TestRegisterPatchRunWithItsOwnRestartOfUnknownTime(t *testing.T) {
 	if err := registerPatchRun("real", noop, false); err != nil {
 		t.Fatalf("run refused under its own far restart: %v", err)
 	}
+}
+
+// The self-update restarts the agent: it never runs under a patch run, and
+// no patch run starts while it is in progress.
+func TestAgentUpdateAndPatchRunsExcludeEachOther(t *testing.T) {
+	resetRestartState(t)
+	noop := context.CancelFunc(func() {})
+
+	updateInFlight.Store(true)
+	for _, dry := range []bool{false, true} {
+		if err := registerPatchRun("run", noop, dry); err == nil || !strings.Contains(err.Error(), "updating itself") {
+			t.Errorf("dry run %v started during an update: %v", dry, err)
+		}
+	}
+	updateInFlight.Store(false)
+
+	if err := patchRunBlocksUpdate(); err != nil {
+		t.Fatalf("update refused with no run: %v", err)
+	}
+	if err := registerPatchRun("dry", noop, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := patchRunBlocksUpdate(); err == nil {
+		t.Fatal("update allowed during a dry run")
+	}
+	patchRunCancels.Delete("dry")
 }
 
 func TestRestartCommandWhenTheSystemHasOnePending(t *testing.T) {

@@ -21,7 +21,9 @@ import (
 // One lock serialises every restart decision with the registration of patch
 // runs: a real run does not start when a restart this agent scheduled would
 // cut it off, and no restart is scheduled while a run is in progress or
-// another restart is pending.
+// another restart is pending. The agent's self-update, which restarts the
+// agent, follows the same rule: it waits for runs to end, and no run starts
+// while it is in progress.
 
 const (
 	restartCommandTimeout = 30 * time.Second
@@ -80,6 +82,9 @@ func formatRestartTime(t time.Time) string {
 func registerPatchRun(id string, cancel context.CancelFunc, dryRun bool) error {
 	restartGate.Lock()
 	defer restartGate.Unlock()
+	if updateInFlight.Load() {
+		return errors.New("the agent is updating itself; run the patch again in a few minutes")
+	}
 	if !dryRun {
 		if err := restartWouldCutRunLocked(time.Now()); err != nil {
 			return err
@@ -107,6 +112,17 @@ func restartWouldCutRunLocked(now time.Time) error {
 		return errors.New("a restart or shutdown is pending on this host; cancel it from the host page or run the patch after it")
 	case at.Before(finish) && now.Before(at.Add(pendingRestartGrace)):
 		return fmt.Errorf("a restart or shutdown is scheduled for %s, before this run could finish; cancel it from the host page or run the patch after it", formatRestartTime(at))
+	}
+	return nil
+}
+
+// patchRunBlocksUpdate refuses the agent's self-update while a patch run,
+// dry runs included, is in progress. The caller has set updateInFlight.
+func patchRunBlocksUpdate() error {
+	restartGate.Lock()
+	defer restartGate.Unlock()
+	if otherPatchRunInProgress("") {
+		return errors.New("a patch run is in progress on this host; the update waits for the next check")
 	}
 	return nil
 }

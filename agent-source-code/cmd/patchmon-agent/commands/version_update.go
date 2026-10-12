@@ -135,6 +135,14 @@ func updateAgent() error {
 	}
 	defer updateInFlight.Store(false)
 
+	// The update restarts the agent, which would cut a patch run off in the
+	// middle of an install. updateInFlight, set above, keeps new runs from
+	// starting until the update is over.
+	if err := patchRunBlocksUpdate(); err != nil {
+		logger.WithError(err).Info("Agent update postponed")
+		return fmt.Errorf("update skipped: %w", err)
+	}
+
 	logger.Info("Updating agent...")
 
 	// Check if we recently updated to prevent update loops

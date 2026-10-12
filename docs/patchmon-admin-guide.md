@@ -711,7 +711,7 @@ Quick reference panel for the host's identity and agent settings. Fields include
 - **Operating System**: icon plus OS type and version (detected by the agent).
 - **Agent Version**: version of `patchmon-agent` currently reporting.
 - **Agent Auto-update**: per-host toggle. If global auto-update is disabled, a yellow warning badge is shown with a tooltip pointing to **Settings → Agent Updates**.
-- **Force Agent Version Upgrade**: the **Update Now** button sends an immediate upgrade command via WebSocket. Disabled when the agent is offline.
+- **Force Agent Version Upgrade**: the **Update Now** button sends an immediate upgrade command via WebSocket. Disabled when the agent is offline. The update restarts the agent, so the agent skips it while a patch run (dry run included) is in progress, and refuses new runs while it updates; press the button again once the run is over, or let auto-update pick it up.
 
 See Managing the PatchMon Agent for what the agent does when it receives an upgrade command.
 
