@@ -4,8 +4,9 @@ name: Upstream release watch
 # the fork's branch does not contain yet, so the fork gets synced and a new
 # fork release built. Never runs in the upstream repository.
 #
-# Set the FORK_BRANCH repository variable to the branch fork releases are cut
-# from; the default branch is used otherwise.
+# It compares against the fork's default branch (fork, see FORK.md); the
+# FORK_BRANCH repository variable can name another. GitHub only runs
+# scheduled workflows, and only offers "Run workflow", from the default branch.
 
 on:
   schedule:
@@ -56,8 +57,14 @@ jobs:
           echo "Latest upstream release: $tag; fork branch: $branch"
 
           # Nothing to do when the branch already contains the release.
+          # A failed comparison (a FORK_BRANCH that no longer exists, say)
+          # fails the run, so GitHub reports it, rather than opening an issue
+          # for a release the branch may already contain.
           sha="$(gh api "repos/$UPSTREAM/commits/$tag" --jq .sha)"
-          status="$(gh api "repos/$FORK/compare/$sha...$branch" --jq .status 2>/dev/null || echo unknown)"
+          if ! status="$(gh api "repos/$FORK/compare/$sha...$branch" --jq .status)"; then
+            echo "::error::cannot compare $tag with $branch; check the branch, or the FORK_BRANCH variable"
+            exit 1
+          fi
           case "$status" in
             identical|ahead)
               echo "$branch already contains $tag"
