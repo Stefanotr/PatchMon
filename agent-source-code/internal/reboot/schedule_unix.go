@@ -69,7 +69,7 @@ func Pending() (at time.Time, ok bool) {
 		at, _, exists, _ := logindSchedule()
 		return at, exists
 	}
-	procs, err := shutdownProcesses()
+	procs, err := shutdownProcesses(context.Background())
 	return time.Time{}, err != nil || len(procs) > 0
 }
 
@@ -78,35 +78,39 @@ func Pending() (at time.Time, ok bool) {
 // restart within a couple of minutes of s.At; on SysV init and FreeBSD,
 // every shutdown(8) process waiting for its time carries the PatchMon
 // message, which Schedule always passes.
-func PendingOwner(s Scheduled) Owner {
-	owner, _ := pendingOwner(s)
+func PendingOwner(ctx context.Context, s Scheduled) Owner {
+	owner, _, _ := pendingOwner(ctx, s)
 	return owner
 }
 
-// pendingOwner is PendingOwner, with the shutdown(8) processes it judged.
-func pendingOwner(s Scheduled) (Owner, []shutdownProcess) {
+// pendingOwner is PendingOwner, with the shutdown(8) processes it judged and,
+// for OwnerUnknown, why.
+func pendingOwner(ctx context.Context, s Scheduled) (Owner, []shutdownProcess, error) {
 	switch {
 	case usesLogind():
-		return logindOwner(s), nil
+		owner, err := logindOwner(s)
+		return owner, nil, err
 	case runtime.GOOS == "linux" || runtime.GOOS == "freebsd":
-		return processOwner()
+		return processOwner(ctx)
 	}
-	return OwnerUnknown, nil
+	return OwnerUnknown, nil, fmt.Errorf("%s does not tell which restart is pending", runtime.GOOS)
 }
 
-func logindOwner(s Scheduled) Owner {
+func logindOwner(s Scheduled) (Owner, error) {
 	at, mode, exists, err := logindSchedule()
 	switch {
 	case !exists:
-		return OwnerNone
-	case err != nil || at.IsZero():
-		return OwnerUnknown
+		return OwnerNone, nil
+	case err != nil:
+		return OwnerUnknown, fmt.Errorf("logind's record of the scheduled shutdown could not be read: %w", err)
+	case at.IsZero():
+		return OwnerUnknown, errors.New("logind's record of the scheduled shutdown does not say when")
 	case mode != "" && mode != "reboot":
-		return OwnerOther
+		return OwnerOther, nil
 	case at.Sub(s.At).Abs() <= scheduleTolerance:
-		return OwnerPatchMon
+		return OwnerPatchMon, nil
 	}
-	return OwnerOther
+	return OwnerOther, nil
 }
 
 // logindSchedule reads logind's record of a scheduled shutdown: its time
@@ -139,13 +143,13 @@ func logindSchedule() (at time.Time, mode string, exists bool, err error) {
 // someone else's when none does. Both at once (FreeBSD runs several) cannot
 // be cancelled apart: "shutdown -c" or the wait for nothing to be pending
 // would take the other one along.
-func processOwner() (Owner, []shutdownProcess) {
-	procs, err := shutdownProcesses()
+func processOwner(ctx context.Context) (Owner, []shutdownProcess, error) {
+	procs, err := shutdownProcesses(ctx)
 	switch {
 	case err != nil:
-		return OwnerUnknown, nil
+		return OwnerUnknown, nil, fmt.Errorf("the waiting shutdown processes could not be listed: %w", err)
 	case len(procs) == 0:
-		return OwnerNone, nil
+		return OwnerNone, nil, nil
 	}
 	ours := 0
 	for _, p := range procs {
@@ -155,11 +159,11 @@ func processOwner() (Owner, []shutdownProcess) {
 	}
 	switch ours {
 	case len(procs):
-		return OwnerPatchMon, procs
+		return OwnerPatchMon, procs, nil
 	case 0:
-		return OwnerOther, procs
+		return OwnerOther, procs, nil
 	}
-	return OwnerUnknown, procs
+	return OwnerUnknown, procs, errors.New("a shutdown scheduled outside PatchMon is pending as well")
 }
 
 // shutdownProcess is a shutdown(8) process waiting for its time: how SysV
@@ -170,12 +174,12 @@ type shutdownProcess struct {
 	patchMon bool
 }
 
-func shutdownProcesses() ([]shutdownProcess, error) {
+func shutdownProcesses(ctx context.Context) ([]shutdownProcess, error) {
 	switch runtime.GOOS {
 	case "linux":
 		return procShutdownProcesses()
 	case "freebsd":
-		return psShutdownProcesses()
+		return psShutdownProcesses(ctx)
 	}
 	return nil, nil
 }
@@ -207,8 +211,8 @@ func procShutdownProcesses() ([]shutdownProcess, error) {
 }
 
 // psShutdownProcesses reads them from ps(1).
-func psShutdownProcesses() ([]shutdownProcess, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), processListTimeout)
+func psShutdownProcesses(ctx context.Context) ([]shutdownProcess, error) {
+	ctx, cancel := context.WithTimeout(ctx, processListTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, psPath, "-ax", "-ww", "-o", "pid=", "-o", "comm=", "-o", "args=").Output()
 	if err != nil {
@@ -261,14 +265,17 @@ func Schedule(ctx context.Context, d time.Duration, msg string) error {
 // PendingOwner): "shutdown -c" on Linux; on FreeBSD, where shutdown has no
 // such option, by stopping the shutdown processes that carry the PatchMon
 // message, as shutdown(8) documents. It returns ErrNotScheduledByPatchMon
-// when what is pending is not s, or cannot be told apart, and only reports
-// success once the system no longer has a restart pending.
+// when what is pending is not s, ErrOwnerUnconfirmed when that cannot be
+// told, and only reports success once the system no longer has a restart
+// pending.
 func CancelScheduled(ctx context.Context, s Scheduled) error {
-	owner, procs := pendingOwner(s)
+	owner, procs, why := pendingOwner(ctx, s)
 	switch owner {
 	case OwnerNone:
 		return ErrNothingScheduled
 	case OwnerPatchMon:
+	case OwnerUnknown:
+		return unconfirmed(why)
 	default:
 		return ErrNotScheduledByPatchMon
 	}

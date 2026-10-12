@@ -60,6 +60,19 @@ var ErrAlreadyScheduled = errors.New("a restart or shutdown is already pending o
 // or shutdown pending, if any, is not the one PatchMon scheduled.
 var ErrNotScheduledByPatchMon = errors.New("no restart scheduled by PatchMon is pending on this host; a restart or shutdown scheduled outside PatchMon is left alone")
 
+// ErrOwnerUnconfirmed is returned by CancelScheduled when the system cannot
+// confirm that the restart pending is the one PatchMon scheduled: rather
+// than risk cancelling someone else's, it leaves it alone.
+var ErrOwnerUnconfirmed = errors.New("PatchMon could not confirm that the restart pending on this host is the one it scheduled, so it is left alone")
+
+// unconfirmed is ErrOwnerUnconfirmed with the reason.
+func unconfirmed(why error) error {
+	if why == nil {
+		return ErrOwnerUnconfirmed
+	}
+	return fmt.Errorf("%w: %v", ErrOwnerUnconfirmed, why)
+}
+
 // scheduleTolerance is how far the time the system records for a restart
 // can be from the time asked for: shutdown(8) counts whole minutes, rounded
 // up.
@@ -80,15 +93,18 @@ type Owner int
 
 const (
 	// OwnerNone: the recorded restart is no longer pending. Nothing is
-	// (Linux, FreeBSD), or the host restarted since (Windows).
+	// (Linux, FreeBSD), or the host restarted since, or the System event log
+	// shows it aborted (Windows).
 	OwnerNone Owner = iota
 	// OwnerPatchMon: the pending restart is the recorded one.
 	OwnerPatchMon
 	// OwnerOther: a restart or shutdown scheduled outside PatchMon is
 	// pending.
 	OwnerOther
-	// OwnerUnknown: the system does not tell (Windows), its state could not
-	// be read, or PatchMon's restart is pending alongside someone else's.
+	// OwnerUnknown: whose restart is pending is not confirmed. Its state could
+	// not be read (logind's record, the process list, the System event log on
+	// Windows), or PatchMon's restart is pending alongside someone else's.
+	// The record may still be pending, but nothing is cancelled on its say.
 	OwnerUnknown
 )
 

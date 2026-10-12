@@ -201,21 +201,21 @@ func TestPendingOwnerSysV(t *testing.T) {
 	s := Scheduled{At: time.Now().Add(time.Hour)}
 	t.Run("none", func(t *testing.T) {
 		fakeShutdown(t, "exit 0")
-		if got := PendingOwner(s); got != OwnerNone {
+		if got := PendingOwner(context.Background(), s); got != OwnerNone {
 			t.Fatalf("owner = %v, want none", got)
 		}
 	})
 	t.Run("patchmon", func(t *testing.T) {
 		fakeShutdown(t, "exit 0")
 		fakeShutdownProcess(t, "4242", patchMonShutdown...)
-		if got := PendingOwner(s); got != OwnerPatchMon {
+		if got := PendingOwner(context.Background(), s); got != OwnerPatchMon {
 			t.Fatalf("owner = %v, want PatchMon", got)
 		}
 	})
 	t.Run("administrator", func(t *testing.T) {
 		fakeShutdown(t, "exit 0")
 		fakeShutdownProcess(t, "4343", adminShutdown...)
-		if got := PendingOwner(s); got != OwnerOther {
+		if got := PendingOwner(context.Background(), s); got != OwnerOther {
 			t.Fatalf("owner = %v, want other", got)
 		}
 	})
@@ -223,7 +223,7 @@ func TestPendingOwnerSysV(t *testing.T) {
 		fakeShutdown(t, "exit 0")
 		fakeShutdownProcess(t, "4242", patchMonShutdown...)
 		fakeShutdownProcess(t, "4343", adminShutdown...)
-		if got := PendingOwner(s); got != OwnerUnknown {
+		if got := PendingOwner(context.Background(), s); got != OwnerUnknown {
 			t.Fatalf("owner = %v, want unknown", got)
 		}
 	})
@@ -249,7 +249,7 @@ func TestPendingOwnerSystemd(t *testing.T) {
 			fakeShutdown(t, "exit 0")
 			file := fakeSystemd(t)
 			tt.write(file)
-			if got := PendingOwner(s); got != tt.want {
+			if got := PendingOwner(context.Background(), s); got != tt.want {
 				t.Fatalf("owner = %v, want %v", got, tt.want)
 			}
 		})
@@ -288,8 +288,8 @@ func TestCancelScheduledSysV(t *testing.T) {
 		log := fakeShutdown(t, "exit 0")
 		fakeShutdownProcess(t, "4242", patchMonShutdown...)
 		fakeShutdownProcess(t, "4343", adminShutdown...)
-		if err := CancelScheduled(context.Background(), s); !errors.Is(err, ErrNotScheduledByPatchMon) {
-			t.Fatalf("err = %v, want ErrNotScheduledByPatchMon", err)
+		if err := CancelScheduled(context.Background(), s); !errors.Is(err, ErrOwnerUnconfirmed) || !strings.Contains(err.Error(), "pending as well") {
+			t.Fatalf("err = %v, want ErrOwnerUnconfirmed with the reason", err)
 		}
 		if _, err := os.Stat(log); err == nil {
 			t.Fatal("shutdown(8) was run")
@@ -313,6 +313,18 @@ func TestCancelOnSystemd(t *testing.T) {
 		}
 		if got, _ := os.ReadFile(log); string(got) != "-c\n" {
 			t.Fatalf("argv = %q", got)
+		}
+	})
+	t.Run("unconfirmed", func(t *testing.T) {
+		log := fakeShutdown(t, "exit 0")
+		if err := os.WriteFile(fakeSystemd(t), []byte("MODE=reboot\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := CancelScheduled(context.Background(), s); !errors.Is(err, ErrOwnerUnconfirmed) || !strings.Contains(err.Error(), "does not say when") {
+			t.Fatalf("err = %v, want ErrOwnerUnconfirmed with the reason", err)
+		}
+		if _, err := os.Stat(log); err == nil {
+			t.Fatal("shutdown(8) was run")
 		}
 	})
 	t.Run("not PatchMon's", func(t *testing.T) {
@@ -368,11 +380,11 @@ func TestShutdownProcessesFromPS(t *testing.T) {
 	old := psPath
 	psPath = ps
 	defer func() { psPath = old }()
-	if got, err := psShutdownProcesses(); err != nil || !slices.Equal(got, want) {
+	if got, err := psShutdownProcesses(context.Background()); err != nil || !slices.Equal(got, want) {
 		t.Fatalf("listed %+v, %v; want %+v", got, err, want)
 	}
 	psPath = filepath.Join(dir, "missing")
-	if _, err := psShutdownProcesses(); err == nil {
+	if _, err := psShutdownProcesses(context.Background()); err == nil {
 		t.Fatal("a failing ps(1) listed no process")
 	}
 }

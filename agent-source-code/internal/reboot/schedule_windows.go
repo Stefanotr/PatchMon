@@ -27,12 +27,23 @@ func Pending() (at time.Time, ok bool) {
 
 // PendingOwner reports whether the restart pending is s, the one PatchMon
 // recorded. Windows does not tell what is pending: s is gone once the host
-// restarted after scheduling it, and unknown otherwise.
-func PendingOwner(s Scheduled) Owner {
+// restarted after scheduling it; otherwise the System event log decides (see
+// eventLogOwner), within ctx.
+func PendingOwner(ctx context.Context, s Scheduled) Owner {
+	owner, _ := pendingOwner(ctx, s)
+	return owner
+}
+
+// pendingOwner is PendingOwner with, for OwnerUnknown, why.
+func pendingOwner(ctx context.Context, s Scheduled) (Owner, error) {
 	if bootTime().After(s.Since) {
-		return OwnerNone
+		return OwnerNone, nil
 	}
-	return OwnerUnknown
+	events, err := shutdownEvents(ctx, s.Since.Add(-eventLogMargin))
+	if err != nil {
+		return OwnerUnknown, fmt.Errorf("the System event log could not be read: %w", err)
+	}
+	return eventLogOwner(events)
 }
 
 // Schedule asks Windows to restart the host after d. Windows shows msg and the
@@ -57,12 +68,22 @@ func Schedule(ctx context.Context, d time.Duration, msg string) error {
 	return err
 }
 
-// CancelScheduled aborts the restart s, PatchMon's. InitiateSystemShutdownEx
-// cannot be stacked, so until s.At, on a host that has not restarted since
-// s was scheduled, the shutdown Windows has pending, if any, is s. Otherwise
-// it returns ErrNotScheduledByPatchMon without aborting anything.
+// CancelScheduled aborts the restart s, PatchMon's, and nothing else: its
+// time is still to come and the System event log shows it as the latest
+// restart initiated, not aborted since. InitiateSystemShutdownEx cannot be
+// stacked, so the shutdown pending is then s. It returns
+// ErrNotScheduledByPatchMon when the pending restart is someone else's, or
+// PatchMon's is gone, and ErrOwnerUnconfirmed when the log cannot tell; it
+// aborts nothing then.
 func CancelScheduled(ctx context.Context, s Scheduled) error {
-	if PendingOwner(s) == OwnerNone || !time.Now().Before(s.At) {
+	if !time.Now().Before(s.At) {
+		return ErrNotScheduledByPatchMon
+	}
+	switch owner, why := pendingOwner(ctx, s); owner {
+	case OwnerPatchMon:
+	case OwnerUnknown:
+		return unconfirmed(why)
+	default:
 		return ErrNotScheduledByPatchMon
 	}
 	if err := ctx.Err(); err != nil {

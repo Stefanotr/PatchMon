@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -83,7 +84,7 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	oldCommandSchedule, oldWork, oldReply := scheduleCommandRestart, commandWorkLimit, commandReplyLimit
 	recordPath := filepath.Join(t.TempDir(), restartRecordFile)
 	restartRecordPath = func() string { return recordPath }
-	pendingRestartOwner = func(reboot.Scheduled) reboot.Owner { return reboot.OwnerPatchMon }
+	pendingRestartOwner = func(context.Context, reboot.Scheduled) reboot.Owner { return reboot.OwnerPatchMon }
 	remoteRestartsAllowed = func() bool { return true }
 	scheduleHostRestart = s.schedule
 	scheduleCommandRestart = func(_ context.Context, d time.Duration, msg string) error { return s.schedule(d, msg) }
@@ -310,14 +311,32 @@ func TestRegisterPatchRunAndOSPendingRestart(t *testing.T) {
 }
 
 // Where the system does not tell when, a pending restart this agent
-// scheduled is judged by the time it recorded.
+// scheduled is judged by the time it recorded, once the system confirms it
+// is that one. Unconfirmed (another shutdown pending as well), it could be
+// sooner and holds the run back.
 func TestRegisterPatchRunWithItsOwnRestartOfUnknownTime(t *testing.T) {
 	resetRestartState(t)
 	noop := context.CancelFunc(func() {})
 	osPendingRestart = func() (time.Time, bool) { return time.Time{}, true }
 	recordRestart(time.Now().Add(patchRunTimeout() + time.Hour))
-	if _, err := registerPatchRun("real", noop, false); err != nil {
+	run, err := registerPatchRun("real", noop, false)
+	if err != nil {
 		t.Fatalf("run refused under its own far restart: %v", err)
+	}
+	unregisterPatchRun("real", run)
+
+	pendingRestartOwner = func(context.Context, reboot.Scheduled) reboot.Owner { return reboot.OwnerUnknown }
+	if _, err := registerPatchRun("real", noop, false); err == nil || !strings.Contains(err.Error(), "a restart or shutdown is pending") {
+		t.Fatalf("run started under an unconfirmed restart of unknown time: %v", err)
+	}
+	if _, ok := recordedRestart(); !ok {
+		t.Fatal("an unconfirmed record was dropped")
+	}
+	// A recorded time before the run's end still holds it back.
+	osPendingRestart = func() (time.Time, bool) { return time.Time{}, false }
+	recordRestart(time.Now().Add(10 * time.Minute))
+	if _, err := registerPatchRun("real", noop, false); err == nil || !strings.Contains(err.Error(), "a restart is scheduled for") {
+		t.Fatalf("run started before an unconfirmed restart: %v", err)
 	}
 }
 
@@ -669,8 +688,9 @@ func TestCancelOnlyWhatPatchMonScheduled(t *testing.T) {
 		{name: "scheduled outside PatchMon", record: true, owner: reboot.OwnerOther, wantErr: reboot.ErrNotScheduledByPatchMon},
 		{name: "no longer pending", record: true, owner: reboot.OwnerNone, wantErr: reboot.ErrNotScheduledByPatchMon},
 		{name: "PatchMon's", record: true, owner: reboot.OwnerPatchMon, wantCancel: true},
-		// Windows does not tell: the host checks the recorded time.
-		{name: "the system does not tell", record: true, owner: reboot.OwnerUnknown, wantCancel: true},
+		// Unconfirmed: the host checks again and refuses unless it confirms.
+		{name: "unconfirmed, the host confirms", record: true, owner: reboot.OwnerUnknown, wantCancel: true},
+		{name: "unconfirmed, the host cannot confirm", record: true, owner: reboot.OwnerUnknown, cancelErr: reboot.ErrOwnerUnconfirmed, wantErr: reboot.ErrOwnerUnconfirmed, wantCancel: true, wantRecord: true},
 		{name: "gone meanwhile", record: true, owner: reboot.OwnerPatchMon, cancelErr: reboot.ErrNothingScheduled, wantErr: reboot.ErrNothingScheduled, wantCancel: true},
 		{name: "the host refuses", record: true, owner: reboot.OwnerUnknown, cancelErr: reboot.ErrNotScheduledByPatchMon, wantErr: reboot.ErrNotScheduledByPatchMon, wantCancel: true, wantRecord: true},
 		{name: "the cancel fails", record: true, owner: reboot.OwnerPatchMon, cancelErr: errors.New("access denied"), wantCancel: true, wantRecord: true},
@@ -678,7 +698,7 @@ func TestCancelOnlyWhatPatchMonScheduled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := resetRestartState(t)
 			s.cancelErr = tt.cancelErr
-			pendingRestartOwner = func(reboot.Scheduled) reboot.Owner { return tt.owner }
+			pendingRestartOwner = func(context.Context, reboot.Scheduled) reboot.Owner { return tt.owner }
 			if tt.record {
 				recordRestart(time.Now().Add(time.Hour))
 			}
@@ -935,5 +955,20 @@ func TestRestartMessagesBypassTheServiceLoop(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("the WebSocket reader waited for the restart command")
+	}
+}
+
+// The cancel's refusal when the host cannot confirm the restart is
+// PatchMon's carries the reason.
+func TestCancelCommandReplyUnconfirmed(t *testing.T) {
+	s := resetRestartState(t)
+	recordRestart(time.Now().Add(time.Hour))
+	s.cancelErr = fmt.Errorf("%w: the System event log could not be read: access denied", reboot.ErrOwnerUnconfirmed)
+	r := cancelCommandReply()
+	if r.OK || !strings.HasPrefix(r.Error, "PatchMon could not confirm that the restart pending on this host is the one it scheduled, so it is left alone") || !strings.Contains(r.Error, "access denied") {
+		t.Fatalf("reply %+v", r)
+	}
+	if _, ok := recordedRestart(); !ok {
+		t.Fatal("the record was dropped")
 	}
 }
