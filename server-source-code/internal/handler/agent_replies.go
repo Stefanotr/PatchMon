@@ -37,7 +37,10 @@ func (b *agentReplyBroker) expect(requestID, apiID string) (<-chan []byte, func(
 }
 
 // deliver hands a reply from apiID to the command waiting for it, and
-// reports whether one was.
+// reports whether one was. The reply is on the channel before the lock is
+// released, so once the command's done function has returned, a reply is
+// either on its channel or reported undelivered (and goes to the hook that
+// records late answers), never lost in between.
 func (b *agentReplyBroker) deliver(apiID string, message []byte) bool {
 	var msg struct {
 		RequestID string `json:"request_id"`
@@ -46,14 +49,12 @@ func (b *agentReplyBroker) deliver(apiID string, message []byte) bool {
 		return false
 	}
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	p, ok := b.waiting[msg.RequestID]
-	if ok && p.apiID == apiID {
-		delete(b.waiting, msg.RequestID)
-	}
-	b.mu.Unlock()
 	if !ok || p.apiID != apiID {
 		return false
 	}
+	delete(b.waiting, msg.RequestID)
 	p.ch <- message // buffered, and removed from the map: never blocks
 	return true
 }

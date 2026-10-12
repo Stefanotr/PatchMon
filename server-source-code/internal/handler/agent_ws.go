@@ -39,8 +39,9 @@ type AgentWSHandler struct {
 	upgrader          websocket.Upgrader
 }
 
-// OnAgentRestartEvent receives the reboot_result messages that answer no
-// command (a restart a patch run scheduled, say).
+// OnAgentRestartEvent receives the reboot_result messages no command is
+// waiting for: a restart a patch run scheduled, or an answer to a restart
+// command that came after the wait ended.
 type OnAgentRestartEvent func(ctx context.Context, apiID string, message []byte)
 
 // WithOnRestartEvent sets the callback for reboot_result messages that no
@@ -215,7 +216,8 @@ func (h *AgentWSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := json.Unmarshal(message, &reply); err == nil && reply.Type == "reboot_result" {
 			if !agentReplies.deliver(apiID, message) && h.onRestartEvent != nil {
-				// Off the read loop: recording writes to the database.
+				// Off the read loop: recording writes to the database. apiID
+				// is the authenticated connection's, never the message's.
 				go h.onRestartEvent(r.Context(), apiID, message)
 			}
 			continue

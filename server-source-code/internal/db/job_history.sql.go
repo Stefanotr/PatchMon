@@ -71,6 +71,36 @@ func (q *Queries) InsertJobHistoryOutcome(ctx context.Context, arg InsertJobHist
 	return err
 }
 
+const insertJobHistoryStarted = `-- name: InsertJobHistoryStarted :exec
+INSERT INTO job_history (id, job_id, queue_name, job_name, host_id, api_id, status, attempt_number, output, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, 'active', 1, $7, NOW(), NOW())
+`
+
+type InsertJobHistoryStartedParams struct {
+	ID        string  `json:"id"`
+	JobID     string  `json:"job_id"`
+	QueueName string  `json:"queue_name"`
+	JobName   string  `json:"job_name"`
+	HostID    *string `json:"host_id"`
+	ApiID     *string `json:"api_id"`
+	Output    []byte  `json:"output"`
+}
+
+// A command sent outside the queue (a host restart), recorded before it is
+// sent; UpdateAgentCommandOutcome records the outcome on the same row.
+func (q *Queries) InsertJobHistoryStarted(ctx context.Context, arg InsertJobHistoryStartedParams) error {
+	_, err := q.db.Exec(ctx, insertJobHistoryStarted,
+		arg.ID,
+		arg.JobID,
+		arg.QueueName,
+		arg.JobName,
+		arg.HostID,
+		arg.ApiID,
+		arg.Output,
+	)
+	return err
+}
+
 const listJobHistoryByApiID = `-- name: ListJobHistoryByApiID :many
 SELECT id, job_id, queue_name, job_name, host_id, api_id, status, attempt_number, error_message, output, created_at, updated_at, completed_at
 FROM job_history
@@ -116,6 +146,50 @@ func (q *Queries) ListJobHistoryByApiID(ctx context.Context, arg ListJobHistoryB
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateAgentCommandOutcome = `-- name: UpdateAgentCommandOutcome :execrows
+UPDATE job_history
+SET status = $1::text,
+    error_message = $2::text,
+    output = COALESCE(output, '{}'::jsonb) || COALESCE($3::jsonb, '{}'::jsonb),
+    completed_at = CASE WHEN $1::text IN ('completed', 'failed') THEN NOW() ELSE NULL END,
+    updated_at = NOW()
+WHERE job_id = $4::text
+  AND api_id = $5::text
+  AND queue_name = $6::text
+  AND job_name = ANY($7::text[])
+  AND status IN ('active', 'waiting')
+`
+
+type UpdateAgentCommandOutcomeParams struct {
+	Status       string   `json:"status"`
+	ErrorMessage *string  `json:"error_message"`
+	Output       []byte   `json:"output"`
+	JobID        string   `json:"job_id"`
+	ApiID        string   `json:"api_id"`
+	QueueName    string   `json:"queue_name"`
+	JobNames     []string `json:"job_names"`
+}
+
+// Records the outcome of a command InsertJobHistoryStarted recorded. Only the
+// host the command was sent to (api_id) can change its row, only while the
+// outcome is still open (active, or waiting for a late answer), and output
+// keys are merged into the ones recorded with the command.
+func (q *Queries) UpdateAgentCommandOutcome(ctx context.Context, arg UpdateAgentCommandOutcomeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateAgentCommandOutcome,
+		arg.Status,
+		arg.ErrorMessage,
+		arg.Output,
+		arg.JobID,
+		arg.ApiID,
+		arg.QueueName,
+		arg.JobNames,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateJobHistoryCompleted = `-- name: UpdateJobHistoryCompleted :exec

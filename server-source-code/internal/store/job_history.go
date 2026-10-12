@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -46,13 +48,9 @@ type FinishedJob struct {
 
 // RecordFinished inserts a completed or failed job_history row.
 func (s *JobHistoryStore) RecordFinished(ctx context.Context, j FinishedJob) error {
-	var output []byte
-	if len(j.Output) > 0 {
-		b, err := json.Marshal(j.Output)
-		if err != nil {
-			return err
-		}
-		output = b
+	output, err := marshalOutput(j.Output)
+	if err != nil {
+		return err
 	}
 	status := "completed"
 	var failure *string
@@ -71,4 +69,103 @@ func (s *JobHistoryStore) RecordFinished(ctx context.Context, j FinishedJob) err
 		ErrorMessage: failure,
 		Output:       output,
 	})
+}
+
+// Statuses of a command recorded with RecordStarted. job_history already
+// uses them for queued jobs, and the Agent Activity shows them.
+const (
+	// JobActive: sent, or about to be, and the answer is awaited.
+	JobActive = "active"
+	// JobWaiting: not answered in time; a late answer still records the
+	// outcome.
+	JobWaiting   = "waiting"
+	JobCompleted = "completed"
+	JobFailed    = "failed"
+)
+
+// StartedJob is a command that does not go through the queue (a host restart,
+// say), recorded before it is sent so that the record exists whatever
+// happens next.
+type StartedJob struct {
+	JobID     string
+	QueueName string
+	JobName   string
+	HostID    string
+	ApiID     string
+	// Output is stored as the job's JSON output (what was asked, by whom).
+	Output map[string]any
+}
+
+// RecordStarted inserts the row of a command about to be sent (JobActive).
+func (s *JobHistoryStore) RecordStarted(ctx context.Context, j StartedJob) error {
+	output, err := marshalOutput(j.Output)
+	if err != nil {
+		return err
+	}
+	hostID, apiID := j.HostID, j.ApiID
+	return s.db.DB(ctx).Queries.InsertJobHistoryStarted(ctx, db.InsertJobHistoryStartedParams{
+		ID:        uuid.NewString(),
+		JobID:     j.JobID,
+		QueueName: j.QueueName,
+		JobName:   j.JobName,
+		HostID:    &hostID,
+		ApiID:     &apiID,
+		Output:    output,
+	})
+}
+
+// CommandOutcome is what became of a command recorded with RecordStarted.
+type CommandOutcome struct {
+	JobID string
+	// ApiID is the agent the command was sent to: the row of another host is
+	// never changed.
+	ApiID     string
+	QueueName string
+	// JobNames bounds the rows that may change to these jobs.
+	JobNames []string
+	// Status is JobCompleted, JobFailed or JobWaiting.
+	Status string
+	// Message is the failure, or why the outcome is still unknown.
+	Message string
+	// Output keys are merged into the recorded output.
+	Output map[string]any
+}
+
+// RecordOutcomeOf records the outcome of a command on its row, provided the
+// outcome is still open (JobActive or JobWaiting). It reports whether a row
+// changed: false when there is no such open row for that agent.
+func (s *JobHistoryStore) RecordOutcomeOf(ctx context.Context, o CommandOutcome) (bool, error) {
+	switch o.Status {
+	case JobCompleted, JobFailed, JobWaiting:
+	default:
+		return false, fmt.Errorf("invalid command outcome status %q", o.Status)
+	}
+	if o.JobID == "" || o.ApiID == "" || o.QueueName == "" || len(o.JobNames) == 0 {
+		return false, errors.New("a command outcome needs the job, agent, queue and job names")
+	}
+	output, err := marshalOutput(o.Output)
+	if err != nil {
+		return false, err
+	}
+	var message *string
+	if o.Message != "" {
+		message = &o.Message
+	}
+	n, err := s.db.DB(ctx).Queries.UpdateAgentCommandOutcome(ctx, db.UpdateAgentCommandOutcomeParams{
+		Status:       o.Status,
+		ErrorMessage: message,
+		Output:       output,
+		JobID:        o.JobID,
+		ApiID:        o.ApiID,
+		QueueName:    o.QueueName,
+		JobNames:     o.JobNames,
+	})
+	return n > 0, err
+}
+
+func marshalOutput(out map[string]any) ([]byte, error) {
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(out)
 }

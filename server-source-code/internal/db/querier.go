@@ -460,6 +460,9 @@ type Querier interface {
 	InsertHostRepository(ctx context.Context, arg InsertHostRepositoryParams) error
 	InsertJobHistory(ctx context.Context, arg InsertJobHistoryParams) error
 	InsertJobHistoryOutcome(ctx context.Context, arg InsertJobHistoryOutcomeParams) error
+	// A command sent outside the queue (a host restart), recorded before it is
+	// sent; UpdateAgentCommandOutcome records the outcome on the same row.
+	InsertJobHistoryStarted(ctx context.Context, arg InsertJobHistoryStartedParams) error
 	InsertNotificationDeliveryLog(ctx context.Context, arg InsertNotificationDeliveryLogParams) (NotificationDeliveryLog, error)
 	InsertReleaseNotesAcceptance(ctx context.Context, arg InsertReleaseNotesAcceptanceParams) (string, error)
 	InsertScheduledReportRun(ctx context.Context, arg InsertScheduledReportRunParams) (ScheduledReportRun, error)
@@ -568,6 +571,11 @@ type Querier interface {
 	SetPatchRunPolicySnapshot(ctx context.Context, arg SetPatchRunPolicySnapshotParams) error
 	ToggleHostRepository(ctx context.Context, arg ToggleHostRepositoryParams) error
 	TouchTrustedDeviceLastUsed(ctx context.Context, arg TouchTrustedDeviceLastUsedParams) error
+	// Records the outcome of a command InsertJobHistoryStarted recorded. Only the
+	// host the command was sent to (api_id) can change its row, only while the
+	// outcome is still open (active, or waiting for a late answer), and output
+	// keys are merged into the ones recorded with the command.
+	UpdateAgentCommandOutcome(ctx context.Context, arg UpdateAgentCommandOutcomeParams) (int64, error)
 	UpdateAlert(ctx context.Context, id string) error
 	UpdateAlertAssignment(ctx context.Context, arg UpdateAlertAssignmentParams) error
 	UpdateAlertResolved(ctx context.Context, arg UpdateAlertResolvedParams) error

@@ -229,8 +229,9 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 	agentOpts := []handler.AgentWSHandlerOption{
 		handler.WithOnAgentDisconnect(handler.NewAgentDisconnectHandler(dbProvider, hostsStore, patchRunsStore, registry, notifyEmit, log)),
 		handler.WithOnAgentConnect(handler.NewAgentConnectHandler(dbProvider, queueClient, queueInspector, integrationStatusStore, notifyEmit, log)),
-		// Restarts scheduled by patch runs, recorded in the host's Agent Activity.
-		handler.WithOnRestartEvent(handler.RecordRunRestart(hostsStore, store.NewJobHistoryStore(dbProvider))),
+		// Restarts scheduled by patch runs, and late answers to restart
+		// commands, recorded in the host's Agent Activity.
+		handler.WithOnRestartEvent(handler.RecordRestartEvent(hostsStore, store.NewJobHistoryStore(dbProvider))),
 	}
 	if rdpHandler != nil {
 		agentOpts = append(agentOpts, handler.WithOnRDPProxyMessage(rdpHandler.HandleRDPProxyMessage))
