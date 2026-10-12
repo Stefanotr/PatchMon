@@ -32,6 +32,8 @@ const JOB_LABELS = {
 	"ssg-upgrade": "SSG Content Upgrade",
 	run_patch: "Run Patch",
 	"run-patch": "Run Patch",
+	reboot: "Restart",
+	reboot_cancel: "Restart Cancel",
 	scheduled_reports_dispatch: "Scheduled Reports Dispatch",
 	"scheduled-reports-dispatch": "Scheduled Reports Dispatch",
 	scheduled_report_run: "Scheduled Report Run",

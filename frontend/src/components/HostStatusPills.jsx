@@ -20,6 +20,8 @@ import Tooltip from "./ui/Tooltip";
  *   wsStatus                   — { connected, secure, disconnected_seconds_ago } | undefined
  *   hostDownThresholdSeconds   — number, defaults to 30
  *   compact                    — boolean
+ *   onRebootClick              — optional; makes the reboot pill a button
+ *                                (opens the restart dialog)
  */
 const PILL_BASE =
 	"inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap";
@@ -38,7 +40,14 @@ const PILL_VARIANTS = {
 		"bg-secondary-100 text-secondary-700 dark:bg-secondary-700 dark:text-secondary-200",
 };
 
-const Pill = ({ variant = "neutral", icon: Icon, label, srLabel, tooltip }) => {
+const Pill = ({
+	variant = "neutral",
+	icon: Icon,
+	label,
+	srLabel,
+	tooltip,
+	onClick,
+}) => {
 	// Render as a span when there is no tooltip (purely visual badge), and as
 	// a button-shaped element when a tooltip is present so keyboard users can
 	// focus the pill and surface the explainer. Using <button type="button">
@@ -59,9 +68,12 @@ const Pill = ({ variant = "neutral", icon: Icon, label, srLabel, tooltip }) => {
 	const trigger = (
 		<button
 			type="button"
-			className={`${PILL_BASE} ${PILL_TAP_TARGET} ${PILL_VARIANTS[variant] || PILL_VARIANTS.neutral} cursor-help focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1`}
+			className={`${PILL_BASE} ${PILL_TAP_TARGET} ${PILL_VARIANTS[variant] || PILL_VARIANTS.neutral} ${onClick ? "cursor-pointer hover:opacity-80" : "cursor-help"} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1`}
 			aria-label={srLabel || label}
-			onClick={(e) => e.preventDefault()}
+			onClick={(e) => {
+				e.preventDefault();
+				onClick?.();
+			}}
 		>
 			{Icon ? (
 				<Icon className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
@@ -86,6 +98,7 @@ const HostStatusPills = ({
 	hostDownThresholdSeconds = 30,
 	updateIntervalMinutes = 60,
 	compact = false,
+	onRebootClick,
 }) => {
 	if (!host) return null;
 
@@ -224,10 +237,11 @@ const HostStatusPills = ({
 			variant="warning"
 			icon={RotateCcw}
 			label={compact ? null : "Reboot pending"}
-			srLabel="Reboot pending"
-			tooltip={
-				host.reboot_reason || "Host requires a reboot to apply pending updates."
+			srLabel={
+				onRebootClick ? "Reboot pending: restart the host" : "Reboot pending"
 			}
+			tooltip={`${host.reboot_reason || "Host requires a reboot to apply pending updates."}${onRebootClick ? " Click to restart the host." : ""}`}
+			onClick={onRebootClick}
 		/>
 	) : null;
 

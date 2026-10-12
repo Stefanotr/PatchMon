@@ -15,6 +15,16 @@ type scheduledRestart struct {
 	delay time.Duration
 	msg   string
 	err   error
+	// reports holds the restarts reported to the server: "ok" or the error.
+	reports []string
+}
+
+func (s *scheduledRestart) report(runID string, _ time.Time, err error) {
+	if err != nil {
+		s.reports = append(s.reports, runID+" "+err.Error())
+		return
+	}
+	s.reports = append(s.reports, runID+" ok")
 }
 
 func (s *scheduledRestart) schedule(d time.Duration, msg string) error {
@@ -36,11 +46,12 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	})
 	updateInFlight.Store(false)
 	s := &scheduledRestart{}
-	oldSchedule, oldCancel, oldPending := scheduleHostRestart, cancelHostRestart, osPendingRestart
+	oldSchedule, oldCancel, oldPending, oldReport := scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart
 	scheduleHostRestart = s.schedule
 	osPendingRestart = func() (time.Time, bool) { return time.Time{}, false }
+	reportRunRestart = s.report
 	t.Cleanup(func() {
-		scheduleHostRestart, cancelHostRestart, osPendingRestart = oldSchedule, oldCancel, oldPending
+		scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart = oldSchedule, oldCancel, oldPending, oldReport
 		restartGate.Lock()
 		restartGate.pendingAt = time.Time{}
 		restartGate.Unlock()
@@ -58,19 +69,21 @@ func TestScheduleRestart(t *testing.T) {
 		wantCalls int
 		wantLine  string
 		wantErr   bool
+		// wantReport is what reaches the server: "" (nothing), "ok", or an error.
+		wantReport string
 	}{
 		{name: "never: silent", opts: reboot.Options{Mode: reboot.ModeNever}, needed: true},
 		{name: "unset: silent", opts: reboot.Options{}, needed: true},
 		{name: "blocked", opts: reboot.Options{Mode: reboot.ModeAlways}, blocked: "the run was stopped", wantLine: "Restart: not scheduled, the run was stopped"},
 		{name: "if needed, none pending", opts: reboot.Options{Mode: reboot.ModeIfNeeded}, wantLine: "Restart: not needed"},
-		{name: "if needed, pending", opts: reboot.Options{Mode: reboot.ModeIfNeeded, DelayMinutes: 10}, needed: true, wantCalls: 1, wantLine: "Restart: scheduled for"},
-		{name: "always", opts: reboot.Options{Mode: reboot.ModeAlways}, wantCalls: 1, wantLine: "(in 5m0s)"},
+		{name: "if needed, pending", opts: reboot.Options{Mode: reboot.ModeIfNeeded, DelayMinutes: 10}, needed: true, wantCalls: 1, wantLine: "Restart: scheduled for", wantReport: "ok"},
+		{name: "always", opts: reboot.Options{Mode: reboot.ModeAlways}, wantCalls: 1, wantLine: "(in 5m0s)", wantReport: "ok"},
 		{name: "something else already pending", opts: reboot.Options{Mode: reboot.ModeAlways}, failWith: reboot.ErrAlreadyScheduled, wantCalls: 1, wantLine: "already pending on this host (not by this run)"},
-		{name: "scheduling fails", opts: reboot.Options{Mode: reboot.ModeAlways}, failWith: errors.New("access denied"), wantCalls: 1, wantLine: "Restart: could not be scheduled: access denied", wantErr: true},
-		{name: "time too far", opts: reboot.Options{Mode: reboot.ModeAlways, At: time.Now().Add(reboot.MaxDelay + time.Hour)}, wantLine: "more than", wantErr: true},
+		{name: "scheduling fails", opts: reboot.Options{Mode: reboot.ModeAlways}, failWith: errors.New("access denied"), wantCalls: 1, wantLine: "Restart: could not be scheduled: access denied", wantErr: true, wantReport: "access denied"},
+		{name: "time too far", opts: reboot.Options{Mode: reboot.ModeAlways, At: time.Now().Add(reboot.MaxDelay + time.Hour)}, wantLine: "more than", wantErr: true, wantReport: "more than"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			resetRestartState(t)
+			reported := resetRestartState(t)
 			var out strings.Builder
 			s := &scheduledRestart{err: tt.failWith}
 			err := scheduleRestart(&out, "run-1", tt.opts, tt.needed, tt.blocked, s.schedule)
@@ -88,6 +101,12 @@ func TestScheduleRestart(t *testing.T) {
 			}
 			if s.calls > 0 && (s.delay < reboot.MinDelay || !strings.HasPrefix(s.msg, "PatchMon: ")) {
 				t.Errorf("scheduled with delay %s, message %q", s.delay, s.msg)
+			}
+			switch {
+			case tt.wantReport == "" && len(reported.reports) != 0:
+				t.Errorf("reported %v, want nothing", reported.reports)
+			case tt.wantReport != "" && (len(reported.reports) != 1 || !strings.HasPrefix(reported.reports[0], "run-1 ") || !strings.Contains(reported.reports[0], tt.wantReport)):
+				t.Errorf("reported %v, want one report with %q", reported.reports, tt.wantReport)
 			}
 		})
 	}

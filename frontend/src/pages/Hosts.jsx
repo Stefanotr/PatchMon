@@ -43,8 +43,10 @@ import HostStatusPills from "../components/HostStatusPills";
 import InlineEdit from "../components/InlineEdit";
 import InlineMultiGroupEdit from "../components/InlineMultiGroupEdit";
 import InlineToggle from "../components/InlineToggle";
+import RestartHostModal from "../components/RestartHostModal";
 import ModalPortal from "../components/ui/ModalPortal";
 import Tooltip from "../components/ui/Tooltip";
+import { useAuth } from "../contexts/AuthContext";
 import { usePageRefresh } from "../hooks/usePageRefresh";
 import { useTick } from "../hooks/useTick";
 import {
@@ -136,6 +138,10 @@ const Hosts = () => {
 	const osFilterId = useId();
 	const osVersionFilterId = useId();
 	const [showAddModal, setShowAddModal] = useState(false);
+	// Host whose restart dialog is open, from its "Reboot required" badge.
+	const [restartHost, setRestartHost] = useState(null);
+	const { canManagePatching, hasModule } = useAuth();
+	const canRestart = canManagePatching() && hasModule("patching");
 	const [selectedHosts, setSelectedHosts] = useState([]);
 	// O(1) `.has()` lookup for the per-row "is this host selected?" check
 	// inside the table's row map. Without this, `selectedHosts.includes(id)`
@@ -1619,11 +1625,22 @@ const Hosts = () => {
 				return (
 					<div className="flex justify-center">
 						{host.needs_reboot ? (
-							<Tooltip content={host.reboot_reason || "Reboot required"}>
+							<Tooltip
+								content={`${host.reboot_reason || "Reboot required"}${canRestart ? ". Click to restart the host." : ""}`}
+							>
 								<button
 									type="button"
-									className="badge bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200 gap-1 cursor-help focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
-									onClick={(e) => e.preventDefault()}
+									className={`badge bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200 gap-1 ${canRestart ? "cursor-pointer hover:opacity-80" : "cursor-help"} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1`}
+									aria-label={
+										canRestart
+											? "Reboot required: restart the host"
+											: "Reboot required"
+									}
+									onClick={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
+										if (canRestart) setRestartHost(host);
+									}}
 								>
 									<RotateCcw className="h-3 w-3" />
 									Required
@@ -2357,6 +2374,11 @@ const Hosts = () => {
 																			updateIntervalMinutes
 																		}
 																		compact
+																		onRebootClick={
+																			canRestart
+																				? () => setRestartHost(host)
+																				: undefined
+																		}
 																	/>
 																</div>
 
@@ -2705,6 +2727,14 @@ const Hosts = () => {
 			</div>
 
 			{/* Modals */}
+			<RestartHostModal
+				hostId={restartHost?.id}
+				hostName={restartHost?.friendly_name || restartHost?.hostname}
+				isOpen={!!restartHost}
+				onClose={() => setRestartHost(null)}
+				needsReboot={restartHost?.needs_reboot}
+				rebootReason={restartHost?.reboot_reason}
+			/>
 			<AddHostWizard
 				isOpen={showAddModal}
 				onClose={() => setShowAddModal(false)}

@@ -39,6 +39,38 @@ func (q *Queries) InsertJobHistory(ctx context.Context, arg InsertJobHistoryPara
 	return err
 }
 
+const insertJobHistoryOutcome = `-- name: InsertJobHistoryOutcome :exec
+INSERT INTO job_history (id, job_id, queue_name, job_name, host_id, api_id, status, attempt_number, error_message, output, created_at, updated_at, completed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9, NOW(), NOW(), NOW())
+`
+
+type InsertJobHistoryOutcomeParams struct {
+	ID           string  `json:"id"`
+	JobID        string  `json:"job_id"`
+	QueueName    string  `json:"queue_name"`
+	JobName      string  `json:"job_name"`
+	HostID       *string `json:"host_id"`
+	ApiID        *string `json:"api_id"`
+	Status       string  `json:"status"`
+	ErrorMessage *string `json:"error_message"`
+	Output       []byte  `json:"output"`
+}
+
+func (q *Queries) InsertJobHistoryOutcome(ctx context.Context, arg InsertJobHistoryOutcomeParams) error {
+	_, err := q.db.Exec(ctx, insertJobHistoryOutcome,
+		arg.ID,
+		arg.JobID,
+		arg.QueueName,
+		arg.JobName,
+		arg.HostID,
+		arg.ApiID,
+		arg.Status,
+		arg.ErrorMessage,
+		arg.Output,
+	)
+	return err
+}
+
 const listJobHistoryByApiID = `-- name: ListJobHistoryByApiID :many
 SELECT id, job_id, queue_name, job_name, host_id, api_id, status, attempt_number, error_message, output, created_at, updated_at, completed_at
 FROM job_history
