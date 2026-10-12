@@ -338,7 +338,7 @@ func TestClassifyWinGetExit(t *testing.T) {
 	}{
 		{0, StatusOK, false},
 		{0x8A150109, StatusOK, true},
-		{0x8A15010B, StatusOK, true},
+		{0x8A15010B, StatusOK, true}, // restart initiated: see below
 		{0x8A15002B, StatusSkip, false},
 		{0x8A15004F, StatusSkip, false},
 		{0x8A150014, StatusSkip, false},
@@ -354,6 +354,13 @@ func TestClassifyWinGetExit(t *testing.T) {
 		if r.Status != tt.status || r.RebootRequired != tt.wantReboot || r.Detail == "" {
 			t.Errorf("ClassifyWinGetExit(0x%08X) = %+v, want status %s reboot %v", tt.code, r, tt.status, tt.wantReboot)
 		}
+		// Only the installer that restarts the computer itself stops the run.
+		if r.RestartInitiated != (tt.code == wingetRebootInitiated) {
+			t.Errorf("ClassifyWinGetExit(0x%08X).RestartInitiated = %v", tt.code, r.RestartInitiated)
+		}
+	}
+	if r := ClassifyWinGetExit(wingetRebootInitiated); !strings.Contains(r.Detail, "is restarting the computer") {
+		t.Errorf("restart initiated: detail %q", r.Detail)
 	}
 }
 

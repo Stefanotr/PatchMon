@@ -673,6 +673,9 @@ type ItemResult struct {
 	// Refusal is set when winget refused the upgrade for a reason that holds
 	// until a version changes, so the run remembers it (WinGetRefusals).
 	Refusal string `json:"-"`
+	// RestartInitiated: the installer is restarting the computer now, so
+	// the run starts nothing else.
+	RestartInitiated bool `json:"-"`
 }
 
 // ParseItemResult decodes the result line of a WUA install script.
@@ -719,6 +722,11 @@ const techMismatchReason = "the newer version uses another installer technology 
 // Failing them would fail every patch_all run on a host that has one, such as
 // Microsoft Edge on Windows Server, which the OS image installs and Edge's own
 // updater keeps current.
+//
+// Of the restart codes, only "restart initiated" stops the run: the installer
+// is restarting the computer now, so anything started after it would be cut
+// off. "Restart required" (to finish, or before installing) leaves the host
+// running, and the run goes on with the next item.
 func ClassifyWinGetExit(code uint32) ItemResult {
 	switch code {
 	case 0:
@@ -726,7 +734,7 @@ func ClassifyWinGetExit(code uint32) ItemResult {
 	case wingetRebootToFinish:
 		return ItemResult{Status: StatusOK, Detail: "upgraded; a restart is needed to finish", RebootRequired: true}
 	case wingetRebootInitiated:
-		return ItemResult{Status: StatusOK, Detail: "upgraded; the installer started a restart", RebootRequired: true}
+		return ItemResult{Status: StatusOK, Detail: "upgraded; its installer is restarting the computer", RebootRequired: true, RestartInitiated: true}
 	case wingetNoApplicableUpdate, wingetUpgradeVersionNewer, wingetInstallDowngrade:
 		return ItemResult{Status: StatusSkip, Detail: "no applicable upgrade any more (already up to date)"}
 	case wingetNoPackagesFound:

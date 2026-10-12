@@ -306,6 +306,9 @@ type windowsRun struct {
 	// installerTimedOut: an item outlived its timeout. Only the process the
 	// agent started was killed; the installer it launched may still run.
 	installerTimedOut bool
+	// restartingFor names the item whose installer is restarting the
+	// computer; nothing else starts after it.
+	restartingFor string
 	// refusals holds the upgrades winget refused, in this run or before.
 	refusals *packages.WinGetRefusals
 }
@@ -378,6 +381,8 @@ func (r *windowsRun) restart(needed bool) {
 		blocked = "the run was stopped"
 	case r.installerTimedOut:
 		blocked = "an installer timed out and may still be running; restart by hand once it is done"
+	case r.restartingFor != "":
+		blocked = "the installer of " + r.restartingFor + " is already restarting the computer"
 	case r.attempted == 0 && len(r.failed) > 0:
 		blocked = "the run failed before installing anything"
 	}
@@ -596,12 +601,19 @@ func (r *windowsRun) install(inv packages.WindowsInventory, runnable []packages.
 	})
 
 	for i, t := range ordered {
-		if err := r.ctx.Err(); err != nil {
-			why := "not started: the run was stopped"
-			if errors.Is(err, context.DeadlineExceeded) {
-				why = "not started: the run reached its time limit"
-				r.failed = append(r.failed, "time limit reached")
-			}
+		why := ""
+		switch err := r.ctx.Err(); {
+		case errors.Is(err, context.DeadlineExceeded):
+			why = "not started: the run reached its time limit"
+			r.failed = append(r.failed, "time limit reached")
+		case err != nil:
+			why = "not started: the run was stopped"
+		case r.restartingFor != "":
+			// Not a failure: the run ends here, and the next one picks up
+			// what is still pending once the host is back.
+			why = "not started: the installer of " + r.restartingFor + " is restarting the computer"
+		}
+		if why != "" {
 			for _, rest := range ordered[i:] {
 				r.status(packages.StatusSkip, rest.Name, why)
 			}
@@ -657,6 +669,9 @@ func (r *windowsRun) installOne(inv packages.WindowsInventory, t packages.Window
 		}
 	}
 	r.reboot = r.reboot || res.RebootRequired
+	if res.RestartInitiated {
+		r.restartingFor = packages.OneLine(t.Name)
+	}
 	if t.Kind == packages.TargetWUA && res.Status != packages.StatusSkip {
 		r.srv.ReportWUAResult(t.Update.GUID, res.Status == packages.StatusOK, res.Detail)
 	}
