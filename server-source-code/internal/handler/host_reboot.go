@@ -34,7 +34,9 @@ import (
 // agent's reason; not sent; or an unreadable answer. Without an answer within
 // agentReplyTimeout the row stays open (status waiting): the agent may still
 // carry the command out, and its late answer records the outcome
-// (RecordRestartEvent). The restarts patch runs schedule are recorded too.
+// (RecordRestartEvent). A row still open queue.RestartAnswerDeadline after
+// the command was sent is failed by the patch-run cleanup. The restarts
+// patch runs schedule are recorded too.
 //
 // The answer comes back on the server instance the agent is connected to.
 // With several instances behind Redis, a command relayed to another one
@@ -47,12 +49,9 @@ const agentReplyTimeout = 20 * time.Second
 
 // Job names of restart records in job_history.
 const (
-	restartJobName       = "reboot"
-	restartCancelJobName = "reboot_cancel"
+	restartJobName       = queue.JobNameReboot
+	restartCancelJobName = queue.JobNameRebootCancel
 )
-
-// restartJobNames are the records an agent's answer may complete.
-var restartJobNames = []string{restartJobName, restartCancelJobName}
 
 // Recorded while the outcome of a command is not known yet.
 var (
@@ -294,7 +293,7 @@ func recordCommandOutcome(ctx context.Context, jobs restartJournal, apiID, jobID
 		JobID:     jobID,
 		ApiID:     apiID,
 		QueueName: queue.QueueAgentCommands,
-		JobNames:  restartJobNames,
+		JobNames:  queue.RestartJobNames(),
 		Status:    o.status,
 		Message:   o.message,
 		Output:    out,

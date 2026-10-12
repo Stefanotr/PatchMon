@@ -7,7 +7,44 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const closeStaleAgentCommands = `-- name: CloseStaleAgentCommands :execrows
+UPDATE job_history
+SET status = 'failed',
+    error_message = $1::text,
+    completed_at = NOW(),
+    updated_at = NOW()
+WHERE queue_name = $2::text
+  AND job_name = ANY($3::text[])
+  AND status IN ('active', 'waiting')
+  AND created_at < $4::timestamp
+`
+
+type CloseStaleAgentCommandsParams struct {
+	ErrorMessage string           `json:"error_message"`
+	QueueName    string           `json:"queue_name"`
+	JobNames     []string         `json:"job_names"`
+	StaleBefore  pgtype.Timestamp `json:"stale_before"`
+}
+
+// Fails the commands still open (active, or waiting for a late answer) that
+// were sent before stale_before: no answer is coming any more (agent gone,
+// older agent, command lost).
+func (q *Queries) CloseStaleAgentCommands(ctx context.Context, arg CloseStaleAgentCommandsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, closeStaleAgentCommands,
+		arg.ErrorMessage,
+		arg.QueueName,
+		arg.JobNames,
+		arg.StaleBefore,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const insertJobHistory = `-- name: InsertJobHistory :exec
 INSERT INTO job_history (id, job_id, queue_name, job_name, host_id, api_id, status, attempt_number, created_at, updated_at)
@@ -159,7 +196,9 @@ WHERE job_id = $4::text
   AND api_id = $5::text
   AND queue_name = $6::text
   AND job_name = ANY($7::text[])
-  AND status IN ('active', 'waiting')
+  AND $1::text IN ('completed', 'failed', 'waiting')
+  AND (status = 'active'
+       OR (status = 'waiting' AND $1::text IN ('completed', 'failed')))
 `
 
 type UpdateAgentCommandOutcomeParams struct {
@@ -173,9 +212,11 @@ type UpdateAgentCommandOutcomeParams struct {
 }
 
 // Records the outcome of a command InsertJobHistoryStarted recorded. Only the
-// host the command was sent to (api_id) can change its row, only while the
-// outcome is still open (active, or waiting for a late answer), and output
-// keys are merged into the ones recorded with the command.
+// host the command was sent to (api_id) can change its row, and output keys
+// are merged into the ones recorded with the command. The status guard is the
+// state machine: active -> completed, failed or waiting; waiting (a late
+// answer still possible) -> completed or failed; nothing leaves completed or
+// failed.
 func (q *Queries) UpdateAgentCommandOutcome(ctx context.Context, arg UpdateAgentCommandOutcomeParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateAgentCommandOutcome,
 		arg.Status,

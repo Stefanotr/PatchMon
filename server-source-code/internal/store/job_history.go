@@ -77,7 +77,8 @@ const (
 	// JobActive: sent, or about to be, and the answer is awaited.
 	JobActive = "active"
 	// JobWaiting: not answered in time; a late answer still records the
-	// outcome.
+	// outcome, until the patch-run cleanup fails the record (10 minutes
+	// after the command was sent).
 	JobWaiting   = "waiting"
 	JobCompleted = "completed"
 	JobFailed    = "failed"
@@ -131,9 +132,11 @@ type CommandOutcome struct {
 	Output map[string]any
 }
 
-// RecordOutcomeOf records the outcome of a command on its row, provided the
-// outcome is still open (JobActive or JobWaiting). It reports whether a row
-// changed: false when there is no such open row for that agent.
+// RecordOutcomeOf records the outcome of a command on its row. The database
+// enforces the transitions: JobActive to JobCompleted, JobFailed or
+// JobWaiting, and JobWaiting to JobCompleted or JobFailed only. It reports
+// whether a row changed: false when that agent has no such row in a state
+// that allows the change.
 func (s *JobHistoryStore) RecordOutcomeOf(ctx context.Context, o CommandOutcome) (bool, error) {
 	switch o.Status {
 	case JobCompleted, JobFailed, JobWaiting:

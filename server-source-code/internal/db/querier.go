@@ -107,6 +107,10 @@ type Querier interface {
 	// data (docker_enabled stays true) the hash is left alone.
 	ClearHostDockerHashOnEnable(ctx context.Context, arg ClearHostDockerHashOnEnableParams) error
 	ClearScheduledAt(ctx context.Context, id string) error
+	// Fails the commands still open (active, or waiting for a late answer) that
+	// were sent before stale_before: no answer is coming any more (agent gone,
+	// older agent, command lost).
+	CloseStaleAgentCommands(ctx context.Context, arg CloseStaleAgentCommandsParams) (int64, error)
 	CountActiveAdmins(ctx context.Context) (int64, error)
 	CountActiveRepositories(ctx context.Context) (int32, error)
 	CountAdmins(ctx context.Context) (int64, error)
@@ -572,9 +576,11 @@ type Querier interface {
 	ToggleHostRepository(ctx context.Context, arg ToggleHostRepositoryParams) error
 	TouchTrustedDeviceLastUsed(ctx context.Context, arg TouchTrustedDeviceLastUsedParams) error
 	// Records the outcome of a command InsertJobHistoryStarted recorded. Only the
-	// host the command was sent to (api_id) can change its row, only while the
-	// outcome is still open (active, or waiting for a late answer), and output
-	// keys are merged into the ones recorded with the command.
+	// host the command was sent to (api_id) can change its row, and output keys
+	// are merged into the ones recorded with the command. The status guard is the
+	// state machine: active -> completed, failed or waiting; waiting (a late
+	// answer still possible) -> completed or failed; nothing leaves completed or
+	// failed.
 	UpdateAgentCommandOutcome(ctx context.Context, arg UpdateAgentCommandOutcomeParams) (int64, error)
 	UpdateAlert(ctx context.Context, id string) error
 	UpdateAlertAssignment(ctx context.Context, arg UpdateAlertAssignmentParams) error
