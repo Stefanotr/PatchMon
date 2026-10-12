@@ -1410,13 +1410,13 @@ Fleet-wide the Patching page is hidden from the sidebar when `patching` is not e
 
 ### Who Can Use It
 
-Patching uses two RBAC permissions on top of the module gate:
+Patching uses three RBAC permissions on top of the module gate:
 
 | Action | Permission | Route pattern |
 |---|---|---|
 | View dashboard, list runs, open a run, watch the live stream | `can_view_hosts` | `GET /patching/*` |
 | Trigger a run, approve, retry validation, stop, delete a run | `can_manage_patching` | `POST /patching/trigger`, `POST /patching/runs/{id}/approve`, etc. |
-| Run or approve a patch run that restarts the host, restart or cancel a restart on demand | `can_restart_hosts` (and remote restarts enabled on the host) | `POST /patching/trigger` and `/approve` with a reboot option, `POST /hosts/{id}/reboot`, `POST /hosts/{id}/reboot/cancel` |
+| Run or approve a patch run that restarts the host, restart or cancel a restart on demand | `can_restart_hosts` (a restart also needs remote restarts enabled on the host; a cancel does not) | `POST /patching/trigger` and `/approve` with a reboot option, `POST /hosts/{id}/reboot`, `POST /hosts/{id}/reboot/cancel` |
 | View policies | `can_view_hosts` | `GET /patching/policies` |
 | Create, edit, delete policies and policy assignments / exclusions | `can_manage_patching` | `POST/PUT/DELETE /patching/policies/*` |
 
@@ -1779,7 +1779,7 @@ Runs submitted for approval ignore the restart option chosen at submission: the 
 
 #### Restart or cancel from the Host Detail page
 
-The **Restart** button in the Host Detail header opens a dialog to schedule a restart (delay or time of day, message), or to cancel a scheduled one. It needs the `can_restart_hosts` permission, the Patching module, remote restarts enabled on the host, and a connected agent: the command is not queued for later.
+The **Restart** button in the Host Detail header opens a dialog to schedule a restart (delay or time of day, message), or to cancel a scheduled one. It needs the `can_restart_hosts` permission, the Patching module and a connected agent (the command is not queued for later); scheduling a restart also needs remote restarts enabled on the host, cancelling one does not.
 
 The same dialog opens from the **Reboot pending** pill on Host Detail and from the **Required** badge of the Hosts list's *Reboot* column. It shows the host's last reported state: why a restart is pending, or that none is and restarting is optional.
 
@@ -1789,15 +1789,23 @@ The server waits up to 20 seconds for the agent's answer:
 - **The agent refused: ...**: remote restarts are disabled on the host, a patch run is in progress on the host, a restart is already scheduled (cancel it first to pick another time), or no restart scheduled by PatchMon was pending when you cancelled.
 - **Sent to the agent, which did not answer in time**: nothing is confirmed yet; check the host. The agent answers within 15 seconds, so this means it is offline, busy or older than this feature (older agents ignore restart commands; update the agent). If it answers later, the history records the outcome then. With several PatchMon server instances behind Redis, the answer reaches the instance the agent is connected to, so a command relayed from another instance ends here even though the agent carried it out.
 
-The restart commands only accept JSON requests (`Content-Type: application/json`), which a page on another site cannot send without the browser asking PatchMon first.
+The routes that can restart a host only accept JSON requests (`Content-Type: application/json`, otherwise `415`): the two restart commands, and `POST /patching/trigger` and `POST /patching/runs/{id}/approve`. A page on another site cannot send such a request without the browser asking PatchMon first.
 
-A cancel only stops a restart PatchMon scheduled. The agent keeps a record of the restart it scheduled (`restart-scheduled.json` next to `config.yml`, readable by root or SYSTEM only), and cancels only when the pending restart matches it: logind's scheduled time on systemd, the `PatchMon:` message of the waiting `shutdown` process on SysV init and FreeBSD, or, on Windows, a pending shutdown while the recorded time is still ahead and the host has not restarted since. A restart or shutdown someone scheduled on the host itself is left alone: `no restart scheduled by PatchMon is pending on this host; a restart or shutdown scheduled outside PatchMon is left alone`. A cancel is only reported done once the system no longer has one pending. While a restart or shutdown is pending, the agent refuses a real patch run that could not finish before it, or one whose time the system does not tell (SysV init, FreeBSD); dry runs still start.
+A cancel only stops a restart PatchMon scheduled. The agent keeps a record of the restart it scheduled, `restart-scheduled.json` (in `/etc/patchmon`, readable by root only, on Linux and FreeBSD; in `C:\ProgramData\PatchMon`, for SYSTEM and Administrators only, on Windows), and cancels only when the pending restart matches it:
+
+- on systemd, logind's scheduled time;
+- on SysV init and FreeBSD, the `PatchMon:` message of the waiting `shutdown` process;
+- on Windows, a recorded time still ahead, no restart of the host since, and, in the System event log, a latest shutdown request (event 1074 from USER32) carrying the `PatchMon:` comment with no cancellation (event 1075) after it. When the event log cannot be read in time, the cancel is refused as unconfirmed rather than risk stopping someone else's shutdown.
+
+A restart or shutdown someone scheduled on the host itself is left alone: `no restart scheduled by PatchMon is pending on this host; a restart or shutdown scheduled outside PatchMon is left alone`. A cancel is only reported done once the system no longer has one pending.
+
+While a restart or shutdown is pending, the agent refuses a real patch run that could not finish before it, or one whose time the system does not tell (SysV init, FreeBSD); dry runs still start. On Windows, which offers no way to ask whether a shutdown is pending, only a restart PatchMon recorded counts.
 
 #### Restart history
 
 Every restart is recorded in the host's **Agent Activity** tab, as an outbound job named *Restart* or *Restart Cancel*; the dialog's **Restart history** link opens the tab filtered on them. A command is recorded before it is sent (a command that cannot be recorded is not sent), then the same record gets the outcome. A record says:
 
-- the outcome: active while the command is on its way; completed; failed with the reason (agent not connected, command not sent, refused by the agent and why, restart skipped by a patch run and why); or waiting, when the agent did not answer within 20 seconds. A waiting record is completed if the agent answers later; only the host that received the command can complete it;
+- the outcome: active while the command is on its way; completed; failed with the reason (agent not connected, command not sent, unreadable answer from the agent, refused by the agent and why, restart skipped by a patch run and why); or waiting, when the agent did not answer within 20 seconds. A waiting record is completed if the agent answers within 10 minutes; only the host that received the command can complete it. After that, it is closed as failed, `no answer from the agent within 10 minutes`;
 - in its output: the source (`manual` for the Restart button, `patch_run` with the run ID for a restart a patch run scheduled), who asked (`requested_by`), the delay or time and message chosen, and the time the host restarts (`reboot_at`).
 
 After the restart, the host's uptime starts again and the **Reboot pending** pill disappears with the next report.
@@ -3098,7 +3106,7 @@ After a successful bulk scan, the modal auto-closes after three seconds and each
 Compliance scanning on a host needs OpenSCAP (`oscap` binary) installed and the SSG content available locally. The first time you enable compliance on a host, the scanner usually isn't there yet. PatchMon handles this with an install job.
 
 1. Enable **compliance mode** on the host (set to `On-Demand` or `Enabled`) with OpenSCAP ticked, and click **Apply**.
-2. The agent saves the new settings and restarts. Because compliance with OpenSCAP has just been switched on, the server also queues an install job that starts as soon as the agent has restarted and reconnected (or after 30 seconds at the latest). The Compliance tab shows it as waiting until then. Hosts whose package manager can't install OpenSCAP (Windows, FreeBSD, Alpine and Arch) are skipped.
+2. The agent saves the new settings and restarts (if a patch run is in progress on the host, the restart waits until the run is over). Because compliance with OpenSCAP has just been switched on, the server also queues an install job that starts as soon as the agent has restarted and reconnected (or after 30 seconds at the latest). The Compliance tab shows it as waiting until then. Hosts whose package manager can't install OpenSCAP (Windows, FreeBSD, Alpine and Arch) are skipped.
 3. If the agent is not connected yet, the install job waits and retries every 30 seconds, up to twice, and runs straight away when the agent reconnects. While it waits, the host's queue shows it as delayed. If the agent still hasn't connected, it reports a failure. If it fails, click **Install Scanner** (or **Retry install**) on the Host Detail Compliance tab. The UI calls `POST /api/v1/compliance/install-scanner/{hostId}`, which returns `409` while an install is already running on the host; cancel that install first to start another. Hosts that already had compliance enabled before an upgrade also need this button once.
 4. Either way the server enqueues an install task, and the worker sends an install message to the agent.
 5. The agent installs the OpenSCAP scanner with the host's own package manager, then downloads SSG content from the server via `GET /api/v1/compliance/ssg-content/{filename}`. Progress events are reported back to Redis and surfaced in the UI via `GET /compliance/install-job/{hostId}`, which returns the current state plus a per-step message and progress percent. The states are `none` (no install has been requested), `waiting`, `active`, `completed`, `failed`, and `unknown` when the job can no longer be found. The state stays `active` until the agent reports its final step; if it hasn't reported within 20 minutes, the state becomes `failed`. The job history entry is updated from the same final step, including when it arrives after the install worker has stopped waiting. A `failed` state also carries an `error` field with the reason.
@@ -4818,7 +4826,7 @@ Restrictions:
 
 ### How Permissions Are Evaluated
 
-- **Admin and Super Admin** always have every permission, even if the `role_permissions` table says otherwise. The middleware short-circuits their permission checks. This is a safety net: if someone mis-edits the `admin` row (which shouldn't be possible via the UI, but could happen via direct database access), admins don't get locked out.
+- **Admin and Super Admin** have their permissions read from the `role_permissions` table like every other role: the middleware does not short-circuit their checks. Their rows grant every permission, and the UI does not let you edit them; a row edited directly in the database does change what they can do. When this fork adds `can_restart_hosts`, it grants it to `admin`, `superadmin` and every role that has `can_manage_patching`.
 - **Every other role** (built-in or custom) has its permissions read from the database at each request. Changes made in **Settings → Roles** take effect on the user's next API call; no restart required.
 - **Role hierarchy for user management** is enforced separately from the permissions above:
   - `superadmin` → rank 100
