@@ -550,9 +550,9 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/{hostId}/integrations/apply-pending-config", hostsHandler.ApplyPendingConfig)
 			// Restarting a host has its own permission, apart from patching
 			// and from editing host records (separation of duties), and is
-			// part of the patching module.
-			r.With(middleware.RequirePermission("can_restart_hosts", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot", hostsHandler.RebootHost)
-			r.With(middleware.RequirePermission("can_restart_hosts", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot/cancel", hostsHandler.CancelHostReboot)
+			// part of the patching module. JSON only: see RequireJSON.
+			r.With(middleware.RequireJSON, middleware.RequirePermission("can_restart_hosts", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot", hostsHandler.RebootHost)
+			r.With(middleware.RequireJSON, middleware.RequirePermission("can_restart_hosts", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot/cancel", hostsHandler.CancelHostReboot)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/{hostId}/integrations/{integrationName}/toggle", hostsHandler.ToggleIntegration)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore)).Get("/hosts/{hostId}", hostsHandler.GetByID)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/create", hostsHandler.Create)
