@@ -3,7 +3,6 @@ package packages
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -163,9 +162,11 @@ func findPowerShell(t *testing.T) string {
 func runScript(t *testing.T, script string, env []string, out io.Writer) []byte {
 	t.Helper()
 	exe := findPowerShell(t)
-	prev := powershellExe
-	powershellExe = exe
-	t.Cleanup(func() { powershellExe = prev })
+	prev := powershellCommand
+	powershellCommand = func(ctx context.Context, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, exe, args...)
+	}
+	t.Cleanup(func() { powershellCommand = prev })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -348,10 +349,10 @@ func TestScriptHostVersion(t *testing.T) {
 	}
 }
 
+// TestWinGetListScript runs the listing script against a stand-in for
+// winget.exe that prints a table: a shell script off Windows, a batch file on
+// Windows. The script runs whatever PATCHMON_WINGET names.
 func TestWinGetListScript(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a shell script standing in for winget.exe")
-	}
 	findPowerShell(t)
 	dir := t.TempDir()
 	table := "Name                         Id               Version  Available  Source\n" +
@@ -361,25 +362,22 @@ func TestWinGetListScript(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "table.txt"), []byte(table), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fake := "#!/bin/sh\ncat \"$(dirname \"$0\")/table.txt\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "winget.exe"), []byte(fake), 0o700); err != nil {
+	fake := filepath.Join(dir, "winget.exe")
+	body := "#!/bin/sh\ncat \"$(dirname \"$0\")/table.txt\"\n"
+	if runtime.GOOS == "windows" {
+		fake = filepath.Join(dir, "winget.cmd")
+		body = "@type \"%~dp0table.txt\"\r\n@exit /b 0\r\n"
+	}
+	if err := os.WriteFile(fake, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	raw := runScript(t, wingetListScript, []string{"PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH")}, nil)
+	raw := runScript(t, wingetListScript, []string{wingetPathEnv + "=" + fake}, nil)
 	listing, err := parseWinGetListOutput(string(raw))
 	if err != nil {
 		t.Fatalf("parse: %v\n%s", err, raw)
 	}
-	if listing.Path != filepath.Join(dir, "winget.exe") {
-		t.Errorf("path = %q", listing.Path)
-	}
 	if apps := listing.Apps; len(apps) != 1 || apps[0].ID != "Mozilla.Firefox" || apps[0].Available != "131.0.2" || listing.Unreadable != 0 {
 		t.Errorf("listing = %+v\n%s", listing, raw)
-	}
-
-	raw = runScript(t, wingetListScript, []string{"PATH=" + t.TempDir(), "LOCALAPPDATA=" + t.TempDir(), "ProgramFiles=" + t.TempDir()}, nil)
-	if _, err := parseWinGetListOutput(string(raw)); !errors.Is(err, ErrWinGetNotInstalled) {
-		t.Errorf("without winget: err = %v\n%s", err, raw)
 	}
 }

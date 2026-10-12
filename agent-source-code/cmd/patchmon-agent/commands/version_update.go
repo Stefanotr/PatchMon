@@ -25,6 +25,7 @@ import (
 	"patchmon-agent/internal/config"
 	"patchmon-agent/internal/logutil"
 	"patchmon-agent/internal/pkgversion"
+	"patchmon-agent/internal/winexec"
 
 	"github.com/spf13/cobra"
 )
@@ -436,7 +437,7 @@ try {
 	})).Info("Launching Windows update script (stop service → replace binary → start service)...")
 
 	progress.stage(updateStageRestarting, "")
-	cmd := exec.Command("powershell",
+	cmd := winexec.PowerShell(context.Background(),
 		"-NonInteractive", "-WindowStyle", "Hidden",
 		"-ExecutionPolicy", "Bypass",
 		"-File", psScriptPath)
@@ -856,7 +857,7 @@ Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyConti
 			os.Exit(0)
 			return nil
 		}
-		cmd := exec.Command("powershell",
+		cmd := winexec.PowerShell(context.Background(),
 			"-NonInteractive", "-WindowStyle", "Hidden",
 			"-ExecutionPolicy", "Bypass",
 			"-File", psScriptPath)

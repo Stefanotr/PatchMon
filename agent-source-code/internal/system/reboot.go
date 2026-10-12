@@ -2,6 +2,7 @@
 package system
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -97,7 +98,7 @@ if ($reasons.Count -gt 0) {
   Write-Output "REBOOT_NOT_REQUIRED"
 }
 `
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
+	cmd := winexec.PowerShell(context.Background(), "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
 	output, err := cmd.Output()
 	if err != nil {
 		d.logger.WithError(err).Debug("Windows reboot check failed")

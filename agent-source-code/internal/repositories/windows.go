@@ -1,8 +1,8 @@
 package repositories
 
 import (
+	"context"
 	"encoding/json"
-	"os/exec"
 	"runtime"
 	"strings"
 
@@ -53,7 +53,7 @@ $sources += @{ Name = "Microsoft Update"; URL = "https://update.microsoft.com"; 
 $sources | ConvertTo-Json -Compress
 `
 
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
+	cmd := winexec.PowerShell(context.Background(), "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
 	output, err := cmd.Output()
 	if err != nil {
 		m.logger.WithError(err).Warn("Failed to query Windows Update sources (may require admin privileges)")
