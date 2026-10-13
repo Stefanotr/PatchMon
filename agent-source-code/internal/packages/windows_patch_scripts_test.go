@@ -20,7 +20,10 @@ import (
 // compiles. These tests execute them for real, under pwsh (preinstalled on the
 // GitHub Ubuntu runners) or Windows PowerShell, against a fake of the WUA COM
 // objects, so every branch of the install logic runs on every CI build without
-// touching a real Windows Update.
+// touching a real Windows Update. PATCHMON_TEST_POWERSHELL picks the
+// interpreter (a name looked up in PATH, or a path): CI sets it to
+// powershell.exe to run them under Windows PowerShell 5.1, which the agent
+// uses.
 
 // fakeWUAPrelude shadows New-Object with a fake Windows Update Agent driven by
 // the JSON in PATCHMON_FAKE_WUA. Calls are echoed as CALL: lines.
@@ -132,8 +135,19 @@ func fakeUpdate(overrides map[string]any) map[string]any {
 	return u
 }
 
+// testPowerShellEnv names the interpreter the script tests use.
+const testPowerShellEnv = "PATCHMON_TEST_POWERSHELL"
+
 func findPowerShell(t *testing.T) string {
 	t.Helper()
+	if want := os.Getenv(testPowerShellEnv); want != "" {
+		// Asked for explicitly: missing is a failure, never a skip.
+		p, err := exec.LookPath(want)
+		if err != nil {
+			t.Fatalf("%s=%s: %v", testPowerShellEnv, want, err)
+		}
+		return p
+	}
 	if p, err := exec.LookPath("pwsh"); err == nil {
 		return p
 	}
@@ -322,6 +336,15 @@ func TestWUAInstallScript(t *testing.T) {
 				t.Errorf("result line leaked into the run output:\n%s", shown)
 			}
 		})
+	}
+}
+
+// TestScriptHostVersion logs which PowerShell ran the script tests.
+func TestScriptHostVersion(t *testing.T) {
+	raw := runScript(t, "Write-Output ('PSVERSION:' + $PSVersionTable.PSVersion.ToString() + ' ' + $PSVersionTable.PSEdition)", nil, nil)
+	t.Logf("%s", strings.TrimSpace(string(raw)))
+	if !strings.Contains(string(raw), "PSVERSION:") {
+		t.Fatalf("no version from PowerShell:\n%s", raw)
 	}
 }
 
