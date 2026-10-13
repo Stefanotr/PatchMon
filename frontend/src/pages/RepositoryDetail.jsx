@@ -27,6 +27,7 @@ import {
 	useState,
 } from "react";
 
+import { Trans, useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ModalPortal from "../components/ui/ModalPortal";
 import {
@@ -37,6 +38,7 @@ import {
 } from "../utils/api";
 
 const RepositoryDetail = () => {
+	const { t } = useTranslation();
 	const isActiveId = useId();
 	const repositoryNameId = useId();
 	const priorityId = useId();
@@ -118,14 +120,14 @@ const RepositoryDetail = () => {
 			return (
 				<span className="badge-danger flex items-center gap-1 w-fit">
 					<Shield className="h-3 w-3" />
-					Security Update
+					{t("Security Update")}
 				</span>
 			);
 		}
 		if ((stats?.updatesNeeded || 0) > 0) {
-			return <span className="badge-warning">Update Available</span>;
+			return <span className="badge-warning">{t("Update Available")}</span>;
 		}
-		return <span className="badge-success">Up to Date</span>;
+		return <span className="badge-success">{t("Up to Date")}</span>;
 	};
 
 	const getRebootBadge = (host) => {
@@ -133,10 +135,10 @@ const RepositoryDetail = () => {
 		return (
 			<span
 				className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200"
-				title="Reboot required"
+				title={t("Reboot required")}
 			>
 				<RotateCcw className="h-3 w-3" />
-				Required
+				{t("Required")}
 			</span>
 		);
 	};
@@ -250,20 +252,22 @@ const RepositoryDetail = () => {
 					<Link
 						to="/repositories"
 						className="inline-flex items-center justify-center -ml-2 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:ml-0 text-secondary-500 hover:text-secondary-700 dark:text-white dark:hover:text-secondary-200"
-						aria-label="Back to repositories"
-						title="Back to Repositories"
+						aria-label={t("Back to repositories")}
+						title={t("Back to Repositories")}
 					>
 						<ArrowLeft className="h-5 w-5" />
 					</Link>
 					<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
-						Repository
+						{t("Repository")}
 					</h1>
 				</div>
 				<div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4">
 					<div className="flex items-center">
 						<AlertTriangle className="h-5 w-5 text-danger-400 mr-2 flex-shrink-0" />
 						<span className="text-danger-700 dark:text-danger-300">
-							Failed to load repository: {error.message}
+							{t("Failed to load repository: {{message}}", {
+								message: error.message,
+							})}
 						</span>
 					</div>
 				</div>
@@ -278,22 +282,22 @@ const RepositoryDetail = () => {
 					<Link
 						to="/repositories"
 						className="inline-flex items-center justify-center -ml-2 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:ml-0 text-secondary-500 hover:text-secondary-700 dark:text-white dark:hover:text-secondary-200"
-						aria-label="Back to repositories"
-						title="Back to Repositories"
+						aria-label={t("Back to repositories")}
+						title={t("Back to Repositories")}
 					>
 						<ArrowLeft className="h-5 w-5" />
 					</Link>
 					<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
-						Repository
+						{t("Repository")}
 					</h1>
 				</div>
 				<div className="text-center py-12">
 					<Database className="mx-auto h-12 w-12 text-secondary-400" />
 					<h3 className="mt-2 text-sm font-medium text-secondary-900 dark:text-white">
-						Repository not found
+						{t("Repository not found")}
 					</h3>
 					<p className="mt-1 text-sm text-secondary-500 dark:text-white">
-						The repository you're looking for doesn't exist.
+						{t("The repository you're looking for doesn't exist.")}
 					</p>
 				</div>
 			</div>
@@ -310,7 +314,7 @@ const RepositoryDetail = () => {
 							type="button"
 							onClick={cancelDelete}
 							className="fixed inset-0 cursor-default"
-							aria-label="Close modal"
+							aria-label={t("Close modal")}
 							disabled={deleteRepositoryMutation.isPending}
 						/>
 						<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-md w-full mx-4 relative z-10">
@@ -322,10 +326,10 @@ const RepositoryDetail = () => {
 										</div>
 										<div className="min-w-0">
 											<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-												Delete Repository
+												{t("Delete Repository")}
 											</h3>
 											<p className="text-sm text-secondary-600 dark:text-white">
-												This action cannot be undone
+												{t("This action cannot be undone")}
 											</p>
 										</div>
 									</div>
@@ -333,7 +337,7 @@ const RepositoryDetail = () => {
 										type="button"
 										onClick={cancelDelete}
 										className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700 text-secondary-400 hover:text-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-										aria-label="Close"
+										aria-label={t("Close")}
 										disabled={deleteRepositoryMutation.isPending}
 									>
 										<X className="h-5 w-5" />
@@ -342,15 +346,26 @@ const RepositoryDetail = () => {
 							</div>
 							<div className="px-6 py-4">
 								<p className="text-secondary-700 dark:text-white">
-									Are you sure you want to delete{" "}
-									<span className="font-semibold">"{repository?.name}"</span>?
+									<Trans
+										i18nKey='Are you sure you want to delete "<name/>"?'
+										components={{
+											name: (
+												<span className="font-semibold">
+													{repository?.name}
+												</span>
+											),
+										}}
+									/>
 								</p>
 								{repository?.host_repositories?.length > 0 && (
 									<div className="mt-3 p-3 bg-danger-50 dark:bg-danger-900 border border-danger-200 dark:border-danger-700 rounded-md">
 										<p className="text-sm text-danger-800 dark:text-danger-200">
-											<strong>Warning:</strong> This repository is currently
-											assigned to {repository.host_repositories.length} host
-											{repository.host_repositories.length !== 1 ? "s" : ""}.
+											<Trans
+												i18nKey="<strong>Warning:</strong> This repository is currently assigned to {{count}} host."
+												count={repository.host_repositories.length}
+												values={{ count: repository.host_repositories.length }}
+												components={{ strong: <strong /> }}
+											/>
 										</p>
 									</div>
 								)}
@@ -362,7 +377,7 @@ const RepositoryDetail = () => {
 									className="btn-outline"
 									disabled={deleteRepositoryMutation.isPending}
 								>
-									Cancel
+									{t("Cancel")}
 								</button>
 								<button
 									type="button"
@@ -371,8 +386,8 @@ const RepositoryDetail = () => {
 									disabled={deleteRepositoryMutation.isPending}
 								>
 									{deleteRepositoryMutation.isPending
-										? "Deleting..."
-										: "Delete Repository"}
+										? t("Deleting...")
+										: t("Delete Repository")}
 								</button>
 							</div>
 						</div>
@@ -386,8 +401,8 @@ const RepositoryDetail = () => {
 					<Link
 						to="/repositories"
 						className="inline-flex items-center justify-center -ml-2 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:ml-0 md:mt-1 flex-shrink-0 text-secondary-500 hover:text-secondary-700 dark:text-white dark:hover:text-secondary-200"
-						aria-label="Back to repositories"
-						title="Back to Repositories"
+						aria-label={t("Back to repositories")}
+						title={t("Back to Repositories")}
 					>
 						<ArrowLeft className="h-5 w-5" />
 					</Link>
@@ -405,7 +420,7 @@ const RepositoryDetail = () => {
 								repository.is_active ? "badge-success" : "badge-danger"
 							}
 						>
-							{repository.is_active ? "Active" : "Inactive"}
+							{repository.is_active ? t("Active") : t("Inactive")}
 						</span>
 					</div>
 				</div>
@@ -418,7 +433,7 @@ const RepositoryDetail = () => {
 								className="btn-outline min-h-[44px] md:min-h-0 whitespace-nowrap"
 								disabled={updateRepositoryMutation.isPending}
 							>
-								Cancel
+								{t("Cancel")}
 							</button>
 							<button
 								type="button"
@@ -427,8 +442,8 @@ const RepositoryDetail = () => {
 								disabled={updateRepositoryMutation.isPending}
 							>
 								{updateRepositoryMutation.isPending
-									? "Saving..."
-									: "Save Changes"}
+									? t("Saving...")
+									: t("Save Changes")}
 							</button>
 						</>
 					) : (
@@ -440,15 +455,17 @@ const RepositoryDetail = () => {
 								disabled={deleteRepositoryMutation.isPending}
 							>
 								<Trash2 className="h-4 w-4" />
-								{deleteRepositoryMutation.isPending ? "Deleting..." : "Delete"}
+								{deleteRepositoryMutation.isPending
+									? t("Deleting...")
+									: t("Delete")}
 							</button>
 							<button
 								type="button"
 								onClick={handleEdit}
 								className="btn-primary min-h-[44px] md:min-h-0 whitespace-nowrap"
 							>
-								<span className="hidden sm:inline">Edit Repository</span>
-								<span className="sm:hidden">Edit</span>
+								<span className="hidden sm:inline">{t("Edit Repository")}</span>
+								<span className="sm:hidden">{t("Edit")}</span>
 							</button>
 						</>
 					)}
@@ -459,7 +476,7 @@ const RepositoryDetail = () => {
 			<div className="card">
 				<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-700">
 					<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-						Repository Information
+						{t("Repository Information")}
 					</h2>
 				</div>
 				<div className="px-6 py-4 space-y-4">
@@ -470,7 +487,7 @@ const RepositoryDetail = () => {
 									htmlFor={repositoryNameId}
 									className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 								>
-									Repository Name
+									{t("Repository Name")}
 								</label>
 								<input
 									type="text"
@@ -487,7 +504,7 @@ const RepositoryDetail = () => {
 									htmlFor={priorityId}
 									className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 								>
-									Priority
+									{t("Priority")}
 								</label>
 								<input
 									type="number"
@@ -497,7 +514,7 @@ const RepositoryDetail = () => {
 										setFormData({ ...formData, priority: e.target.value })
 									}
 									className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-secondary-700 dark:text-white"
-									placeholder="Optional priority"
+									placeholder={t("Optional priority")}
 								/>
 							</div>
 							<div className="md:col-span-2">
@@ -505,7 +522,7 @@ const RepositoryDetail = () => {
 									htmlFor={descriptionId}
 									className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 								>
-									Description
+									{t("Description")}
 								</label>
 								<textarea
 									id={descriptionId}
@@ -515,7 +532,7 @@ const RepositoryDetail = () => {
 									}
 									rows="3"
 									className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-secondary-700 dark:text-white"
-									placeholder="Optional description"
+									placeholder={t("Optional description")}
 								/>
 							</div>
 							<div className="flex items-center">
@@ -532,7 +549,7 @@ const RepositoryDetail = () => {
 									htmlFor={isActiveId}
 									className="ml-2 block text-sm text-secondary-900 dark:text-white"
 								>
-									Repository is active
+									{t("Repository is active")}
 								</label>
 							</div>
 						</div>
@@ -541,7 +558,7 @@ const RepositoryDetail = () => {
 							<div className="space-y-4">
 								<div>
 									<span className="text-sm font-medium text-secondary-500 dark:text-white">
-										URL
+										{t("URL")}
 									</span>
 									<div className="flex items-center mt-1">
 										<Globe className="h-4 w-4 text-secondary-400 mr-2" />
@@ -552,7 +569,7 @@ const RepositoryDetail = () => {
 								</div>
 								<div>
 									<span className="text-sm font-medium text-secondary-500 dark:text-white">
-										Distribution
+										{t("Distribution")}
 									</span>
 									<p className="text-secondary-900 dark:text-white mt-1">
 										{repository.distribution}
@@ -560,7 +577,7 @@ const RepositoryDetail = () => {
 								</div>
 								<div>
 									<span className="text-sm font-medium text-secondary-500 dark:text-white">
-										Components
+										{t("Components")}
 									</span>
 									<p className="text-secondary-900 dark:text-white mt-1">
 										{repository.components}
@@ -568,7 +585,7 @@ const RepositoryDetail = () => {
 								</div>
 								<div>
 									<span className="text-sm font-medium text-secondary-500 dark:text-white">
-										Repository Type
+										{t("Repository Type")}
 									</span>
 									<p className="text-secondary-900 dark:text-white mt-1">
 										{repository.repo_type}
@@ -578,21 +595,21 @@ const RepositoryDetail = () => {
 							<div className="space-y-4">
 								<div>
 									<span className="text-sm font-medium text-secondary-500 dark:text-white">
-										Security
+										{t("Security")}
 									</span>
 									<div className="flex items-center mt-1">
 										{repository.isSecure ? (
 											<>
 												<Shield className="h-4 w-4 text-success-700 dark:text-success-400 mr-2" />
 												<span className="text-success-700 dark:text-success-400">
-													Secure (HTTPS)
+													{t("Secure (HTTPS)")}
 												</span>
 											</>
 										) : (
 											<>
 												<ShieldOff className="h-4 w-4 text-warning-700 dark:text-warning-400 mr-2" />
 												<span className="text-warning-700 dark:text-warning-400">
-													Insecure (HTTP)
+													{t("Insecure (HTTP)")}
 												</span>
 											</>
 										)}
@@ -601,7 +618,7 @@ const RepositoryDetail = () => {
 								{repository.priority != null && (
 									<div>
 										<span className="text-sm font-medium text-secondary-500 dark:text-white">
-											Priority
+											{t("Priority")}
 										</span>
 										<p className="text-secondary-900 dark:text-white mt-1">
 											{repository.priority}
@@ -611,7 +628,7 @@ const RepositoryDetail = () => {
 								{repository.description && (
 									<div>
 										<span className="text-sm font-medium text-secondary-500 dark:text-white">
-											Description
+											{t("Description")}
 										</span>
 										<p className="text-secondary-900 dark:text-white mt-1">
 											{repository.description}
@@ -620,7 +637,7 @@ const RepositoryDetail = () => {
 								)}
 								<div>
 									<span className="text-sm font-medium text-secondary-500 dark:text-white">
-										Created
+										{t("Created")}
 									</span>
 									<div className="flex items-center mt-1">
 										<Calendar className="h-4 w-4 text-secondary-400 mr-2" />
@@ -642,7 +659,9 @@ const RepositoryDetail = () => {
 						<div className="flex items-center gap-3">
 							<Server className="h-5 w-5 text-primary-600" />
 							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-								Hosts Using This Repository ({hosts.length})
+								{t("Hosts Using This Repository ({{total}})", {
+									total: hosts.length,
+								})}
 							</h3>
 						</div>
 					</div>
@@ -652,7 +671,7 @@ const RepositoryDetail = () => {
 						<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-secondary-400" />
 						<input
 							type="text"
-							placeholder="Search hosts..."
+							placeholder={t("Search hosts...")}
 							value={searchTerm}
 							onChange={(e) => {
 								setSearchTerm(e.target.value);
@@ -669,8 +688,8 @@ const RepositoryDetail = () => {
 							<Server className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 							<p className="text-secondary-500 dark:text-white">
 								{searchTerm
-									? "No hosts match your search"
-									: "This repository hasn't been reported by any hosts yet."}
+									? t("No hosts match your search")
+									: t("This repository hasn't been reported by any hosts yet.")}
 							</p>
 						</div>
 					) : (
@@ -681,19 +700,19 @@ const RepositoryDetail = () => {
 									<thead className="bg-secondary-50 dark:bg-secondary-700">
 										<tr>
 											<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-												Host
+												{t("Host")}
 											</th>
 											<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-												Operating System
+												{t("Operating System")}
 											</th>
 											<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-												Last Checked
+												{t("Last Checked")}
 											</th>
 											<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-												Last Update
+												{t("Last Update")}
 											</th>
 											<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-												Reboot Required
+												{t("Reboot Required")}
 											</th>
 										</tr>
 									</thead>
@@ -736,17 +755,17 @@ const RepositoryDetail = () => {
 												<td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-500 dark:text-white">
 													{hostRepo.last_checked
 														? formatRelativeTime(hostRepo.last_checked)
-														: "Never"}
+														: t("Never")}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-500 dark:text-white">
 													{hostRepo.hosts.last_update
 														? formatRelativeTime(hostRepo.hosts.last_update)
-														: "Never"}
+														: t("Never")}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap">
 													{getRebootBadge(hostRepo.hosts) || (
 														<span className="text-sm text-secondary-500 dark:text-white">
-															No
+															{t("No")}
 														</span>
 													)}
 												</td>
@@ -799,16 +818,18 @@ const RepositoryDetail = () => {
 										</div>
 										<div className="flex items-center justify-between gap-2 mt-1 text-xs text-secondary-500 dark:text-secondary-400">
 											<span>
-												Checked:{" "}
-												{hostRepo.last_checked
-													? formatRelativeTime(hostRepo.last_checked)
-													: "Never"}
+												{t("Checked: {{when}}", {
+													when: hostRepo.last_checked
+														? formatRelativeTime(hostRepo.last_checked)
+														: t("Never"),
+												})}
 											</span>
 											<span>
-												Updated:{" "}
-												{hostRepo.hosts.last_update
-													? formatRelativeTime(hostRepo.hosts.last_update)
-													: "Never"}
+												{t("Updated: {{when}}", {
+													when: hostRepo.hosts.last_update
+														? formatRelativeTime(hostRepo.hosts.last_update)
+														: t("Never"),
+												})}
 											</span>
 										</div>
 									</button>
@@ -820,7 +841,7 @@ const RepositoryDetail = () => {
 								<div className="px-6 py-3 bg-white dark:bg-secondary-800 border-t border-secondary-200 dark:border-secondary-600 flex items-center justify-between">
 									<div className="flex items-center gap-2">
 										<span className="text-sm text-secondary-700 dark:text-white">
-											Rows per page:
+											{t("Rows per page:")}
 										</span>
 										<select
 											value={pageSize}
@@ -842,10 +863,13 @@ const RepositoryDetail = () => {
 											disabled={currentPage === 1}
 											className="px-3 py-1 text-sm border border-secondary-300 dark:border-secondary-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-secondary-50 dark:hover:bg-secondary-700"
 										>
-											Previous
+											{t("Previous")}
 										</button>
 										<span className="text-sm text-secondary-700 dark:text-white">
-											Page {currentPage} of {totalPages}
+											{t("Page {{page}} of {{totalPages}}", {
+												page: currentPage,
+												totalPages,
+											})}
 										</span>
 										<button
 											type="button"
@@ -853,7 +877,7 @@ const RepositoryDetail = () => {
 											disabled={currentPage === totalPages}
 											className="px-3 py-1 text-sm border border-secondary-300 dark:border-secondary-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-secondary-50 dark:hover:bg-secondary-700"
 										>
-											Next
+											{t("Next")}
 										</button>
 									</div>
 								</div>
@@ -870,10 +894,11 @@ const RepositoryDetail = () => {
 						<div className="flex items-center gap-3">
 							<Package className="h-5 w-5 text-primary-600" />
 							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-								Packages from this Repository
-								{packagesPagination.total != null && (
-									<span> ({packagesPagination.total})</span>
-								)}
+								{packagesPagination.total != null
+									? t("Packages from this Repository ({{total}})", {
+											total: packagesPagination.total,
+										})
+									: t("Packages from this Repository")}
 							</h3>
 						</div>
 					</div>
@@ -883,7 +908,7 @@ const RepositoryDetail = () => {
 						<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-secondary-400" />
 						<input
 							type="text"
-							placeholder="Search packages..."
+							placeholder={t("Search packages...")}
 							value={packagesSearchInput}
 							onChange={(e) => handlePackagesSearchChange(e.target.value)}
 							className="w-full pl-10 pr-4 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white placeholder-secondary-500 dark:placeholder-secondary-400"
@@ -901,8 +926,8 @@ const RepositoryDetail = () => {
 							<Package className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 							<p className="text-secondary-500 dark:text-white">
 								{packagesSearch
-									? "No packages match your search"
-									: "No packages found from this repository."}
+									? t("No packages match your search")
+									: t("No packages found from this repository.")}
 							</p>
 						</div>
 					) : (
@@ -913,16 +938,16 @@ const RepositoryDetail = () => {
 									<thead className="bg-secondary-50 dark:bg-secondary-700">
 										<tr>
 											<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-												Package Name
+												{t("Package Name")}
 											</th>
 											<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-												Latest Version
+												{t("Latest Version")}
 											</th>
 											<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-												Status
+												{t("Status")}
 											</th>
 											<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-												Installed On
+												{t("Installed On")}
 											</th>
 										</tr>
 									</thead>
@@ -950,10 +975,9 @@ const RepositoryDetail = () => {
 													{getPackageStatusBadge(pkg.stats)}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900 dark:text-white">
-													{pkg.stats?.totalInstalls || 0}{" "}
-													{(pkg.stats?.totalInstalls || 0) === 1
-														? "host"
-														: "hosts"}
+													{t("{{count}} host", {
+														count: pkg.stats?.totalInstalls || 0,
+													})}
 												</td>
 											</tr>
 										))}
@@ -979,10 +1003,9 @@ const RepositoryDetail = () => {
 										<div className="flex items-center justify-between text-xs text-secondary-500 dark:text-secondary-400">
 											<span>{pkg.latest_version || "—"}</span>
 											<span>
-												{pkg.stats?.totalInstalls || 0}{" "}
-												{(pkg.stats?.totalInstalls || 0) === 1
-													? "host"
-													: "hosts"}
+												{t("{{count}} host", {
+													count: pkg.stats?.totalInstalls || 0,
+												})}
 											</span>
 										</div>
 									</button>
@@ -994,7 +1017,7 @@ const RepositoryDetail = () => {
 								<div className="px-6 py-3 bg-white dark:bg-secondary-800 border-t border-secondary-200 dark:border-secondary-600 flex items-center justify-between">
 									<div className="flex items-center gap-2">
 										<span className="text-sm text-secondary-700 dark:text-white">
-											Rows per page:
+											{t("Rows per page:")}
 										</span>
 										<select
 											value={packagesPageSize}
@@ -1016,10 +1039,13 @@ const RepositoryDetail = () => {
 											disabled={packagesPage === 1}
 											className="px-3 py-1 text-sm border border-secondary-300 dark:border-secondary-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-secondary-50 dark:hover:bg-secondary-700"
 										>
-											Previous
+											{t("Previous")}
 										</button>
 										<span className="text-sm text-secondary-700 dark:text-white">
-											Page {packagesPage} of {packagesPagination.pages}
+											{t("Page {{page}} of {{pages}}", {
+												page: packagesPage,
+												pages: packagesPagination.pages,
+											})}
 										</span>
 										<button
 											type="button"
@@ -1027,7 +1053,7 @@ const RepositoryDetail = () => {
 											disabled={packagesPage === packagesPagination.pages}
 											className="px-3 py-1 text-sm border border-secondary-300 dark:border-secondary-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-secondary-50 dark:hover:bg-secondary-700"
 										>
-											Next
+											{t("Next")}
 										</button>
 									</div>
 								</div>

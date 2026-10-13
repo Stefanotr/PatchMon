@@ -1,0 +1,6 @@
+{
+	"<strong>Warning:</strong> This repository is currently assigned to {{count}} host._one": "<strong>Warning:</strong> This repository is currently assigned to {{count}} host.",
+	"<strong>Warning:</strong> This repository is currently assigned to {{count}} host._other": "<strong>Warning:</strong> This repository is currently assigned to {{count}} hosts.",
+	"{{count}} Host_one": "{{count}} Host",
+	"{{count}} Host_other": "{{count}} Hosts"
+}
