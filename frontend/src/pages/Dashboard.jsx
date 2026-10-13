@@ -85,7 +85,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useToast } from "../contexts/ToastContext";
 import { usePageRefresh } from "../hooks/usePageRefresh";
-import { tk } from "../i18n";
+import { currentLanguage, tk } from "../i18n";
 import {
 	adminUsersAPI,
 	alertsAPI,
@@ -94,6 +94,7 @@ import {
 	formatRelativeTime,
 	settingsAPI,
 } from "../utils/api";
+import { categoryTicks, shortLegendLabels } from "../utils/chartLabels";
 import { complianceAPI } from "../utils/complianceApi";
 import { patchingAPI } from "../utils/patchingApi";
 
@@ -1561,12 +1562,12 @@ const Dashboard = () => {
 			case "packageTrends":
 				return (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
-						<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 flex-shrink-0">
-							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+						<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-4 flex-shrink-0">
+							<h3 className="text-lg font-medium text-secondary-900 dark:text-white min-w-0">
 								{t("Package Trends Over Time")}
 							</h3>
-							<div className="flex flex-col gap-2">
-								<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+							<div className="flex flex-col gap-2 min-w-0">
+								<div className="flex flex-wrap items-stretch sm:items-center gap-2">
 									{/* Refresh Button */}
 									<button
 										type="button"
@@ -1738,7 +1739,7 @@ const Dashboard = () => {
 									{updatePercentage}%
 								</div>
 								<div
-									className="text-xs text-secondary-500 dark:text-white/70 truncate"
+									className="text-xs leading-tight text-secondary-500 dark:text-white/70 break-words hyphens-auto"
 									title={t("Need Updates")}
 								>
 									{t("Need Updates")}
@@ -1752,7 +1753,7 @@ const Dashboard = () => {
 									{stats.cards.securityUpdates}
 								</div>
 								<div
-									className="text-xs text-secondary-500 dark:text-white/70 truncate"
+									className="text-xs leading-tight text-secondary-500 dark:text-white/70 break-words hyphens-auto"
 									title={t("Security Issues")}
 								>
 									{t("Security")}
@@ -1766,7 +1767,7 @@ const Dashboard = () => {
 									{onlinePercentage}%
 								</div>
 								<div
-									className="text-xs text-secondary-500 dark:text-white/70 truncate"
+									className="text-xs leading-tight text-secondary-500 dark:text-white/70 break-words hyphens-auto"
 									title={t("Reporting", { context: "status" })}
 								>
 									{t("Reporting", { context: "status" })}
@@ -1780,7 +1781,7 @@ const Dashboard = () => {
 									{avgPackagesPerHost}
 								</div>
 								<div
-									className="text-xs text-secondary-500 dark:text-white/70 truncate"
+									className="text-xs leading-tight text-secondary-500 dark:text-white/70 break-words hyphens-auto"
 									title={t("Avg per Host")}
 								>
 									{t("Avg/Host")}
@@ -1797,12 +1798,12 @@ const Dashboard = () => {
 			case "recentUsers":
 				return (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
-						<div className="flex items-center justify-between mb-4 flex-shrink-0">
-							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+						<div className="flex flex-wrap items-center justify-between gap-2 mb-4 flex-shrink-0">
+							<h3 className="text-lg font-medium text-secondary-900 dark:text-white min-w-0">
 								{t("Recent Users Logged in")}
 							</h3>
 							{recentUsers?.length > 0 && (
-								<span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+								<span className="inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap px-2.5 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
 									<Users className="h-3 w-3" />
 									{t("{{count}} user", { count: recentUsers.length })}
 								</span>
@@ -1814,12 +1815,12 @@ const Dashboard = () => {
 								<p className="text-sm">{t("No users found")}</p>
 							</div>
 						) : (
-							<div className="overflow-hidden rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0 flex flex-col">
-								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
+							<div className="card-table overflow-x-auto rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0 flex flex-col">
+								<table className="w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
 									<thead className="bg-secondary-50 dark:bg-secondary-700/50">
 										<tr>
-											<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-												{t("Username")}
+											<th className="px-3 py-1.5 max-w-0 w-full truncate text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
+												{t("Username", { context: "column" })}
 											</th>
 											<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
 												{t("Last Login")}
@@ -1832,8 +1833,8 @@ const Dashboard = () => {
 												key={u.id}
 												className="hover:bg-secondary-50 dark:hover:bg-secondary-700/50 transition-colors"
 											>
-												<td className="px-3 py-1.5 whitespace-nowrap">
-													<span className="font-medium text-secondary-900 dark:text-white">
+												<td className="px-3 py-1.5 max-w-0 w-full">
+													<span className="block truncate font-medium text-secondary-900 dark:text-white">
 														{u.username}
 													</span>
 												</td>
@@ -1854,12 +1855,12 @@ const Dashboard = () => {
 			case "recentCollection":
 				return (
 					<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
-						<div className="flex items-center justify-between mb-4 flex-shrink-0">
-							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+						<div className="flex flex-wrap items-center justify-between gap-2 mb-4 flex-shrink-0">
+							<h3 className="text-lg font-medium text-secondary-900 dark:text-white min-w-0">
 								{t("Recent Collection")}
 							</h3>
 							{recentCollection?.length > 0 && (
-								<span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+								<span className="inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap px-2.5 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
 									<Server className="h-3 w-3" />
 									{t("{{count}} host", { count: recentCollection.length })}
 								</span>
@@ -1871,8 +1872,8 @@ const Dashboard = () => {
 								<p className="text-sm">{t("No hosts found")}</p>
 							</div>
 						) : (
-							<div className="overflow-hidden rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0 flex flex-col">
-								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
+							<div className="card-table overflow-x-auto rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0 flex flex-col">
+								<table className="w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
 									<thead className="bg-secondary-50 dark:bg-secondary-700/50">
 										<tr>
 											<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
@@ -1889,11 +1890,12 @@ const Dashboard = () => {
 												key={host.id}
 												className="hover:bg-secondary-50 dark:hover:bg-secondary-700/50 transition-colors"
 											>
-												<td className="px-3 py-1.5 whitespace-nowrap">
+												<td className="px-3 py-1.5 max-w-0 w-full">
 													<button
 														type="button"
 														onClick={() => navigate(`/hosts/${host.id}`)}
-														className="font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 hover:underline"
+														title={host.friendly_name || host.hostname}
+														className="block max-w-full truncate text-left font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 hover:underline"
 													>
 														{host.friendly_name || host.hostname}
 													</button>
@@ -1950,6 +1952,22 @@ const Dashboard = () => {
 		);
 	}
 
+	// Pie and doughnut legends sit below the chart: the cards are narrow, and
+	// a legend beside the chart cut its labels off (more so translated ones).
+	const pieLegend = {
+		position: "bottom",
+		labels: {
+			color: isDark ? "#ffffff" : "#374151",
+			font: {
+				size: isMobile ? 10 : 11,
+			},
+			padding: 6,
+			usePointStyle: true,
+			pointStyle: "circle",
+			generateLabels: shortLegendLabels(),
+		},
+	};
+
 	const chartOptions = {
 		responsive: true,
 		maintainAspectRatio: false,
@@ -1957,23 +1975,7 @@ const Dashboard = () => {
 			arc: { borderRadius: 5 },
 		},
 		plugins: {
-			legend: {
-				position: isMobile ? "bottom" : "right",
-				labels: {
-					color: isDark ? "#ffffff" : "#374151",
-					font: {
-						size: isMobile ? 10 : 12,
-					},
-					padding: isMobile ? 10 : 15,
-					usePointStyle: true,
-					pointStyle: "circle",
-				},
-			},
-		},
-		layout: {
-			padding: {
-				right: isMobile ? 10 : 20,
-			},
+			legend: pieLegend,
 		},
 		onClick: handleOSChartClick,
 	};
@@ -1986,23 +1988,7 @@ const Dashboard = () => {
 			arc: { borderRadius: 5 },
 		},
 		plugins: {
-			legend: {
-				position: isMobile ? "bottom" : "right",
-				labels: {
-					color: isDark ? "#ffffff" : "#374151",
-					font: {
-						size: isMobile ? 10 : 12,
-					},
-					padding: isMobile ? 10 : 15,
-					usePointStyle: true,
-					pointStyle: "circle",
-				},
-			},
-		},
-		layout: {
-			padding: {
-				right: isMobile ? 10 : 20,
-			},
+			legend: pieLegend,
 		},
 		onClick: handleOSChartClick,
 	};
@@ -2014,23 +2000,7 @@ const Dashboard = () => {
 			arc: { borderRadius: 5 },
 		},
 		plugins: {
-			legend: {
-				position: "right",
-				labels: {
-					color: isDark ? "#ffffff" : "#374151",
-					font: {
-						size: 12,
-					},
-					padding: 15,
-					usePointStyle: true,
-					pointStyle: "circle",
-				},
-			},
-		},
-		layout: {
-			padding: {
-				right: 20,
-			},
+			legend: pieLegend,
 		},
 		onClick: handleUpdateStatusChartClick,
 		onHover: (event, elements) => {
@@ -2048,25 +2018,20 @@ const Dashboard = () => {
 			arc: { borderRadius: 5 },
 		},
 		plugins: {
-			legend: {
-				position: "right",
-				labels: {
-					color: isDark ? "#ffffff" : "#374151",
-					font: {
-						size: 12,
-					},
-					padding: 15,
-					usePointStyle: true,
-					pointStyle: "circle",
-				},
-			},
-		},
-		layout: {
-			padding: {
-				right: 20,
-			},
+			legend: pieLegend,
 		},
 		onClick: handlePackagePriorityChartClick,
+	};
+
+	// Dates and hours of the package trends chart follow the UI language;
+	// English keeps its 12-hour clock.
+	const chart_locale = currentLanguage() === "fr" ? "fr-FR" : "en-US";
+	const chart_hour12 = chart_locale === "en-US";
+	const hourLabel = (hour) => {
+		if (!chart_hour12) return `${hour}\u00a0h`;
+		if (hour === 0) return "12 AM";
+		if (hour < 12) return `${hour} AM`;
+		return hour === 12 ? "12 PM" : `${hour - 12} PM`;
 	};
 
 	const packageTrendsChartOptions = {
@@ -2117,12 +2082,12 @@ const Dashboard = () => {
 									return label; // Return original label if date is invalid
 								}
 								// Format full ISO timestamp with date and time
-								return date.toLocaleDateString("en-US", {
+								return date.toLocaleDateString(chart_locale, {
 									month: "short",
 									day: "numeric",
 									hour: "numeric",
 									minute: "2-digit",
-									hour12: true,
+									hour12: chart_hour12,
 								});
 							} catch (_error) {
 								return label; // Return original label if parsing fails
@@ -2137,12 +2102,12 @@ const Dashboard = () => {
 								if (Number.isNaN(date.getTime())) {
 									return label; // Return original label if date is invalid
 								}
-								return date.toLocaleDateString("en-US", {
+								return date.toLocaleDateString(chart_locale, {
 									month: "short",
 									day: "numeric",
 									hour: "numeric",
 									minute: "2-digit",
-									hour12: true,
+									hour12: chart_hour12,
 								});
 							} catch (_error) {
 								return label; // Return original label if parsing fails
@@ -2156,7 +2121,7 @@ const Dashboard = () => {
 							if (Number.isNaN(date.getTime())) {
 								return label; // Return original label if date is invalid
 							}
-							return date.toLocaleDateString("en-US", {
+							return date.toLocaleDateString(chart_locale, {
 								month: "short",
 								day: "numeric",
 							});
@@ -2213,14 +2178,7 @@ const Dashboard = () => {
 									return label; // Return original label if date is invalid
 								}
 								// Extract hour from full ISO timestamp
-								const hourNum = date.getHours();
-								return hourNum === 0
-									? "12 AM"
-									: hourNum < 12
-										? `${hourNum} AM`
-										: hourNum === 12
-											? "12 PM"
-											: `${hourNum - 12} PM`;
+								return hourLabel(date.getHours());
 							} catch (_error) {
 								return label; // Return original label if parsing fails
 							}
@@ -2237,13 +2195,7 @@ const Dashboard = () => {
 									return hour; // Return original hour if invalid
 								}
 
-								return hourNum === 0
-									? "12 AM"
-									: hourNum < 12
-										? `${hourNum} AM`
-										: hourNum === 12
-											? "12 PM"
-											: `${hourNum - 12} PM`;
+								return hourLabel(hourNum);
 							} catch (_error) {
 								return label; // Return original label if parsing fails
 							}
@@ -2256,7 +2208,7 @@ const Dashboard = () => {
 							if (Number.isNaN(date.getTime())) {
 								return label; // Return original label if date is invalid
 							}
-							return date.toLocaleDateString("en-US", {
+							return date.toLocaleDateString(chart_locale, {
 								month: "short",
 								day: "numeric",
 							});
@@ -2321,6 +2273,7 @@ const Dashboard = () => {
 					font: {
 						size: 12,
 					},
+					callback: categoryTicks(),
 				},
 				grid: {
 					color: isDark ? "#374151" : "#e5e7eb",

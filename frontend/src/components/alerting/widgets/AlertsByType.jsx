@@ -8,9 +8,11 @@ import {
 import { ChevronRight } from "lucide-react";
 import { useMemo, useRef } from "react";
 import { Bar } from "react-chartjs-2";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { useTheme } from "../../../contexts/ThemeContext";
 import { formatAlertType } from "../../../utils/alertLabels";
+import { categoryTicks } from "../../../utils/chartLabels";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip);
 
@@ -21,6 +23,7 @@ const TYPE_COLORS = {
 };
 
 const AlertsByType = ({ alerts }) => {
+	const { t } = useTranslation();
 	const { isDark } = useTheme();
 	const navigate = useNavigate();
 	const chart_ref = useRef(null);
@@ -49,7 +52,7 @@ const AlertsByType = ({ alerts }) => {
 	}, [alerts]);
 
 	const chart_data = {
-		labels: has_data ? labels : ["No alerts"],
+		labels: has_data ? labels : [t("No alerts")],
 		datasets: [
 			{
 				data: has_data ? counts : [0],
@@ -81,6 +84,7 @@ const AlertsByType = ({ alerts }) => {
 				ticks: {
 					color: isDark ? "#ffffff" : "#374151",
 					font: { size: 12 },
+					callback: categoryTicks(),
 				},
 				grid: { display: false },
 			},
@@ -102,14 +106,14 @@ const AlertsByType = ({ alerts }) => {
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-				Alerts by Type
+				{t("Alerts by Type")}
 			</h3>
 			<div className="flex-1 min-h-0">
 				{has_data ? (
 					<Bar ref={chart_ref} data={chart_data} options={options} />
 				) : (
 					<div className="flex items-center justify-center h-full text-secondary-500 dark:text-white text-sm">
-						No active alerts
+						{t("No active alerts")}
 					</div>
 				)}
 			</div>
@@ -117,7 +121,7 @@ const AlertsByType = ({ alerts }) => {
 				to="/reporting?tab=alerts"
 				className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:underline flex-shrink-0"
 			>
-				View all alerts
+				{t("View all alerts")}
 				<ChevronRight className="h-4 w-4" />
 			</Link>
 		</div>

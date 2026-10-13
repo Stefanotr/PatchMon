@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckSquare, Clock, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import StatusBox, { STATUS_BOX_CLASS, StatusBoxGrid } from "../../ui/StatusBox";
 
 const PatchingPendingApproval = ({ data }) => {
 	const { t } = useTranslation();
@@ -52,47 +53,37 @@ const PatchingPendingApproval = ({ data }) => {
 
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
-			<div className="flex items-center justify-between mb-4 flex-shrink-0">
-				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+			<div className="flex flex-wrap items-center justify-between gap-2 mb-4 flex-shrink-0">
+				<h3 className="text-lg font-medium text-secondary-900 dark:text-white min-w-0">
 					{t("Pending Approval")}
 				</h3>
 				{needs_action > 0 && (
-					<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+					<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
 						<AlertTriangle className="h-3 w-3" />
 						{t("{{count}} need action", { count: needs_action })}
 					</span>
 				)}
 			</div>
-			<div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
-				{boxes.map((box) => {
-					const Icon = box.Icon;
-					return (
-						<Link
-							key={box.label}
-							to={box.to}
-							className={`card p-4 text-left w-full hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 ${
-								box.highlight
-									? "border border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/10"
-									: ""
-							}`}
-						>
-							<div className="flex items-center">
-								<Icon
-									className={`h-5 w-5 ${box.icon_class} mr-2 flex-shrink-0`}
-								/>
-								<div>
-									<p className="text-sm text-secondary-500 dark:text-white">
-										{box.label}
-									</p>
-									<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-										{box.value}
-									</p>
-								</div>
-							</div>
-						</Link>
-					);
-				})}
-			</div>
+			<StatusBoxGrid>
+				{boxes.map((box) => (
+					<Link
+						key={box.label}
+						to={box.to}
+						className={`${STATUS_BOX_CLASS} hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 ${
+							box.highlight
+								? "border border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/10"
+								: ""
+						}`}
+					>
+						<StatusBox
+							Icon={box.Icon}
+							iconClass={box.icon_class}
+							label={box.label}
+							value={box.value}
+						/>
+					</Link>
+				))}
+			</StatusBoxGrid>
 			{needs_action > 0 && (
 				<Link
 					to="/patching?tab=runs&status=validated"

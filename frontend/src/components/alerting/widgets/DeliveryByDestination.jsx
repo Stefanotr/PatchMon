@@ -2,8 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Bar } from "react-chartjs-2";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { useTheme } from "../../../contexts/ThemeContext";
+import { currentLanguage } from "../../../i18n";
 import { notificationsAPI } from "../../../utils/api";
 
 const DEST_COLORS = [
@@ -18,6 +20,7 @@ const DEST_COLORS = [
 ];
 
 const DeliveryByDestination = () => {
+	const { t } = useTranslation();
 	const { isDark } = useTheme();
 	const navigate = useNavigate();
 	const [period, setPeriod] = useState("7d");
@@ -60,6 +63,7 @@ const DeliveryByDestination = () => {
 		const filtered = logEntries.filter((e) => new Date(e.created_at) >= cutoff);
 
 		// Build day labels
+		const locale = currentLanguage() === "fr" ? "fr-FR" : "en-US";
 		const day_labels = [];
 		const day_keys = [];
 		for (let i = days - 1; i >= 0; i--) {
@@ -69,8 +73,8 @@ const DeliveryByDestination = () => {
 			day_keys.push(date.toISOString().slice(0, 10));
 			day_labels.push(
 				days <= 7
-					? date.toLocaleDateString("en-US", { weekday: "short" })
-					: date.toLocaleDateString("en-US", {
+					? date.toLocaleDateString(locale, { weekday: "short" })
+					: date.toLocaleDateString(locale, {
 							month: "short",
 							day: "numeric",
 						}),
@@ -173,9 +177,9 @@ const DeliveryByDestination = () => {
 
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
-			<div className="flex items-center justify-between mb-4 flex-shrink-0">
-				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-					Delivery by Destination
+			<div className="flex flex-wrap items-center justify-between gap-2 mb-4 flex-shrink-0">
+				<h3 className="text-lg font-medium text-secondary-900 dark:text-white min-w-0">
+					{t("Delivery by Destination")}
 				</h3>
 				<div className="flex gap-1">
 					<button
@@ -183,14 +187,14 @@ const DeliveryByDestination = () => {
 						onClick={() => setPeriod("7d")}
 						className={`${pill_base} ${period === "7d" ? pill_active : pill_inactive}`}
 					>
-						7d
+						{t("7d")}
 					</button>
 					<button
 						type="button"
 						onClick={() => setPeriod("30d")}
 						className={`${pill_base} ${period === "30d" ? pill_active : pill_inactive}`}
 					>
-						30d
+						{t("30d")}
 					</button>
 				</div>
 			</div>
@@ -199,7 +203,7 @@ const DeliveryByDestination = () => {
 					<Bar data={chart_data} options={options} />
 				) : (
 					<div className="flex items-center justify-center h-full text-secondary-500 dark:text-white text-sm">
-						No delivery data for this period
+						{t("No delivery data for this period")}
 					</div>
 				)}
 			</div>
@@ -207,7 +211,7 @@ const DeliveryByDestination = () => {
 				to="/reporting?tab=log"
 				className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:underline flex-shrink-0"
 			>
-				View delivery log
+				{t("View delivery log")}
 				<ChevronRight className="h-4 w-4" />
 			</Link>
 		</div>

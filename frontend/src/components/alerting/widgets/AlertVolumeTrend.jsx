@@ -10,8 +10,10 @@ import {
 import { ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Line } from "react-chartjs-2";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { useTheme } from "../../../contexts/ThemeContext";
+import { currentLanguage, tk } from "../../../i18n";
 
 ChartJS.register(
 	CategoryScale,
@@ -29,7 +31,15 @@ const SEVERITY_COLORS = {
 	informational: { border: "#3b82f6", bg: "rgba(59, 130, 246, 0.08)" },
 };
 
+const SEVERITY_LABELS = {
+	critical: tk("Critical"),
+	error: tk("Error"),
+	warning: tk("Warning"),
+	informational: tk("Informational"),
+};
+
 const AlertVolumeTrend = ({ alerts }) => {
+	const { t } = useTranslation();
 	const { isDark } = useTheme();
 	const navigate = useNavigate();
 	const [period, setPeriod] = useState("7d");
@@ -39,6 +49,7 @@ const AlertVolumeTrend = ({ alerts }) => {
 	const { labels, new_counts, resolved_counts, severity_counts, has_data } =
 		useMemo(() => {
 			const now = new Date();
+			const locale = currentLanguage() === "fr" ? "fr-FR" : "en-US";
 			const day_labels = [];
 			const new_by_day = [];
 			const resolved_by_day = [];
@@ -59,8 +70,8 @@ const AlertVolumeTrend = ({ alerts }) => {
 
 				const label =
 					days <= 7
-						? date.toLocaleDateString("en-US", { weekday: "short" })
-						: date.toLocaleDateString("en-US", {
+						? date.toLocaleDateString(locale, { weekday: "short" })
+						: date.toLocaleDateString(locale, {
 								month: "short",
 								day: "numeric",
 							});
@@ -98,7 +109,7 @@ const AlertVolumeTrend = ({ alerts }) => {
 
 	const volume_datasets = [
 		{
-			label: "New Alerts",
+			label: t("New Alerts"),
 			data: new_counts,
 			borderColor: "#ef4444",
 			backgroundColor: "rgba(239, 68, 68, 0.08)",
@@ -108,7 +119,7 @@ const AlertVolumeTrend = ({ alerts }) => {
 			pointHoverRadius: 5,
 		},
 		{
-			label: "Resolved",
+			label: t("Resolved", { context: "chart" }),
 			data: resolved_counts,
 			borderColor: "#10b981",
 			backgroundColor: "rgba(16, 185, 129, 0.08)",
@@ -121,7 +132,7 @@ const AlertVolumeTrend = ({ alerts }) => {
 
 	const severity_datasets = Object.entries(SEVERITY_COLORS).map(
 		([key, colors]) => ({
-			label: key.charAt(0).toUpperCase() + key.slice(1),
+			label: t(SEVERITY_LABELS[key]),
 			data: severity_counts[key],
 			borderColor: colors.border,
 			backgroundColor: colors.bg,
@@ -196,23 +207,23 @@ const AlertVolumeTrend = ({ alerts }) => {
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<div className="flex items-center justify-between mb-4 flex-shrink-0 gap-2 flex-wrap">
-				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-					Alert Volume Trend
+				<h3 className="text-lg font-medium text-secondary-900 dark:text-white min-w-0">
+					{t("Alert Volume Trend")}
 				</h3>
-				<div className="flex gap-1">
+				<div className="flex flex-wrap gap-1">
 					<button
 						type="button"
 						onClick={() => setView("volume")}
 						className={`${pill_base} ${view === "volume" ? pill_active : pill_inactive}`}
 					>
-						Volume
+						{t("Volume")}
 					</button>
 					<button
 						type="button"
 						onClick={() => setView("severity")}
 						className={`${pill_base} ${view === "severity" ? pill_active : pill_inactive}`}
 					>
-						Severity
+						{t("Severity")}
 					</button>
 					<span className="mx-1 border-l border-secondary-300 dark:border-secondary-600" />
 					<button
@@ -220,14 +231,14 @@ const AlertVolumeTrend = ({ alerts }) => {
 						onClick={() => setPeriod("7d")}
 						className={`${pill_base} ${period === "7d" ? pill_active : pill_inactive}`}
 					>
-						7d
+						{t("7d")}
 					</button>
 					<button
 						type="button"
 						onClick={() => setPeriod("30d")}
 						className={`${pill_base} ${period === "30d" ? pill_active : pill_inactive}`}
 					>
-						30d
+						{t("30d")}
 					</button>
 				</div>
 			</div>
@@ -236,7 +247,7 @@ const AlertVolumeTrend = ({ alerts }) => {
 					<Line data={chart_data} options={options} />
 				) : (
 					<div className="flex items-center justify-center h-full text-secondary-500 dark:text-white text-sm">
-						No alert data for this period
+						{t("No alert data for this period")}
 					</div>
 				)}
 			</div>
@@ -244,7 +255,7 @@ const AlertVolumeTrend = ({ alerts }) => {
 				to="/reporting?tab=alerts"
 				className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:underline flex-shrink-0"
 			>
-				View alert history
+				{t("View alert history")}
 				<ChevronRight className="h-4 w-4" />
 			</Link>
 		</div>

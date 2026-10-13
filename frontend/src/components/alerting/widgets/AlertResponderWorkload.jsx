@@ -1,8 +1,10 @@
 import { ChevronRight, User, UserCheck, Users } from "lucide-react";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 
 const AlertResponderWorkload = ({ alerts, users }) => {
+	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const { responders, unassigned_count, avg_load } = useMemo(() => {
 		const user_map = {};
@@ -50,13 +52,13 @@ const AlertResponderWorkload = ({ alerts, users }) => {
 
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
-			<div className="flex items-center justify-between mb-4 flex-shrink-0">
-				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-					Responder Workload
+			<div className="flex flex-wrap items-center justify-between gap-2 mb-4 flex-shrink-0">
+				<h3 className="text-lg font-medium text-secondary-900 dark:text-white min-w-0">
+					{t("Responder Workload")}
 				</h3>
 				{avg_load > 0 && (
 					<span className="text-xs text-secondary-500 dark:text-secondary-400">
-						Avg: {avg_load}
+						{t("Avg: {{value}}", { value: avg_load })}
 					</span>
 				)}
 			</div>
@@ -65,7 +67,7 @@ const AlertResponderWorkload = ({ alerts, users }) => {
 				{responders.length === 0 && unassigned_count === 0 ? (
 					<div className="flex flex-col items-center justify-center py-6 text-secondary-400 dark:text-white flex-1">
 						<Users className="h-8 w-8 mb-2" />
-						<p className="text-sm">No active assignments</p>
+						<p className="text-sm">{t("No active assignments")}</p>
 					</div>
 				) : (
 					<div className="flex flex-col gap-2 flex-1">
@@ -84,9 +86,9 @@ const AlertResponderWorkload = ({ alerts, users }) => {
 										)
 									}
 								>
-									<div className="flex items-center justify-between">
-										<div className="flex items-center gap-1.5">
-											<User className="h-3.5 w-3.5 text-secondary-400" />
+									<div className="flex items-center justify-between gap-2">
+										<div className="flex items-center gap-1.5 min-w-0">
+											<User className="h-3.5 w-3.5 text-secondary-400 flex-shrink-0" />
 											<span className="text-sm text-secondary-700 dark:text-secondary-200 truncate max-w-[10rem]">
 												{responder.name}
 											</span>
@@ -130,7 +132,7 @@ const AlertResponderWorkload = ({ alerts, users }) => {
 								<div className="flex items-center gap-1.5">
 									<Users className="h-3.5 w-3.5 text-amber-500" />
 									<span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-										Active unassigned
+										{t("Active unassigned")}
 									</span>
 								</div>
 								<span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
@@ -153,7 +155,7 @@ const AlertResponderWorkload = ({ alerts, users }) => {
 								<div className="flex items-center gap-1.5">
 									<UserCheck className="h-3.5 w-3.5 text-primary-500" />
 									<span className="text-sm text-primary-600 dark:text-primary-400 font-medium">
-										My active alerts
+										{t("My active alerts")}
 									</span>
 								</div>
 								<ChevronRight className="h-3.5 w-3.5 text-primary-400" />
@@ -167,7 +169,7 @@ const AlertResponderWorkload = ({ alerts, users }) => {
 				to="/reporting?tab=alerts"
 				className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:underline flex-shrink-0"
 			>
-				View all alerts
+				{t("View all alerts")}
 				<ChevronRight className="h-4 w-4" />
 			</Link>
 		</div>

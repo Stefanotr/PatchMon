@@ -125,6 +125,93 @@
 	.badge-danger {
 		@apply badge bg-danger-100 text-danger-800 dark:bg-danger-900 dark:text-danger-200;
 	}
+
+	/* Counter boxes of the dashboard status cards (components/ui/StatusBox),
+	   laid out for the width of the card, not of the window (a card is narrow
+	   on a wide screen when the dashboard has many columns):
+	   - from 17rem: a 2x2 grid of tiles, the label under the value;
+	   - from 13rem: one row per box, icon, label, value;
+	   - narrower: one tile per row, so the label keeps the whole width. */
+	.status-boxes {
+		container-type: inline-size;
+	}
+
+	.status-boxes-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.5rem;
+		height: 100%;
+	}
+
+	.status-box {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		align-content: center;
+		align-items: center;
+		column-gap: 0.5rem;
+		padding: 0.625rem 0.75rem;
+	}
+
+	.status-box-icon {
+		grid-area: 1 / 1;
+	}
+
+	.status-box-value {
+		grid-area: 1 / 2;
+	}
+
+	.status-box-label {
+		grid-area: 2 / 1 / 3 / 3;
+		margin-top: 0.25rem;
+	}
+
+	@container (13rem <= width < 17rem) {
+		.status-box {
+			grid-template-columns: auto minmax(0, 1fr) auto;
+		}
+
+		.status-box-label {
+			grid-area: 1 / 2;
+			margin-top: 0;
+		}
+
+		.status-box-value {
+			grid-area: 1 / 3;
+			text-align: right;
+		}
+	}
+
+	@container (width >= 17rem) {
+		.status-boxes-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 0.75rem;
+		}
+
+		.status-box {
+			padding: 0.75rem;
+		}
+	}
+
+	/* Small tables of the dashboard cards (recent runs, scans, alerts). The
+	   main column truncates (max-w-0 w-full on its cells) so the others keep
+	   their width. Rather than pushed past the edge of a narrow card, the
+	   columns marked card-table-optional (times, mostly) are left out below
+	   20rem, and those marked card-table-wide below 26rem. */
+	.card-table {
+		container-type: inline-size;
+	}
+
+	@container (width < 20rem) {
+		.card-table-optional {
+			display: none;
+		}
+	}
+
+	@container (width < 26rem) {
+		.card-table-wide {
+			display: none;
+		}
+	}
 }
 
 @layer utilities {

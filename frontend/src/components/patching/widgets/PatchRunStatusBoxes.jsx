@@ -1,6 +1,7 @@
 import { CheckCircle, Clock, ListChecks, XCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import StatusBox, { STATUS_BOX_CLASS, StatusBoxGrid } from "../../ui/StatusBox";
 
 const PatchRunStatusBoxes = ({ data }) => {
 	const { t } = useTranslation();
@@ -46,32 +47,22 @@ const PatchRunStatusBoxes = ({ data }) => {
 			<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
 				{t("Patch Run Status")}
 			</h3>
-			<div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
-				{boxes.map((box) => {
-					const Icon = box.Icon;
-					return (
-						<Link
-							key={box.label}
-							to={box.to}
-							className="card p-4 text-left w-full hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200"
-						>
-							<div className="flex items-center">
-								<Icon
-									className={`h-5 w-5 ${box.icon_class} mr-2 flex-shrink-0`}
-								/>
-								<div>
-									<p className="text-sm text-secondary-500 dark:text-white">
-										{box.label}
-									</p>
-									<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-										{box.value}
-									</p>
-								</div>
-							</div>
-						</Link>
-					);
-				})}
-			</div>
+			<StatusBoxGrid>
+				{boxes.map((box) => (
+					<Link
+						key={box.label}
+						to={box.to}
+						className={`${STATUS_BOX_CLASS} hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200`}
+					>
+						<StatusBox
+							Icon={box.Icon}
+							iconClass={box.icon_class}
+							label={box.label}
+							value={box.value}
+						/>
+					</Link>
+				))}
+			</StatusBoxGrid>
 		</div>
 	);
 };
