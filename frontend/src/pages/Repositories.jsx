@@ -26,9 +26,11 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import ModalPortal from "../components/ui/ModalPortal";
 import { usePageRefresh } from "../hooks/usePageRefresh";
+import { tk } from "../i18n";
 import { dashboardAPI, repositoryAPI } from "../utils/api";
 
 // The summary cards read from their own query, so refreshing the table alone
@@ -49,7 +51,20 @@ const SORTABLE_COLUMN_IDS = new Set([
 	"hostCount",
 ]);
 
+// Default table columns. The saved layout (localStorage) keeps these English
+// labels; they are translated where they are shown.
+const DEFAULT_COLUMNS = [
+	{ id: "name", label: tk("Repository"), visible: true, order: 0 },
+	{ id: "url", label: tk("URL"), visible: true, order: 1 },
+	{ id: "distribution", label: tk("Distribution"), visible: true, order: 2 },
+	{ id: "security", label: tk("Security"), visible: true, order: 3 },
+	{ id: "status", label: tk("Status"), visible: true, order: 4 },
+	{ id: "hostCount", label: tk("Hosts"), visible: true, order: 5 },
+	{ id: "actions", label: tk("Actions"), visible: true, order: 6 },
+];
+
 const Repositories = () => {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
@@ -93,16 +108,6 @@ const Repositories = () => {
 
 	// Column configuration
 	const [columnConfig, setColumnConfig] = useState(() => {
-		const defaultConfig = [
-			{ id: "name", label: "Repository", visible: true, order: 0 },
-			{ id: "url", label: "URL", visible: true, order: 1 },
-			{ id: "distribution", label: "Distribution", visible: true, order: 2 },
-			{ id: "security", label: "Security", visible: true, order: 3 },
-			{ id: "status", label: "Status", visible: true, order: 4 },
-			{ id: "hostCount", label: "Hosts", visible: true, order: 5 },
-			{ id: "actions", label: "Actions", visible: true, order: 6 },
-		];
-
 		const saved = localStorage.getItem("repositories-column-config");
 		if (saved) {
 			try {
@@ -111,7 +116,7 @@ const Repositories = () => {
 				console.error("Failed to parse saved column config:", e);
 			}
 		}
-		return defaultConfig;
+		return DEFAULT_COLUMNS;
 	});
 
 	const updateColumnConfig = (newConfig) => {
@@ -245,16 +250,7 @@ const Repositories = () => {
 	};
 
 	const resetColumns = () => {
-		const defaultConfig = [
-			{ id: "name", label: "Repository", visible: true, order: 0 },
-			{ id: "url", label: "URL", visible: true, order: 1 },
-			{ id: "distribution", label: "Distribution", visible: true, order: 2 },
-			{ id: "security", label: "Security", visible: true, order: 3 },
-			{ id: "status", label: "Status", visible: true, order: 4 },
-			{ id: "hostCount", label: "Hosts", visible: true, order: 5 },
-			{ id: "actions", label: "Actions", visible: true, order: 6 },
-		];
-		updateColumnConfig(defaultConfig);
+		updateColumnConfig(DEFAULT_COLUMNS);
 	};
 
 	const handleDeleteRepository = (repo, e) => {
@@ -332,7 +328,9 @@ const Repositories = () => {
 				<div className="flex items-center">
 					<AlertTriangle className="h-5 w-5 text-red-400 mr-2" />
 					<span className="text-red-700 dark:text-red-300">
-						Failed to load repositories: {error.message}
+						{t("Failed to load repositories: {{message}}", {
+							message: error.message,
+						})}
 					</span>
 				</div>
 			</div>
@@ -349,7 +347,7 @@ const Repositories = () => {
 							type="button"
 							onClick={cancelDelete}
 							className="fixed inset-0 cursor-default"
-							aria-label="Close modal"
+							aria-label={t("Close modal")}
 							disabled={deleteRepositoryMutation.isPending}
 						/>
 						<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-md w-full mx-4 relative z-10">
@@ -361,10 +359,10 @@ const Repositories = () => {
 										</div>
 										<div className="min-w-0">
 											<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-												Delete Repository
+												{t("Delete Repository")}
 											</h3>
 											<p className="text-sm text-secondary-600 dark:text-white">
-												This action cannot be undone
+												{t("This action cannot be undone")}
 											</p>
 										</div>
 									</div>
@@ -372,7 +370,7 @@ const Repositories = () => {
 										type="button"
 										onClick={cancelDelete}
 										className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700 text-secondary-400 hover:text-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-										aria-label="Close"
+										aria-label={t("Close")}
 										disabled={deleteRepositoryMutation.isPending}
 									>
 										<X className="h-5 w-5" />
@@ -381,18 +379,26 @@ const Repositories = () => {
 							</div>
 							<div className="px-6 py-4">
 								<p className="text-secondary-700 dark:text-white">
-									Are you sure you want to delete{" "}
-									<span className="font-semibold">
-										"{deleteModalData.name}"
-									</span>
-									?
+									<Trans
+										i18nKey='Are you sure you want to delete "<name/>"?'
+										components={{
+											name: (
+												<span className="font-semibold">
+													{deleteModalData.name}
+												</span>
+											),
+										}}
+									/>
 								</p>
 								{deleteModalData.hostCount > 0 && (
 									<div className="mt-3 p-3 bg-danger-50 dark:bg-danger-900 border border-danger-200 dark:border-danger-700 rounded-md">
 										<p className="text-sm text-danger-800 dark:text-danger-200">
-											<strong>Warning:</strong> This repository is currently
-											assigned to {deleteModalData.hostCount} host
-											{deleteModalData.hostCount !== 1 ? "s" : ""}.
+											<Trans
+												i18nKey="<strong>Warning:</strong> This repository is currently assigned to {{count}} host."
+												count={deleteModalData.hostCount}
+												values={{ count: deleteModalData.hostCount }}
+												components={{ strong: <strong /> }}
+											/>
 										</p>
 									</div>
 								)}
@@ -404,7 +410,7 @@ const Repositories = () => {
 									className="btn-outline"
 									disabled={deleteRepositoryMutation.isPending}
 								>
-									Cancel
+									{t("Cancel")}
 								</button>
 								<button
 									type="button"
@@ -413,8 +419,8 @@ const Repositories = () => {
 									disabled={deleteRepositoryMutation.isPending}
 								>
 									{deleteRepositoryMutation.isPending
-										? "Deleting..."
-										: "Delete Repository"}
+										? t("Deleting...")
+										: t("Delete Repository")}
 								</button>
 							</div>
 						</div>
@@ -426,10 +432,10 @@ const Repositories = () => {
 			<div className="flex items-center justify-between mb-6">
 				<div>
 					<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
-						Repositories
+						{t("Repositories")}
 					</h1>
 					<p className="text-sm text-secondary-600 dark:text-white mt-1">
-						Manage and monitor your package repositories
+						{t("Manage and monitor your package repositories")}
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
@@ -438,12 +444,12 @@ const Repositories = () => {
 						onClick={() => refreshRepositories()}
 						disabled={isRefreshing}
 						className="btn-outline flex items-center gap-2"
-						title="Refresh repositories data"
+						title={t("Refresh repositories data")}
 					>
 						<RefreshCw
 							className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
 						/>
-						{isRefreshing ? "Refreshing..." : "Refresh"}
+						{isRefreshing ? t("Refreshing...") : t("Refresh")}
 					</button>
 				</div>
 			</div>
@@ -458,13 +464,13 @@ const Repositories = () => {
 						setSearchTerm("");
 					}}
 					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full min-h-[44px]"
-					title="Click to clear all repository filters"
+					title={t("Click to clear all repository filters")}
 				>
 					<div className="flex items-center">
 						<Database className="h-5 w-5 text-primary-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Total Repositories
+								{t("Total Repositories")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{stats?.totalRepositories || 0}
@@ -481,13 +487,13 @@ const Repositories = () => {
 						setSearchTerm("");
 					}}
 					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full min-h-[44px]"
-					title="Click to filter active repositories only"
+					title={t("Click to filter active repositories only")}
 				>
 					<div className="flex items-center">
 						<Server className="h-5 w-5 text-success-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Active Repositories
+								{t("Active Repositories")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{stats?.activeRepositories || 0}
@@ -504,13 +510,13 @@ const Repositories = () => {
 						setSearchTerm("");
 					}}
 					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full min-h-[44px]"
-					title="Click to filter HTTPS repositories only"
+					title={t("Click to filter HTTPS repositories only")}
 				>
 					<div className="flex items-center">
 						<Shield className="h-5 w-5 text-warning-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Secure (HTTPS)
+								{t("Secure (HTTPS)", { context: "count" })}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{stats?.secureRepositories || 0}
@@ -524,7 +530,7 @@ const Repositories = () => {
 						<ShieldCheck className="h-5 w-5 text-danger-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Security Score
+								{t("Security Score")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{stats?.securityPercentage || 0}%
@@ -550,7 +556,7 @@ const Repositories = () => {
 									<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-secondary-400 dark:text-white" />
 									<input
 										type="text"
-										placeholder="Search repositories..."
+										placeholder={t("Search repositories...")}
 										value={searchTerm}
 										onChange={(e) => setSearchTerm(e.target.value)}
 										className="w-full pl-10 pr-4 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white placeholder-secondary-500 dark:placeholder-secondary-400"
@@ -563,7 +569,9 @@ const Repositories = () => {
 								<div className="flex items-center gap-2 px-3 py-2 bg-primary-50 dark:bg-primary-900 border border-primary-200 dark:border-primary-700 rounded-md">
 									<Server className="h-4 w-4 text-primary-600 dark:text-primary-400" />
 									<span className="text-sm text-primary-700 dark:text-primary-300">
-										Filtered by: {filteredHost.friendly_name}
+										{t("Filtered by: {{name}}", {
+											name: filteredHost.friendly_name,
+										})}
 									</span>
 									<button
 										type="button"
@@ -577,6 +585,7 @@ const Repositories = () => {
 											});
 										}}
 										className="text-primary-500 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-200"
+										aria-label={t("Clear host filter")}
 									>
 										<X className="h-4 w-4" />
 									</button>
@@ -590,9 +599,9 @@ const Repositories = () => {
 									onChange={(e) => setFilterType(e.target.value)}
 									className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white"
 								>
-									<option value="all">All Security Types</option>
-									<option value="secure">HTTPS Only</option>
-									<option value="insecure">HTTP Only</option>
+									<option value="all">{t("All Security Types")}</option>
+									<option value="secure">{t("HTTPS Only")}</option>
+									<option value="insecure">{t("HTTP Only")}</option>
 								</select>
 							</div>
 
@@ -603,9 +612,9 @@ const Repositories = () => {
 									onChange={(e) => setFilterStatus(e.target.value)}
 									className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white"
 								>
-									<option value="all">All Statuses</option>
-									<option value="active">Active Only</option>
-									<option value="inactive">Inactive Only</option>
+									<option value="all">{t("All Statuses")}</option>
+									<option value="active">{t("Active Only")}</option>
+									<option value="inactive">{t("Inactive Only")}</option>
 								</select>
 							</div>
 
@@ -617,7 +626,7 @@ const Repositories = () => {
 									className="flex items-center gap-2 px-3 py-2 text-sm text-secondary-700 dark:text-white bg-white dark:bg-secondary-700 border border-secondary-300 dark:border-secondary-600 rounded-md hover:bg-secondary-50 dark:hover:bg-secondary-600 transition-colors"
 								>
 									<Columns className="h-4 w-4" />
-									Columns
+									{t("Columns")}
 								</button>
 							</div>
 						</div>
@@ -629,12 +638,12 @@ const Repositories = () => {
 								<Database className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 								<p className="text-secondary-500 dark:text-white">
 									{repositories?.length === 0
-										? "No repositories found"
-										: "No repositories match your filters"}
+										? t("No repositories found")
+										: t("No repositories match your filters")}
 								</p>
 								{repositories?.length === 0 && (
 									<p className="text-sm text-secondary-400 dark:text-white mt-2">
-										No repositories have been reported by your hosts yet
+										{t("No repositories have been reported by your hosts yet")}
 									</p>
 								)}
 							</div>
@@ -689,7 +698,7 @@ const Repositories = () => {
 																	: "badge-danger"
 															}`}
 														>
-															{repo.is_active ? "Active" : "Inactive"}
+															{repo.is_active ? t("Active") : t("Inactive")}
 														</span>
 													)}
 												</div>
@@ -698,7 +707,7 @@ const Repositories = () => {
 												{visibleColumns.some((col) => col.id === "url") && (
 													<div>
 														<p className="text-xs text-secondary-500 dark:text-white mb-1">
-															URL
+															{t("URL")}
 														</p>
 														<p
 															className="text-sm text-secondary-900 dark:text-white font-mono truncate"
@@ -719,14 +728,14 @@ const Repositories = () => {
 																<>
 																	<Lock className="h-4 w-4 text-green-600" />
 																	<span className="text-sm text-green-600 font-medium">
-																		Secure
+																		{t("Secure")}
 																	</span>
 																</>
 															) : (
 																<>
 																	<Unlock className="h-4 w-4 text-orange-600" />
 																	<span className="text-sm text-orange-600 font-medium">
-																		Insecure
+																		{t("Insecure")}
 																	</span>
 																</>
 															)}
@@ -738,8 +747,7 @@ const Repositories = () => {
 														<div className="flex items-center gap-1">
 															<Server className="h-4 w-4 text-secondary-400" />
 															<span className="text-sm text-secondary-700 dark:text-white">
-																{repo.hostCount} Host
-																{repo.hostCount !== 1 ? "s" : ""}
+																{t("{{count}} Host", { count: repo.hostCount })}
 															</span>
 														</div>
 													)}
@@ -756,10 +764,10 @@ const Repositories = () => {
 															}}
 															className="text-orange-600 hover:text-red-900 dark:text-orange-600 dark:hover:text-red-400 flex items-center gap-1"
 															disabled={deleteRepositoryMutation.isPending}
-															title="Delete repository"
+															title={t("Delete repository")}
 														>
 															<Trash2 className="h-4 w-4" />
-															<span className="text-sm">Delete</span>
+															<span className="text-sm">{t("Delete")}</span>
 														</button>
 													</div>
 												)}
@@ -784,12 +792,12 @@ const Repositories = () => {
 																onClick={() => handleSort(column.id)}
 																className="flex items-center justify-start gap-1 hover:text-secondary-700 dark:hover:text-secondary-200 transition-colors"
 															>
-																{column.label}
+																{t(column.label)}
 																{getSortIcon(column.id)}
 															</button>
 														) : (
 															<span className="flex items-center justify-start">
-																{column.label}
+																{t(column.label)}
 															</span>
 														)}
 													</th>
@@ -806,7 +814,11 @@ const Repositories = () => {
 													{visibleColumns.map((column) => (
 														<td
 															key={column.id}
-															className="px-4 py-2 whitespace-nowrap text-left"
+															className={`px-4 py-2 whitespace-nowrap text-left ${
+																// The URL takes the room the other columns
+																// leave, truncated, so the table fits.
+																column.id === "url" ? "max-w-0 w-full" : ""
+															}`}
 														>
 															{renderCellContent(column, repo)}
 														</td>
@@ -825,7 +837,7 @@ const Repositories = () => {
 						<div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
 							<div className="flex items-center gap-2">
 								<span className="text-sm text-secondary-700 dark:text-white">
-									Rows per page:
+									{t("Rows per page:")}
 								</span>
 								<select
 									value={pageSize}
@@ -842,7 +854,11 @@ const Repositories = () => {
 								</select>
 							</div>
 							<span className="text-sm text-secondary-700 dark:text-white">
-								{pageStart}-{pageEnd} of {totalRepositories}
+								{t("{{start}}-{{end}} of {{total}}", {
+									start: pageStart,
+									end: pageEnd,
+									total: totalRepositories,
+								})}
 							</span>
 						</div>
 						<div className="flex items-center gap-2">
@@ -851,12 +867,15 @@ const Repositories = () => {
 								onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
 								disabled={currentPage <= 1}
 								className="p-2 rounded border border-secondary-300 dark:border-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed"
-								aria-label="Previous repositories page"
+								aria-label={t("Previous repositories page")}
 							>
 								<ChevronLeft className="h-4 w-4" />
 							</button>
 							<span className="text-sm text-secondary-700 dark:text-white">
-								Page {currentPage} of {totalPages}
+								{t("Page {{page}} of {{totalPages}}", {
+									page: currentPage,
+									totalPages,
+								})}
 							</span>
 							<button
 								type="button"
@@ -865,7 +884,7 @@ const Repositories = () => {
 								}
 								disabled={currentPage >= totalPages}
 								className="p-2 rounded border border-secondary-300 dark:border-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed"
-								aria-label="Next repositories page"
+								aria-label={t("Next repositories page")}
 							>
 								<ChevronRight className="h-4 w-4" />
 							</button>
@@ -904,7 +923,7 @@ const Repositories = () => {
 			case "url":
 				return (
 					<div
-						className="text-sm text-secondary-900 dark:text-white max-w-xs truncate"
+						className="text-sm text-secondary-900 dark:text-white truncate"
 						title={repo.url}
 					>
 						{repo.url}
@@ -926,12 +945,12 @@ const Repositories = () => {
 						{isSecure ? (
 							<div className="flex items-center gap-1 text-green-600">
 								<Lock className="h-4 w-4" />
-								<span className="text-sm">Secure</span>
+								<span className="text-sm">{t("Secure")}</span>
 							</div>
 						) : (
 							<div className="flex items-center gap-1 text-orange-600">
 								<Unlock className="h-4 w-4" />
-								<span className="text-sm">Insecure</span>
+								<span className="text-sm">{t("Insecure")}</span>
 							</div>
 						)}
 					</div>
@@ -940,7 +959,7 @@ const Repositories = () => {
 			case "status":
 				return (
 					<span className={repo.is_active ? "badge-success" : "badge-danger"}>
-						{repo.is_active ? "Active" : "Inactive"}
+						{repo.is_active ? t("Active") : t("Inactive")}
 					</span>
 				);
 			case "hostCount":
@@ -958,7 +977,7 @@ const Repositories = () => {
 							onClick={(e) => handleDeleteRepository(repo, e)}
 							className="text-orange-600 hover:text-red-900 dark:text-orange-600 dark:hover:text-red-400 flex items-center gap-1"
 							disabled={deleteRepositoryMutation.isPending}
-							title="Delete repository"
+							title={t("Delete repository")}
 						>
 							<Trash2 className="h-4 w-4" />
 						</button>
@@ -978,6 +997,7 @@ const ColumnSettingsModal = ({
 	onReorder,
 	onReset,
 }) => {
+	const { t } = useTranslation();
 	const [draggedIndex, setDraggedIndex] = useState(null);
 
 	const handleDragStart = (e, index) => {
@@ -1007,12 +1027,13 @@ const ColumnSettingsModal = ({
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-md">
 				<div className="flex justify-between items-center mb-4">
 					<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-						Column Settings
+						{t("Column Settings")}
 					</h3>
 					<button
 						type="button"
 						onClick={onClose}
 						className="text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-300"
+						aria-label={t("Close")}
 					>
 						<X className="h-5 w-5" />
 					</button>
@@ -1035,7 +1056,7 @@ const ColumnSettingsModal = ({
 							<div className="flex items-center gap-3">
 								<GripVertical className="h-4 w-4 text-secondary-400" />
 								<span className="text-sm font-medium text-secondary-900 dark:text-white">
-									{column.label}
+									{t(column.label)}
 								</span>
 							</div>
 							<button
@@ -1062,14 +1083,14 @@ const ColumnSettingsModal = ({
 						onClick={onReset}
 						className="px-4 py-2 text-sm text-secondary-600 dark:text-white hover:text-secondary-800 dark:hover:text-secondary-200"
 					>
-						Reset to Default
+						{t("Reset to Default")}
 					</button>
 					<button
 						type="button"
 						onClick={onClose}
 						className="px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 transition-colors"
 					>
-						Done
+						{t("Done")}
 					</button>
 				</div>
 			</div>
