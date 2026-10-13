@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Bar } from "react-chartjs-2";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../../../contexts/ThemeContext";
 import { getBarOptions } from "./chartOptions";
@@ -20,6 +21,7 @@ function getSegmentValues(stats) {
 }
 
 const OpenSCAPDistributionDoughnut = ({ data }) => {
+	const { t } = useTranslation();
 	const { isDark } = useTheme();
 	const navigate = useNavigate();
 	const [show_skipped, set_show_skipped] = useState(false);
@@ -36,7 +38,7 @@ const OpenSCAPDistributionDoughnut = ({ data }) => {
 
 	const datasets = [
 		{
-			label: "Passed",
+			label: t("Passed"),
 			data: [osc.passed, db.passed],
 			backgroundColor: PASSED_COLOR,
 			borderWidth: 0,
@@ -44,7 +46,7 @@ const OpenSCAPDistributionDoughnut = ({ data }) => {
 			borderSkipped: false,
 		},
 		{
-			label: "Failed",
+			label: t("Failed"),
 			data: [osc.failed, db.failed],
 			backgroundColor: FAILED_COLOR,
 			borderWidth: 0,
@@ -52,7 +54,7 @@ const OpenSCAPDistributionDoughnut = ({ data }) => {
 			borderSkipped: false,
 		},
 		{
-			label: "Warnings",
+			label: t("Warnings"),
 			data: [osc.warnings, db.warnings],
 			backgroundColor: WARNINGS_COLOR,
 			borderWidth: 0,
@@ -62,7 +64,7 @@ const OpenSCAPDistributionDoughnut = ({ data }) => {
 		...(show_skipped
 			? [
 					{
-						label: "Skipped",
+						label: t("Skipped"),
 						data: [osc.skipped, db.skipped],
 						backgroundColor: SKIPPED_COLOR,
 						borderWidth: 0,
@@ -99,8 +101,8 @@ const OpenSCAPDistributionDoughnut = ({ data }) => {
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<div className="flex flex-wrap items-center justify-between gap-2 mb-4 flex-shrink-0">
-				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-					Benchmark Distribution
+				<h3 className="text-lg font-medium text-secondary-900 dark:text-white min-w-0">
+					{t("Benchmark Distribution")}
 				</h3>
 				<label className="flex items-center gap-2 cursor-pointer">
 					<input
@@ -110,7 +112,7 @@ const OpenSCAPDistributionDoughnut = ({ data }) => {
 						className="rounded border-secondary-300 dark:border-secondary-600 text-primary-600 focus:ring-primary-500"
 					/>
 					<span className="text-sm text-secondary-600 dark:text-white">
-						Show skipped
+						{t("Show skipped")}
 					</span>
 				</label>
 			</div>
@@ -119,7 +121,7 @@ const OpenSCAPDistributionDoughnut = ({ data }) => {
 					<Bar data={chart_data} options={options} />
 				) : (
 					<div className="flex items-center justify-center h-full text-secondary-500 dark:text-white text-sm">
-						No benchmark data yet
+						{t("No benchmark data yet")}
 					</div>
 				)}
 			</div>

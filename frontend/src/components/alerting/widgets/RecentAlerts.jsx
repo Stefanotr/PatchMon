@@ -1,6 +1,8 @@
 import { formatDistanceToNow } from "date-fns";
 import { BellOff, ChevronRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
+import { dateFnsLocale, tk } from "../../../i18n";
 
 const DISPLAY_LIMIT = 5;
 
@@ -14,21 +16,29 @@ const SEVERITY_COLORS = {
 		"bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
 };
 
+const SEVERITY_LABELS = {
+	critical: tk("Critical"),
+	error: tk("Error"),
+	warning: tk("Warning"),
+	informational: tk("Informational"),
+};
+
 const STATUS_INDICATORS = {
-	open: { color: "bg-red-500", pulse: true, label: "Open" },
-	acknowledged: { color: "bg-blue-500", pulse: false, label: "Acked" },
+	open: { color: "bg-red-500", pulse: true, label: tk("Open") },
+	acknowledged: { color: "bg-blue-500", pulse: false, label: tk("Acked") },
 	investigating: {
 		color: "bg-indigo-500",
 		pulse: false,
-		label: "Investigating",
+		label: tk("Investigating"),
 	},
-	escalated: { color: "bg-orange-500", pulse: true, label: "Escalated" },
-	silenced: { color: "bg-yellow-500", pulse: false, label: "Silenced" },
-	done: { color: "bg-green-500", pulse: false, label: "Done" },
-	resolved: { color: "bg-gray-400", pulse: false, label: "Resolved" },
+	escalated: { color: "bg-orange-500", pulse: true, label: tk("Escalated") },
+	silenced: { color: "bg-yellow-500", pulse: false, label: tk("Silenced") },
+	done: { color: "bg-green-500", pulse: false, label: tk("Done") },
+	resolved: { color: "bg-gray-400", pulse: false, label: tk("Resolved") },
 };
 
 const RecentAlerts = ({ alerts }) => {
+	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const recent = (alerts || [])
 		.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -43,32 +53,32 @@ const RecentAlerts = ({ alerts }) => {
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<div className="flex items-center justify-between mb-4 flex-shrink-0">
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-					Recent Alerts
+					{t("Recent Alerts")}
 				</h3>
 			</div>
 
 			{recent.length === 0 ? (
 				<div className="flex flex-col items-center justify-center py-6 text-secondary-400 dark:text-white flex-1">
 					<BellOff className="h-8 w-8 mb-2" />
-					<p className="text-sm">No recent alerts</p>
+					<p className="text-sm">{t("No recent alerts")}</p>
 				</div>
 			) : (
 				<div className="flex flex-col flex-1 min-h-0">
-					<div className="overflow-hidden rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0">
-						<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
+					<div className="card-table overflow-x-auto rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0">
+						<table className="w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
 							<thead className="bg-secondary-50 dark:bg-secondary-700/50">
 								<tr>
 									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-										Severity
+										{t("Severity")}
 									</th>
 									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-										Alert
+										{t("Alert")}
 									</th>
-									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-										Time
+									<th className="card-table-optional px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
+										{t("Time")}
 									</th>
-									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
-										Status
+									<th className="card-table-wide px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
+										{t("Status")}
 									</th>
 								</tr>
 							</thead>
@@ -90,20 +100,23 @@ const RecentAlerts = ({ alerts }) => {
 														SEVERITY_COLORS.informational
 													}`}
 												>
-													{alert.severity}
+													{SEVERITY_LABELS[severity_lower]
+														? t(SEVERITY_LABELS[severity_lower])
+														: alert.severity}
 												</span>
 											</td>
-											<td className="px-3 py-1.5">
-												<p className="font-medium text-secondary-900 dark:text-white truncate max-w-[12rem]">
+											<td className="px-3 py-1.5 max-w-0 w-full">
+												<p className="font-medium text-secondary-900 dark:text-white truncate">
 													{alert.title}
 												</p>
 											</td>
-											<td className="px-3 py-1.5 whitespace-nowrap text-secondary-500 dark:text-white text-xs">
+											<td className="card-table-optional px-3 py-1.5 whitespace-nowrap text-secondary-500 dark:text-white text-xs">
 												{formatDistanceToNow(new Date(alert.created_at), {
 													addSuffix: true,
+													locale: dateFnsLocale(),
 												})}
 											</td>
-											<td className="px-3 py-1.5 whitespace-nowrap">
+											<td className="card-table-wide px-3 py-1.5 whitespace-nowrap">
 												<div className="flex items-center gap-1.5">
 													<span
 														className={`h-2 w-2 rounded-full ${status.color} ${
@@ -111,7 +124,7 @@ const RecentAlerts = ({ alerts }) => {
 														}`}
 													/>
 													<span className="text-xs text-secondary-600 dark:text-secondary-300">
-														{status.label}
+														{t(status.label)}
 													</span>
 												</div>
 											</td>
@@ -125,7 +138,7 @@ const RecentAlerts = ({ alerts }) => {
 						to="/reporting?tab=alerts"
 						className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:underline flex-shrink-0"
 					>
-						View all alerts
+						{t("View all alerts")}
 						<ChevronRight className="h-4 w-4" />
 					</Link>
 				</div>

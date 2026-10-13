@@ -1,8 +1,10 @@
 import { AlertTriangle, ChevronRight, Clock, UserX } from "lucide-react";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 const AlertsRequiringAttention = ({ alerts }) => {
+	const { t } = useTranslation();
 	const { unacked, unassigned, escalated, stale_alerts } = useMemo(() => {
 		const now = new Date();
 		const stale_threshold = 24 * 60 * 60 * 1000; // 24 hours
@@ -53,21 +55,21 @@ const AlertsRequiringAttention = ({ alerts }) => {
 
 	const items = [
 		{
-			label: "Unacknowledged",
+			label: t("Unacknowledged"),
 			value: unacked,
 			Icon: AlertTriangle,
 			color: "text-red-500",
 			bg: "bg-red-50 dark:bg-red-900/20",
 		},
 		{
-			label: "Unassigned",
+			label: t("Unassigned"),
 			value: unassigned,
 			Icon: UserX,
 			color: "text-amber-500",
 			bg: "bg-amber-50 dark:bg-amber-900/20",
 		},
 		{
-			label: "Escalated",
+			label: t("Escalated"),
 			value: escalated,
 			Icon: AlertTriangle,
 			color: "text-orange-500",
@@ -78,7 +80,7 @@ const AlertsRequiringAttention = ({ alerts }) => {
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-				Requiring Attention
+				{t("Requiring Attention")}
 			</h3>
 
 			<div className="flex-1 min-h-0 flex flex-col gap-3">
@@ -91,8 +93,8 @@ const AlertsRequiringAttention = ({ alerts }) => {
 								key={item.label}
 								className={`flex items-center justify-between px-3 py-2.5 rounded-lg ${item.bg}`}
 							>
-								<div className="flex items-center gap-2">
-									<Icon className={`h-4 w-4 ${item.color}`} />
+								<div className="flex items-center gap-2 min-w-0">
+									<Icon className={`h-4 w-4 flex-shrink-0 ${item.color}`} />
 									<span className="text-sm text-secondary-700 dark:text-secondary-200">
 										{item.label}
 									</span>
@@ -112,7 +114,7 @@ const AlertsRequiringAttention = ({ alerts }) => {
 					<div className="mt-1">
 						<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase mb-1.5 flex items-center gap-1">
 							<Clock className="h-3 w-3" />
-							Stale ({">"}24h no update)
+							{t("Stale (>24h no update)")}
 						</p>
 						<div className="flex flex-col gap-1">
 							{stale_alerts.map((alert) => (
@@ -132,7 +134,7 @@ const AlertsRequiringAttention = ({ alerts }) => {
 				to="/reporting?tab=alerts&status=open"
 				className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:underline flex-shrink-0"
 			>
-				View open alerts
+				{t("View open alerts")}
 				<ChevronRight className="h-4 w-4" />
 			</Link>
 		</div>

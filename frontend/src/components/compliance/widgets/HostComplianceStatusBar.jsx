@@ -5,9 +5,12 @@ import {
 	ShieldOff,
 } from "lucide-react";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import StatusBox, { STATUS_BOX_CLASS, StatusBoxGrid } from "../../ui/StatusBox";
 
 const HostComplianceStatusBar = ({ data, onTabChange }) => {
+	const { t } = useTranslation();
 	const summary = data?.summary || {};
 	const compliant = summary.hosts_compliant ?? 0;
 	const warning = summary.hosts_warning ?? 0;
@@ -16,28 +19,28 @@ const HostComplianceStatusBar = ({ data, onTabChange }) => {
 
 	const boxes = [
 		{
-			label: "Compliant",
+			label: t("Compliant"),
 			value: compliant,
 			Icon: ShieldCheck,
 			icon_class: "text-green-600",
 			to: "/compliance",
 		},
 		{
-			label: "Warning",
+			label: t("Warning"),
 			value: warning,
 			Icon: AlertTriangle,
 			icon_class: "text-yellow-600",
 			to: "/compliance",
 		},
 		{
-			label: "Critical",
+			label: t("Critical"),
 			value: critical,
 			Icon: ShieldAlert,
 			icon_class: "text-red-600",
 			to: "/compliance",
 		},
 		{
-			label: "Never scanned",
+			label: t("Never scanned"),
 			value: unscanned,
 			Icon: ShieldOff,
 			icon_class: "text-secondary-600 dark:text-white",
@@ -45,28 +48,22 @@ const HostComplianceStatusBar = ({ data, onTabChange }) => {
 		},
 	];
 
+	const box_class = `${STATUS_BOX_CLASS} hover:bg-secondary-50 dark:hover:bg-secondary-700/50 transition-colors`;
+
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-				Host Compliance Status
+				{t("Host Compliance Status")}
 			</h3>
-			<div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
+			<StatusBoxGrid>
 				{boxes.map((box) => {
-					const Icon = box.Icon;
 					const content = (
-						<div className="flex items-center">
-							<Icon
-								className={`h-5 w-5 ${box.icon_class} mr-2 flex-shrink-0`}
-							/>
-							<div>
-								<p className="text-sm text-secondary-500 dark:text-white">
-									{box.label}
-								</p>
-								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-									{box.value}
-								</p>
-							</div>
-						</div>
+						<StatusBox
+							Icon={box.Icon}
+							iconClass={box.icon_class}
+							label={box.label}
+							value={box.value}
+						/>
 					);
 					return (
 						<Fragment key={box.label}>
@@ -74,7 +71,7 @@ const HostComplianceStatusBar = ({ data, onTabChange }) => {
 								<button
 									type="button"
 									onClick={() => onTabChange("hosts")}
-									className="card p-4 text-left w-full hover:bg-secondary-50 dark:hover:bg-secondary-700/50 transition-colors"
+									className={box_class}
 								>
 									{content}
 								</button>
@@ -82,7 +79,7 @@ const HostComplianceStatusBar = ({ data, onTabChange }) => {
 								<Link
 									to={box.to}
 									state={{ complianceTab: "hosts" }}
-									className="card p-4 text-left w-full hover:bg-secondary-50 dark:hover:bg-secondary-700/50 transition-colors"
+									className={box_class}
 								>
 									{content}
 								</Link>
@@ -90,7 +87,7 @@ const HostComplianceStatusBar = ({ data, onTabChange }) => {
 						</Fragment>
 					);
 				})}
-			</div>
+			</StatusBoxGrid>
 		</div>
 	);
 };

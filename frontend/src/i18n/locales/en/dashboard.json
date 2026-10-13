@@ -14,5 +14,9 @@
 	"{{count}} host_one": "{{count}} host",
 	"{{count}} host_other": "{{count}} hosts",
 	"Review {{count}} run needing action_one": "Review {{count}} run needing action",
-	"Review {{count}} run needing action_other": "Review {{count}} runs needing action"
+	"Review {{count}} run needing action_other": "Review {{count}} runs needing action",
+	"{{count}} running_one": "{{count}} running",
+	"{{count}} running_other": "{{count}} running",
+	"View all {{count}} scans_one": "View all {{count}} scans",
+	"View all {{count}} scans_other": "View all {{count}} scans"
 }

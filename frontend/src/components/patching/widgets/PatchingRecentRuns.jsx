@@ -26,8 +26,8 @@ const PatchingRecentRuns = ({ data }) => {
 				</div>
 			) : (
 				<div className="flex flex-col flex-1 min-h-0">
-					<div className="overflow-hidden rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0">
-						<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
+					<div className="card-table overflow-x-auto rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0">
+						<table className="w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
 							<thead className="bg-secondary-50 dark:bg-secondary-700/50">
 								<tr>
 									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
@@ -36,7 +36,7 @@ const PatchingRecentRuns = ({ data }) => {
 									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
 										{t("Status")}
 									</th>
-									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
+									<th className="card-table-optional px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
 										{t("When")}
 									</th>
 								</tr>
@@ -47,10 +47,10 @@ const PatchingRecentRuns = ({ data }) => {
 										key={run.id}
 										className="hover:bg-secondary-50 dark:hover:bg-secondary-700/50 transition-colors"
 									>
-										<td className="px-3 py-1.5 whitespace-nowrap">
+										<td className="px-3 py-1.5 max-w-0 w-full">
 											<Link
 												to={`/patching/runs/${run.id}`}
-												className="font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 hover:underline truncate max-w-[8rem] block"
+												className="font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 hover:underline truncate block"
 											>
 												{run.hosts?.friendly_name ||
 													run.hosts?.hostname ||
@@ -60,7 +60,7 @@ const PatchingRecentRuns = ({ data }) => {
 										<td className="px-3 py-1.5 whitespace-nowrap">
 											<PatchRunStatusBadge run={run} />
 										</td>
-										<td className="px-3 py-1.5 whitespace-nowrap text-secondary-500 dark:text-white text-xs">
+										<td className="card-table-optional px-3 py-1.5 whitespace-nowrap text-secondary-500 dark:text-white text-xs">
 											{formatDistanceToNow(new Date(run.created_at), {
 												addSuffix: true,
 												locale: dateFnsLocale(),

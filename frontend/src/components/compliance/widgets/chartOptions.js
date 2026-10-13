@@ -1,3 +1,5 @@
+import { categoryTicks, shortLegendLabels } from "../../../utils/chartLabels";
+
 /**
  * Shared Chart.js options for compliance widgets (theme-aware).
  * Use from widgets that use useTheme() and pass isDark.
@@ -11,19 +13,19 @@ export function getDoughnutOptions(is_dark, is_mobile = false) {
 			arc: { borderRadius: 5 },
 		},
 		plugins: {
+			// Below the chart: the cards are narrow, and a legend beside the
+			// chart cut its labels off (more so translated ones).
 			legend: {
-				position: is_mobile ? "bottom" : "right",
+				position: "bottom",
 				labels: {
 					color: is_dark ? "#ffffff" : "#374151",
-					font: { size: is_mobile ? 10 : 12 },
-					padding: is_mobile ? 10 : 15,
+					font: { size: is_mobile ? 10 : 11 },
+					padding: 6,
 					usePointStyle: true,
 					pointStyle: "circle",
+					generateLabels: shortLegendLabels(),
 				},
 			},
-		},
-		layout: {
-			padding: { right: is_mobile ? 10 : 20 },
 		},
 	};
 }
@@ -53,7 +55,12 @@ export function getBarOptions(is_dark, index_axis = "x") {
 			},
 			y: {
 				stacked: index_axis === "y",
-				ticks: { color: is_dark ? "#ffffff" : "#374151", font: { size: 12 } },
+				ticks: {
+					color: is_dark ? "#ffffff" : "#374151",
+					font: { size: 12 },
+					// Categories on this axis: shorten long profile names.
+					...(index_axis === "y" ? { callback: categoryTicks() } : {}),
+				},
 				grid: { color: is_dark ? "#374151" : "#e5e7eb" },
 			},
 		},
@@ -69,16 +76,16 @@ export function getPieOptions(is_dark) {
 		},
 		plugins: {
 			legend: {
-				position: "right",
+				position: "bottom",
 				labels: {
 					color: is_dark ? "#ffffff" : "#374151",
-					font: { size: 12 },
-					padding: 15,
+					font: { size: 11 },
+					padding: 6,
 					usePointStyle: true,
 					pointStyle: "circle",
+					generateLabels: shortLegendLabels(),
 				},
 			},
 		},
-		layout: { padding: { right: 20 } },
 	};
 }

@@ -15,12 +15,12 @@ const PatchingActivePolicies = ({ data }) => {
 
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
-			<div className="flex items-center justify-between mb-4 flex-shrink-0">
-				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+			<div className="flex flex-wrap items-center justify-between gap-2 mb-4 flex-shrink-0">
+				<h3 className="text-lg font-medium text-secondary-900 dark:text-white min-w-0">
 					{t("Active Runs")}
 				</h3>
 				{active_runs.length > 0 && (
-					<span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+					<span className="inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap px-2.5 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
 						<RefreshCw className="h-3 w-3 animate-spin" />
 						{t("{{count}} active", { count: active_runs.length })}
 					</span>
@@ -34,8 +34,8 @@ const PatchingActivePolicies = ({ data }) => {
 				</div>
 			) : (
 				<div className="flex flex-col flex-1 min-h-0">
-					<div className="overflow-hidden rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0">
-						<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
+					<div className="card-table overflow-x-auto rounded-lg border border-secondary-200 dark:border-secondary-700 flex-1 min-h-0">
+						<table className="w-full divide-y divide-secondary-200 dark:divide-secondary-700 text-sm">
 							<thead className="bg-secondary-50 dark:bg-secondary-700/50">
 								<tr>
 									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
@@ -44,7 +44,7 @@ const PatchingActivePolicies = ({ data }) => {
 									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
 										{t("Status")}
 									</th>
-									<th className="px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
+									<th className="card-table-optional px-3 py-1.5 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase">
 										{t("Started")}
 									</th>
 								</tr>
@@ -55,10 +55,10 @@ const PatchingActivePolicies = ({ data }) => {
 										key={run.id}
 										className="hover:bg-secondary-50 dark:hover:bg-secondary-700/50 transition-colors"
 									>
-										<td className="px-3 py-1.5 whitespace-nowrap">
+										<td className="px-3 py-1.5 max-w-0 w-full">
 											<Link
 												to={`/patching/runs/${run.id}`}
-												className="font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 hover:underline truncate max-w-[8rem] block"
+												className="font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 hover:underline truncate block"
 											>
 												{run.hosts?.friendly_name ||
 													run.hosts?.hostname ||
@@ -68,7 +68,7 @@ const PatchingActivePolicies = ({ data }) => {
 										<td className="px-3 py-1.5 whitespace-nowrap">
 											<PatchRunStatusBadge run={run} />
 										</td>
-										<td className="px-3 py-1.5 whitespace-nowrap text-secondary-500 dark:text-white text-xs">
+										<td className="card-table-optional px-3 py-1.5 whitespace-nowrap text-secondary-500 dark:text-white text-xs">
 											{run.started_at
 												? formatDistanceToNow(new Date(run.started_at), {
 														addSuffix: true,

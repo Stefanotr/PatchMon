@@ -4,9 +4,12 @@ import {
 	CheckCircle2,
 	ShieldAlert,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import StatusBox, { STATUS_BOX_CLASS, StatusBoxGrid } from "../../ui/StatusBox";
 
 const AlertStatusBoxes = ({ stats, alerts }) => {
+	const { t } = useTranslation();
 	const active =
 		(stats?.critical ?? 0) +
 		(stats?.error ?? 0) +
@@ -26,28 +29,28 @@ const AlertStatusBoxes = ({ stats, alerts }) => {
 
 	const boxes = [
 		{
-			label: "Active Alerts",
+			label: t("Active Alerts"),
 			value: active,
 			Icon: AlertTriangle,
 			icon_class: "text-red-500",
 			to: "/reporting?tab=alerts",
 		},
 		{
-			label: "Critical",
+			label: t("Critical"),
 			value: critical,
 			Icon: AlertOctagon,
 			icon_class: "text-red-600",
 			to: "/reporting?tab=alerts&severity=critical",
 		},
 		{
-			label: "Warnings",
+			label: t("Warnings"),
 			value: warnings,
 			Icon: ShieldAlert,
 			icon_class: "text-amber-500",
 			to: "/reporting?tab=alerts&severity=warning",
 		},
 		{
-			label: "Resolved Today",
+			label: t("Resolved Today"),
 			value: resolved_today,
 			Icon: CheckCircle2,
 			icon_class: "text-green-500",
@@ -58,34 +61,24 @@ const AlertStatusBoxes = ({ stats, alerts }) => {
 	return (
 		<div className="card p-4 sm:p-6 w-full h-full flex flex-col">
 			<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-				Alert Summary
+				{t("Alert Summary")}
 			</h3>
-			<div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
-				{boxes.map((box) => {
-					const Icon = box.Icon;
-					return (
-						<Link
-							key={box.label}
-							to={box.to}
-							className="card p-4 text-left w-full hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200"
-						>
-							<div className="flex items-center">
-								<Icon
-									className={`h-5 w-5 ${box.icon_class} mr-2 flex-shrink-0`}
-								/>
-								<div>
-									<p className="text-sm text-secondary-500 dark:text-white">
-										{box.label}
-									</p>
-									<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-										{box.value}
-									</p>
-								</div>
-							</div>
-						</Link>
-					);
-				})}
-			</div>
+			<StatusBoxGrid>
+				{boxes.map((box) => (
+					<Link
+						key={box.label}
+						to={box.to}
+						className={`${STATUS_BOX_CLASS} hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200`}
+					>
+						<StatusBox
+							Icon={box.Icon}
+							iconClass={box.icon_class}
+							label={box.label}
+							value={box.value}
+						/>
+					</Link>
+				))}
+			</StatusBoxGrid>
 		</div>
 	);
 };
