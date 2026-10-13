@@ -42,6 +42,10 @@ const (
 	wuaCanRequestReboot     = 2
 )
 
+// wuaDriverUpdate is the UpdateType of a driver in the WUA API (software
+// updates are 1).
+const wuaDriverUpdate = 2
+
 // WUAUpdate is one pending update returned by a Windows Update Agent search.
 type WUAUpdate struct {
 	GUID                string     `json:"guid"`
@@ -53,6 +57,11 @@ type WUAUpdate struct {
 	EulaAccepted        bool       `json:"eula"`
 	CanRequestUserInput bool       `json:"needs_input"`
 	Severity            string     `json:"severity"`
+	// Type is the WUA UpdateType: wuaDriverUpdate for a driver.
+	Type int `json:"type"`
+	// BrowseOnly: Windows Update offers the update as optional (a preview,
+	// for one) and does not install it on its own.
+	BrowseOnly bool `json:"browse_only"`
 }
 
 // DisplayName is the name the Windows Update collector reports for this
@@ -383,22 +392,46 @@ func filterWUA(pending []WUAUpdate, keep func(WUAUpdate) bool) []WUAUpdate {
 	return out
 }
 
+// HeldUpdate is a pending update a patch_all run leaves out, and why.
+type HeldUpdate struct {
+	Update WUAUpdate
+	Reason string
+}
+
+// patchAllExclusion says why patch_all never installs u, or "". Like Windows
+// Update itself, it leaves drivers and optional updates alone; naming the
+// update in a patch_package run installs it.
+func patchAllExclusion(u WUAUpdate) string {
+	switch {
+	case u.Type == wuaDriverUpdate:
+		return "driver update: Patch all leaves drivers out; patch it by name to install it"
+	case u.BrowseOnly:
+		return "optional update (a preview, or one Windows Update does not install on its own): Patch all leaves it out; patch it by name to install it"
+	}
+	return ""
+}
+
 // SelectPatchAllTargets picks what a patch_all run installs: every pending
 // update the server also lists as pending for this host, and every upgradable
-// WinGet app. An update the server has not seen is held back, so a run never
+// WinGet app. Drivers and optional updates are held back (patchAllExclusion).
+// An update the server has not seen is held back too, so a run never
 // installs something no operator was shown; the next report surfaces it. An
-// app WinGet only upgrades when named is held back too, as `winget upgrade
+// app WinGet only upgrades when named is held back as well, as `winget upgrade
 // --all` would; patching it by name upgrades it.
-func SelectPatchAllTargets(inv WindowsInventory, knownGUIDs []string) (targets []WindowsTarget, heldUpdates []WUAUpdate, heldApps []WinGetUpgrade) {
+func SelectPatchAllTargets(inv WindowsInventory, knownGUIDs []string) (targets []WindowsTarget, heldUpdates []HeldUpdate, heldApps []WinGetUpgrade) {
 	known := make(map[string]bool, len(knownGUIDs))
 	for _, g := range knownGUIDs {
 		known[strings.ToLower(strings.TrimSpace(g))] = true
 	}
 	for _, u := range inv.WUA.Updates {
-		if known[strings.ToLower(u.GUID)] {
+		switch why := patchAllExclusion(u); {
+		case why != "":
+			heldUpdates = append(heldUpdates, HeldUpdate{Update: u, Reason: why})
+		case !known[strings.ToLower(u.GUID)]:
+			heldUpdates = append(heldUpdates, HeldUpdate{Update: u,
+				Reason: "not in PatchMon's pending list for this host yet; it will be offered once the next report includes it"})
+		default:
 			targets = append(targets, WindowsTarget{Kind: TargetWUA, Name: u.DisplayName(), Update: u})
-		} else {
-			heldUpdates = append(heldUpdates, u)
 		}
 	}
 	for _, a := range inv.WinGet {
@@ -640,6 +673,9 @@ type ItemResult struct {
 	// Refusal is set when winget refused the upgrade for a reason that holds
 	// until a version changes, so the run remembers it (WinGetRefusals).
 	Refusal string `json:"-"`
+	// RestartInitiated: the installer is restarting the computer now, so
+	// the run starts nothing else.
+	RestartInitiated bool `json:"-"`
 }
 
 // ParseItemResult decodes the result line of a WUA install script.
@@ -686,6 +722,11 @@ const techMismatchReason = "the newer version uses another installer technology 
 // Failing them would fail every patch_all run on a host that has one, such as
 // Microsoft Edge on Windows Server, which the OS image installs and Edge's own
 // updater keeps current.
+//
+// Of the restart codes, only "restart initiated" stops the run: the installer
+// is restarting the computer now, so anything started after it would be cut
+// off. "Restart required" (to finish, or before installing) leaves the host
+// running, and the run goes on with the next item.
 func ClassifyWinGetExit(code uint32) ItemResult {
 	switch code {
 	case 0:
@@ -693,7 +734,7 @@ func ClassifyWinGetExit(code uint32) ItemResult {
 	case wingetRebootToFinish:
 		return ItemResult{Status: StatusOK, Detail: "upgraded; a restart is needed to finish", RebootRequired: true}
 	case wingetRebootInitiated:
-		return ItemResult{Status: StatusOK, Detail: "upgraded; the installer started a restart", RebootRequired: true}
+		return ItemResult{Status: StatusOK, Detail: "upgraded; its installer is restarting the computer", RebootRequired: true, RestartInitiated: true}
 	case wingetNoApplicableUpdate, wingetUpgradeVersionNewer, wingetInstallDowngrade:
 		return ItemResult{Status: StatusSkip, Detail: "no applicable upgrade any more (already up to date)"}
 	case wingetNoPackagesFound:
@@ -772,15 +813,24 @@ type WinGetListing struct {
 //     unreadable too, which catches a last row that did not fit. Its presence
 //     also overrides the introduction check: a first table followed by a
 //     footer is the regular one, whatever message stood above it.
+//   - winget prints no table without rows, so a table from which no row could
+//     be read counts one unreadable line: its only row did not fit, or none of
+//     them did. The footer is only recognised after a row, so it cannot catch
+//     that case.
 func parseWinGetUpgradeTables(lines []string) (apps []WinGetUpgrade, unreadable int) {
 	var cols *wingetColumns
 	tables, junk, tableStart := 0, 0, 0
 	explicit := false
 	announced := -1
 	footer := -1 // count on the first footer line after the rows of the table
+	rowless := 0 // tables from which no row could be read
 	endTable := func() {
 		if cols == nil {
 			return
+		}
+		if len(apps) == tableStart {
+			rowless++
+			unreadable++
 		}
 		if explicit && tables == 1 && footer >= 0 {
 			explicit = false
@@ -829,8 +879,9 @@ func parseWinGetUpgradeTables(lines []string) (apps []WinGetUpgrade, unreadable 
 		apps = append(apps, app)
 	}
 	endTable()
-	if announced > len(apps) {
-		unreadable += announced - len(apps)
+	// A rowless table already counted one of the rows the footer announces.
+	if missing := announced - len(apps) - rowless; missing > 0 {
+		unreadable += missing
 	}
 	return apps, unreadable
 }

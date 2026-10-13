@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/PatchMon/PatchMon/server-source-code/internal/middleware"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/queue"
+	"github.com/PatchMon/PatchMon/server-source-code/internal/store"
 )
 
 // Restart options, for a patch run (the wizard's Timing step) and for the
@@ -107,4 +110,33 @@ func snapshotWithReboot(snapshot []byte, opts *queue.RebootOptions) []byte {
 		return snapshot
 	}
 	return b
+}
+
+// permRestartHosts is the permission to restart hosts: with the restart
+// command, and with a patch run that restarts the host once it is over.
+const permRestartHosts = "can_restart_hosts"
+
+// errRestartNotAllowed answers a patch run that asks for a restart the user
+// may not order.
+const errRestartNotAllowed = "Restarting hosts requires the can_restart_hosts permission: submit the run without a restart"
+
+// WithRestartPermission makes a patch run that restarts the host require
+// can_restart_hosts, on top of can_manage_patching.
+func (h *PatchingHandler) WithRestartPermission(permissions *store.PermissionsStore) *PatchingHandler {
+	h.restartAllowed = func(r *http.Request) bool {
+		return middleware.RoleAllows(r, permissions, permRestartHosts)
+	}
+	return h
+}
+
+// refuseRestart answers 403 when the run asks for a restart (opts set) and
+// the user may not order one; it reports whether it did. Runs without a
+// restart are not concerned. Without a permission check wired, a restart is
+// refused.
+func (h *PatchingHandler) refuseRestart(w http.ResponseWriter, r *http.Request, opts *queue.RebootOptions) bool {
+	if opts == nil || (h.restartAllowed != nil && h.restartAllowed(r)) {
+		return false
+	}
+	JSON(w, http.StatusForbidden, map[string]string{"error": errRestartNotAllowed})
+	return true
 }

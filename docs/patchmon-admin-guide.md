@@ -217,7 +217,7 @@ Users also get a one-click button to create an auto-enrolment-style API token sc
 The Roles editor is where custom roles are authored. A role is a named bundle of permission flags:
 
 - `can_view_dashboard`, `can_view_hosts`, `can_view_users`, `can_view_packages`, `can_view_reports`, `can_view_notification_logs`
-- `can_manage_hosts`, `can_manage_users`, `can_manage_settings`, `can_manage_alerts`, `can_manage_notifications`, `can_manage_compliance`, `can_manage_patching`, `can_manage_automation`, `can_manage_docker`
+- `can_manage_hosts`, `can_manage_users`, `can_manage_settings`, `can_manage_alerts`, `can_manage_notifications`, `can_manage_compliance`, `can_manage_patching`, `can_restart_hosts`, `can_manage_automation`, `can_manage_docker`
 - `can_use_remote_access` (SSH terminal and RDP)
 
 The built-in roles (`superadmin`, `admin`, `user`, `readonly`) are immutable; the editor lets you create and edit additional roles alongside them and assign any user to any custom role.
@@ -1410,12 +1410,13 @@ Fleet-wide the Patching page is hidden from the sidebar when `patching` is not e
 
 ### Who Can Use It
 
-Patching uses two RBAC permissions on top of the module gate:
+Patching uses three RBAC permissions on top of the module gate:
 
 | Action | Permission | Route pattern |
 |---|---|---|
 | View dashboard, list runs, open a run, watch the live stream | `can_view_hosts` | `GET /patching/*` |
 | Trigger a run, approve, retry validation, stop, delete a run | `can_manage_patching` | `POST /patching/trigger`, `POST /patching/runs/{id}/approve`, etc. |
+| Run or approve a patch run that restarts the host, restart or cancel a restart on demand | `can_restart_hosts` (a restart also needs remote restarts enabled on the host; a cancel does not) | `POST /patching/trigger` and `/approve` with a reboot option, `POST /hosts/{id}/reboot`, `POST /hosts/{id}/reboot/cancel` |
 | View policies | `can_view_hosts` | `GET /patching/policies` |
 | Create, edit, delete policies and policy assignments / exclusions | `can_manage_patching` | `POST/PUT/DELETE /patching/policies/*` |
 
@@ -1512,11 +1513,11 @@ The agent chooses the patching back-end by detecting the host's package manager.
 
 When the agent detects it is running on Windows, patch runs are handled by the WUA + WinGet path rather than the Linux package-manager path. Every run, dry or real, starts with a fresh inventory on the host (an online Windows Update search and `winget list --upgrade-available`) and maps the requested names onto it. Nothing the server sends reaches a command line: the agent only acts on the update GUIDs and WinGet IDs its own inventory produced. The WinGet listing is read strictly: a line that does not fit the table's columns is never taken for an app, and if one sits among the rows (or the "N upgrades available." footer announces more rows than could be read), the listing is reported as unreadable and the run fails instead of silently leaving apps out.
 
-- **Patch all** installs every pending Windows Update that PatchMon also lists as pending for the host (anything newer is held back until the next report shows it), and upgrades every WinGet app with an upgrade available, one by one with `winget upgrade --id <id> --exact`. Apps WinGet only upgrades when they are named (pinned by their manifest, listed under "require explicit targeting") are skipped, as `winget upgrade --all` would; patch them by name to upgrade them.
+- **Patch all** installs every pending Windows Update that PatchMon also lists as pending for the host (anything newer is held back until the next report shows it), and upgrades every WinGet app with an upgrade available, one by one with `winget upgrade --id <id> --exact`. Apps WinGet only upgrades when they are named (pinned by their manifest, listed under "require explicit targeting") are skipped, as `winget upgrade --all` would; patch them by name to upgrade them. Driver updates and optional updates (previews, and other updates Windows Update only installs on request) are skipped too, each reported `[skip]` with the reason, dry run included; patch them by name to install them.
 - **Patch package** accepts the names shown in PatchMon: an update's display name (`Title (KB...)`), a bare `KB...` number or update GUID, an app's display name, or its WinGet ID. A name that is no longer pending is reported as skipped, like apt's "already the newest version". An ambiguous name, or one whose inventory source failed, fails the run rather than being guessed. So does a name winget shortened with an ellipsis, in the inventory or in the run's own listing (older winget versions cut columns to 120 characters): the match would not be certain, so the item fails and names the candidate WinGet IDs, which the API accepts as package names.
 - **Dry run** (Validate step) takes the same inventory and prints the plan without installing anything: one `[plan]` line per item with its size, version change and whether a restart is expected. Items the real run could not install (Windows waiting for a restart, a WinGet ID winget shortened, ...) fail the dry run the same way, so a clean dry run is worth approving. Because of the Windows Update search, a Windows dry run takes minutes rather than seconds; the wizard starts every host's dry run first and then waits for them (up to 15 minutes), so hosts validate in parallel.
 - **Packages winget will not upgrade in place.** When the newer version uses another installer technology than the installed one (typically Microsoft Edge on Windows Server, installed by the OS image and kept current by its own updater), or a winget pin blocks it, winget refuses before downloading anything. The item is reported `[skip]` with the reason, as `winget upgrade --all` does, so it does not fail every run. winget only checks this when upgrading, so the first attempt cannot be predicted; after that the agent remembers the refusal, and later dry runs and runs show the app as `[skip]` up front ("winget refused this upgrade (154 -> 155) on ...") instead of asking again. The refusal is dropped, and winget asked again, once the installed or available version changes or after 30 days. It is kept in `C:\ProgramData\PatchMon\windows-patch-state.json`, which the agent only trusts when it is a regular file owned by SYSTEM or Administrators; deleting it makes the next run ask winget again. The package still shows as outdated in PatchMon.
-- **Order and stop.** WinGet apps install before Windows Updates (an update can leave a restart pending that blocks app installers). **Stop** lets the item being installed finish and starts nothing else, since killing a Windows installer midway can leave it half applied. A heartbeat line every two minutes keeps long silent installs from tripping the stall timeout. A run is bounded to four hours; an item started near the end gets at least ten minutes. Installer progress redraws and escape sequences are filtered out of the output.
+- **Order and stop.** WinGet apps install before Windows Updates (an update can leave a restart pending that blocks app installers). **Stop** lets the item being installed finish and starts nothing else, since killing a Windows installer midway can leave it half applied. A heartbeat line every two minutes keeps long silent installs from tripping the stall timeout. A run is bounded to four hours; an item started near the end gets at least ten minutes. Installer progress redraws and escape sequences are filtered out of the output. When a WinGet installer restarts the computer itself (winget exit code `0x8A15010B`), its app is reported `[ok]` with that note, nothing else is started (the remaining items are `[skip]`), no other restart is scheduled, and the run ends without failing; the next run installs what is still pending. An installer that only asks for a restart (`0x8A150109`) does not stop the run.
 - Each item ends with a status line, `[ok]`, `[fail]` or `[skip]`, followed by indented details and installer output; **Packages affected** lists the `[plan]` items for a dry run and the `[ok]` items for a real run, including on a run that ended `failed` partway.
 - Reboot state and per-update results go through dedicated `/patching/windows-updates/*` endpoints.
 
@@ -1727,6 +1728,20 @@ You can stop a run while it is in the `running` state. This is a hard stop with 
 
 Many updates (a kernel, Windows cumulative updates, a .NET runtime) only take effect after a restart. PatchMon can restart the host once a run is over, or on demand from the Host Detail page. The agent always hands the restart to the operating system's own scheduler (`InitiateSystemShutdownEx` on Windows, `shutdown -r +N` on Linux and FreeBSD), which warns signed-in users with the message you give and survives the agent being restarted.
 
+#### Before PatchMon can restart a host
+
+Two things must be allowed, one on each side:
+
+- **On the host**, remote restarts must be enabled in the agent's `config.yml` (`/etc/patchmon/config.yml`, or `C:\ProgramData\PatchMon\config.yml` on Windows), then the agent service restarted:
+
+  ```yaml
+  integrations:
+    remote-restart-enabled: true
+  ```
+
+  The setting is off by default and the server cannot change it, like `ssh-proxy-enabled`: whoever administers the host decides whether PatchMon may restart it. Leave it off on hosts that must never be restarted remotely (domain controllers, hypervisors). While it is off, restart commands are refused and the restart a patch run asks for is skipped; cancelling a restart PatchMon scheduled stays possible.
+- **In PatchMon**, the user needs the `can_restart_hosts` permission, apart from `can_manage_patching`, so that restarting hosts can be given to fewer people than patching. The Restart button, the restart dialog and the wizard's Restart section only appear with it, and the server refuses a restart command or a patch run asking for a restart without it (`403 Restarting hosts requires the can_restart_hosts permission: submit the run without a restart`). When the permission was added, every role that could manage patching received it, so nothing changed for existing roles until an administrator removes it.
+
 #### Restart after a patch run
 
 The wizard's **Timing** step has a **Restart** section that applies to every host in the run:
@@ -1737,7 +1752,13 @@ The wizard's **Timing** step has a **Restart** section that applies to every hos
 | If one is needed | Restart only when the host reports a pending restart after the run: `/var/run/reboot-required`, `needs-restarting -r` or a newer installed kernel on Linux; an update that asked for one, or the Windows Update and Component Based Servicing flags, on Windows. |
 | Always | Restart after every real run. |
 
-Pick **when**: a delay in minutes after the run ends (5 to 10080), or a time of day. A time of day is turned into its next occurrence in your browser's time zone (today if still ahead, tomorrow otherwise). If the run itself ends late (a policy window, a host that was offline) and that time has passed, the agent waits for the same time on the next day instead of restarting in the middle of the day; a time less than 5 minutes ahead is pushed back to 5 minutes. The agent always waits at least 5 minutes, so the run's final status and inventory report reach the server first and signed-in users can save their work. A restart more than 7 days away is refused. The optional message (one line, at most 200 bytes) is shown to signed-in users after a `PatchMon:` prefix.
+Pick **when**: a delay in minutes after the run ends (5 to 10080), or a time of day. A time of day is turned into its next occurrence in your browser's time zone (today if still ahead, tomorrow otherwise). On the host:
+
+- a time still ahead is kept, or pushed back to 5 minutes from now if it is closer;
+- a time that passed 15 minutes ago or less (picked a few seconds late, network or clock lag) restarts 5 minutes from now;
+- a time that passed longer ago (a policy window, a host that was offline) waits for the next occurrence of the same time of day in the host's time zone, instead of restarting in the middle of the day. It stays at the same local time across a daylight saving change.
+
+The agent always waits at least 5 minutes, so the run's final status and inventory report reach the server first and signed-in users can save their work. A restart more than 7 days away is refused. The optional message (one line, at most 200 bytes) is shown to signed-in users after a `PatchMon:` prefix.
 
 The run's output ends with what the agent did, for example `Restart: scheduled for 2026-10-10 01:00 UTC (in 8h55m); signed-in users are warned`, and the Run Detail page shows the restart option the run was given.
 
@@ -1747,7 +1768,10 @@ The agent never restarts the host:
 - after a stopped run;
 - after a failed run on Linux (a half-applied transaction is better fixed before a restart);
 - on Windows, when the run reached its time limit, when an installer timed out and may still be running, or when the run failed before installing anything;
-- while another patch run is in progress on the host, or when a restart or shutdown is already pending, scheduled by PatchMon or by someone else (logind's schedule on systemd, a waiting `shutdown` process on SysV init and FreeBSD, `InitiateSystemShutdown` on Windows). PatchMon never replaces a pending shutdown with its own.
+- while another patch run is in progress on the host, or when a restart or shutdown is already pending, scheduled by PatchMon or by someone else (logind's schedule on systemd, a waiting `shutdown` process on SysV init and FreeBSD, `InitiateSystemShutdown` on Windows). PatchMon never replaces a pending shutdown with its own;
+- when remote restarts are disabled on the host (see above).
+
+In the last two cases the restart was wanted but skipped: the run keeps its status, its output says why (`Restart: skipped, remote restarts are disabled on this host (remote-restart-enabled in /etc/patchmon/config.yml)`, for example), and the restart history records it as failed with `restart skipped: <reason>`.
 
 When a restart was wanted but the operating system refused to schedule it, the run is marked `failed` with the reason, and the post-patch inventory report is still sent.
 
@@ -1755,23 +1779,33 @@ Runs submitted for approval ignore the restart option chosen at submission: the 
 
 #### Restart or cancel from the Host Detail page
 
-The **Restart** button in the Host Detail header opens a dialog to schedule a restart (delay or time of day, message), or to cancel a scheduled one. It needs the `can_manage_patching` permission, the Patching module, and a connected agent: the command is not queued for later.
+The **Restart** button in the Host Detail header opens a dialog to schedule a restart (delay or time of day, message), or to cancel a scheduled one. It needs the `can_restart_hosts` permission, the Patching module and a connected agent (the command is not queued for later); scheduling a restart also needs remote restarts enabled on the host, cancelling one does not.
 
 The same dialog opens from the **Reboot pending** pill on Host Detail and from the **Required** badge of the Hosts list's *Reboot* column. It shows the host's last reported state: why a restart is pending, or that none is and restarting is optional.
 
 The server waits up to 20 seconds for the agent's answer:
 
 - **Scheduled / cancelled**: the agent did it; the toast shows the restart time.
-- **The agent refused: ...**: a patch run is in progress on the host, a restart is already scheduled (cancel it first to pick another time), or nothing was scheduled when you cancelled.
-- **Sent to the agent, which did not answer in time**: nothing is confirmed; check the host. Agents older than this feature ignore restart commands; update the agent. With several PatchMon server instances behind Redis, the answer reaches the instance the agent is connected to, so a command relayed from another instance always ends here even though the agent carried it out.
+- **The agent refused: ...**: remote restarts are disabled on the host, a patch run is in progress on the host, a restart is already scheduled (cancel it first to pick another time), or no restart scheduled by PatchMon was pending when you cancelled.
+- **Sent to the agent, which did not answer in time**: nothing is confirmed yet; check the host. The agent answers within 15 seconds, so this means it is offline, busy or older than this feature (older agents ignore restart commands; update the agent). If it answers later, the history records the outcome then. With several PatchMon server instances behind Redis, the answer reaches the instance the agent is connected to, so a command relayed from another instance ends here even though the agent carried it out.
 
-A cancel stops any pending restart or shutdown on the host, whoever scheduled it (`shutdown -c` on Linux, the pending `shutdown` process on FreeBSD, `AbortSystemShutdown` on Windows), and is only reported done once the system no longer has one pending. While a restart or shutdown is pending, the agent refuses a real patch run that could not finish before it, or one whose time the system does not tell (SysV init, FreeBSD); dry runs still start.
+The routes that can restart a host only accept JSON requests (`Content-Type: application/json`, otherwise `415`): the two restart commands, and `POST /patching/trigger` and `POST /patching/runs/{id}/approve`. A page on another site cannot send such a request without the browser asking PatchMon first.
+
+A cancel only stops a restart PatchMon scheduled. The agent keeps a record of the restart it scheduled, `restart-scheduled.json` (in `/etc/patchmon`, readable by root only, on Linux and FreeBSD; in `C:\ProgramData\PatchMon`, for SYSTEM and Administrators only, on Windows), and cancels only when the pending restart matches it:
+
+- on systemd, logind's scheduled time;
+- on SysV init and FreeBSD, the `PatchMon:` message of the waiting `shutdown` process;
+- on Windows, a recorded time still ahead, no restart of the host since, and, in the System event log, a latest shutdown request (event 1074 from USER32) carrying the `PatchMon:` comment with no cancellation (event 1075) after it. When the event log cannot be read in time, the cancel is refused as unconfirmed rather than risk stopping someone else's shutdown.
+
+A restart or shutdown someone scheduled on the host itself is left alone: `no restart scheduled by PatchMon is pending on this host; a restart or shutdown scheduled outside PatchMon is left alone`. A cancel is only reported done once the system no longer has one pending.
+
+While a restart or shutdown is pending, the agent refuses a real patch run that could not finish before it, or one whose time the system does not tell (SysV init, FreeBSD); dry runs still start. On Windows, which offers no way to ask whether a shutdown is pending, only a restart PatchMon recorded counts.
 
 #### Restart history
 
-Every restart is recorded in the host's **Agent Activity** tab, as an outbound job named *Restart* or *Restart Cancel*; the dialog's **Restart history** link opens the tab filtered on them. A record says:
+Every restart is recorded in the host's **Agent Activity** tab, as an outbound job named *Restart* or *Restart Cancel*; the dialog's **Restart history** link opens the tab filtered on them. A command is recorded before it is sent (a command that cannot be recorded is not sent), then the same record gets the outcome. A record says:
 
-- the outcome: completed, or failed with the reason (agent not connected, refused by the agent and why, no answer in time);
+- the outcome: active while the command is on its way; completed; failed with the reason (agent not connected, command not sent, unreadable answer from the agent, refused by the agent and why, restart skipped by a patch run and why); or waiting, when the agent did not answer within 20 seconds. A waiting record is completed if the agent answers within 10 minutes; only the host that received the command can complete it. After that, it is closed as failed, `no answer from the agent within 10 minutes`;
 - in its output: the source (`manual` for the Restart button, `patch_run` with the run ID for a restart a patch run scheduled), who asked (`requested_by`), the delay or time and message chosen, and the time the host restarts (`reboot_at`).
 
 After the restart, the host's uptime starts again and the **Reboot pending** pill disappears with the next report.
@@ -3072,7 +3106,7 @@ After a successful bulk scan, the modal auto-closes after three seconds and each
 Compliance scanning on a host needs OpenSCAP (`oscap` binary) installed and the SSG content available locally. The first time you enable compliance on a host, the scanner usually isn't there yet. PatchMon handles this with an install job.
 
 1. Enable **compliance mode** on the host (set to `On-Demand` or `Enabled`) with OpenSCAP ticked, and click **Apply**.
-2. The agent saves the new settings and restarts. Because compliance with OpenSCAP has just been switched on, the server also queues an install job that starts as soon as the agent has restarted and reconnected (or after 30 seconds at the latest). The Compliance tab shows it as waiting until then. Hosts whose package manager can't install OpenSCAP (Windows, FreeBSD, Alpine and Arch) are skipped.
+2. The agent saves the new settings and restarts (if a patch run is in progress on the host, the restart waits until the run is over). Because compliance with OpenSCAP has just been switched on, the server also queues an install job that starts as soon as the agent has restarted and reconnected (or after 30 seconds at the latest). The Compliance tab shows it as waiting until then. Hosts whose package manager can't install OpenSCAP (Windows, FreeBSD, Alpine and Arch) are skipped.
 3. If the agent is not connected yet, the install job waits and retries every 30 seconds, up to twice, and runs straight away when the agent reconnects. While it waits, the host's queue shows it as delayed. If the agent still hasn't connected, it reports a failure. If it fails, click **Install Scanner** (or **Retry install**) on the Host Detail Compliance tab. The UI calls `POST /api/v1/compliance/install-scanner/{hostId}`, which returns `409` while an install is already running on the host; cancel that install first to start another. Hosts that already had compliance enabled before an upgrade also need this button once.
 4. Either way the server enqueues an install task, and the worker sends an install message to the agent.
 5. The agent installs the OpenSCAP scanner with the host's own package manager, then downloads SSG content from the server via `GET /api/v1/compliance/ssg-content/{filename}`. Progress events are reported back to Redis and surfaced in the UI via `GET /compliance/install-job/{hostId}`, which returns the current state plus a per-step message and progress percent. The states are `none` (no install has been requested), `waiting`, `active`, `completed`, `failed`, and `unknown` when the job can no longer be found. The state stays `active` until the agent reports its final step; if it hasn't reported within 20 minutes, the state becomes `failed`. The job history entry is updated from the same final step, including when it arrives after the install worker has stopped waiting. A `failed` state also carries an `error` field with the reason.
@@ -4792,7 +4826,7 @@ Restrictions:
 
 ### How Permissions Are Evaluated
 
-- **Admin and Super Admin** always have every permission, even if the `role_permissions` table says otherwise. The middleware short-circuits their permission checks. This is a safety net: if someone mis-edits the `admin` row (which shouldn't be possible via the UI, but could happen via direct database access), admins don't get locked out.
+- **Admin and Super Admin** have their permissions read from the `role_permissions` table like every other role: the middleware does not short-circuit their checks. Their rows grant every permission, and the UI does not let you edit them; a row edited directly in the database does change what they can do. When this fork adds `can_restart_hosts`, it grants it to `admin`, `superadmin` and every role that has `can_manage_patching`.
 - **Every other role** (built-in or custom) has its permissions read from the database at each request. Changes made in **Settings → Roles** take effect on the user's next API call; no restart required.
 - **Role hierarchy for user management** is enforced separately from the permissions above:
   - `superadmin` → rank 100

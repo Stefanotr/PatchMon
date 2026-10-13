@@ -567,6 +567,97 @@ func TestWindowsPatchAllHoldsBackExplicitOnlyApps(t *testing.T) {
 	}
 }
 
+// patch_all, dry or not, leaves drivers and optional updates out even when
+// PatchMon lists them, and says how to install them; named, they install.
+func TestWindowsPatchAllSkipsDriversAndOptionalUpdates(t *testing.T) {
+	driver := packages.WUAUpdate{GUID: "99999999-8888-7777-6666-555555555555", Title: "Intel - Net - 1.2.3.4", Type: 2, EulaAccepted: true}
+	preview := packages.WUAUpdate{GUID: "cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee", Title: "2026-09 Cumulative Update Preview", KBs: []string{"KB5066000"}, Type: 1, BrowseOnly: true, EulaAccepted: true}
+	srv := &fakeWindowsServer{known: []string{testCU.GUID, testDefender.GUID, driver.GUID, preview.GUID}}
+	for _, dry := range []bool{true, false} {
+		be := newFakeHost()
+		be.scan.Updates = append(be.scan.Updates, driver, preview)
+
+		outcome, out := runWindows(context.Background(), t, windowsPatchRequest{patchType: "patch_all", dryRun: dry}, be, srv, fastWindowsOpts())
+
+		if outcome.err != nil {
+			t.Errorf("dry=%v: err = %v", dry, outcome.err)
+		}
+		for _, c := range be.recorded() {
+			if c == "install-wua "+driver.GUID || c == "install-wua "+preview.GUID {
+				t.Errorf("dry=%v: patch_all installed %s", dry, c)
+			}
+		}
+		for _, want := range []string{
+			"[skip] " + driver.DisplayName() + "\n" + packages.OutputIndent + "driver update",
+			"[skip] " + preview.DisplayName() + "\n" + packages.OutputIndent + "optional update",
+			"patch it by name to install it",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("dry=%v: output lacks %q:\n%s", dry, want, out)
+			}
+		}
+		if !dry && !slices.Contains(be.recorded(), "install-wua "+testCU.GUID) {
+			t.Errorf("the other updates were not installed: %v", be.recorded())
+		}
+	}
+
+	be := newFakeHost()
+	be.scan.Updates = append(be.scan.Updates, driver, preview)
+	req := windowsPatchRequest{patchType: "patch_package", names: []string{driver.DisplayName(), preview.DisplayName()}}
+	runWindows(context.Background(), t, req, be, srv, fastWindowsOpts())
+	if got := installCalls(be.recorded()); !slices.Equal(got, []string{"install-wua " + driver.GUID, "install-wua " + preview.GUID}) {
+		t.Errorf("named driver and optional update: installs %v", got)
+	}
+}
+
+// An installer that restarts the computer itself (winget 0x8A15010B) ends
+// the run: its app counts as installed, nothing else starts, and the run does
+// not fail. "Restart required" codes let the run go on.
+func TestWindowsInstallerRestartingTheComputerEndsTheRun(t *testing.T) {
+	be := newFakeHost()
+	be.pending = true
+	be.wingetRes = map[string]packages.ItemResult{"Mozilla.Firefox": packages.ClassifyWinGetExit(0x8A15010B)}
+	srv := &fakeWindowsServer{known: []string{testCU.GUID, testDefender.GUID}}
+	req := windowsPatchRequest{patchType: "patch_all", restart: reboot.Options{Mode: reboot.ModeAlways}}
+
+	outcome, out := runWindows(context.Background(), t, req, be, srv, fastWindowsOpts())
+
+	if got := installCalls(be.recorded()); !slices.Equal(got, []string{"upgrade-winget Mozilla.Firefox"}) {
+		t.Fatalf("installs = %v, want only the app whose installer restarts the computer", got)
+	}
+	if outcome.err != nil || outcome.attempted != 1 {
+		t.Errorf("outcome = %+v, want one attempt and no failure", outcome)
+	}
+	why := "not started: the installer of Mozilla Firefox (x64 en-US) is restarting the computer"
+	for _, want := range []string{
+		"[ok] Mozilla Firefox (x64 en-US)\n" + packages.OutputIndent + "upgraded; its installer is restarting the computer\n",
+		"[skip] 7-Zip 24.08 (x64)\n" + packages.OutputIndent + why + "\n",
+		"[skip] " + testCU.DisplayName() + "\n" + packages.OutputIndent + why + "\n",
+		"[skip] " + testDefender.DisplayName() + "\n",
+		"Restart required: yes",
+		"Restart: not scheduled, the installer of Mozilla Firefox (x64 en-US) is already restarting the computer",
+		"Done: 1 installed, 0 failed, 3 skipped",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if len(scheduledReboots(be.recorded())) != 0 {
+		t.Errorf("a restart was scheduled on top of the installer's: %v", be.recorded())
+	}
+	if !slices.Equal(srv.reboots, []bool{true}) {
+		t.Errorf("reboot reports = %v, want one true", srv.reboots)
+	}
+
+	// A restart the installer only asks for does not stop the run.
+	be = newFakeHost()
+	be.wingetRes = map[string]packages.ItemResult{"Mozilla.Firefox": packages.ClassifyWinGetExit(0x8A150109)}
+	runWindows(context.Background(), t, windowsPatchRequest{patchType: "patch_all"}, be, srv, fastWindowsOpts())
+	if got := installCalls(be.recorded()); len(got) != 4 {
+		t.Errorf("after a restart-required code: installs = %v, want all four", got)
+	}
+}
+
 // Apps on unreadable listing lines are left out, so the run cannot pass for
 // complete, dry or not.
 func TestWindowsUnreadableListingFailsTheRun(t *testing.T) {

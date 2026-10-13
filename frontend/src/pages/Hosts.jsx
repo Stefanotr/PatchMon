@@ -159,8 +159,8 @@ const Hosts = () => {
 	const [showAddModal, setShowAddModal] = useState(false);
 	// Host whose restart dialog is open, from its "Reboot required" badge.
 	const [restartHost, setRestartHost] = useState(null);
-	const { canManagePatching, hasModule } = useAuth();
-	const canRestart = canManagePatching() && hasModule("patching");
+	const { canRestartHosts, hasModule } = useAuth();
+	const canRestart = canRestartHosts() && hasModule("patching");
 	const [selectedHosts, setSelectedHosts] = useState([]);
 	// O(1) `.has()` lookup for the per-row "is this host selected?" check
 	// inside the table's row map. Without this, `selectedHosts.includes(id)`
@@ -2838,7 +2838,10 @@ const Hosts = () => {
 			</div>
 
 			{/* Modals */}
+			{/* Keyed by host: its state (a command still being sent) must not
+			    carry over from one host to the next. */}
 			<RestartHostModal
+				key={restartHost?.id}
 				hostId={restartHost?.id}
 				hostName={restartHost?.friendly_name || restartHost?.hostname}
 				isOpen={!!restartHost}

@@ -94,6 +94,13 @@ func syncIntegrationStatus(integrationResp *models.IntegrationStatusResponse) {
 		if integrationName == "compliance" && integrationResp.ComplianceMode != "" {
 			continue
 		}
+		// The local-only switches let the server into the host; only
+		// config.yml on the host changes them.
+		if config.IsLocalOnlyIntegration(integrationName) {
+			logger.WithField("integration", logutil.Sanitize(integrationName)).
+				Warn("Ignoring the server's value for a setting only config.yml on the host can change")
+			continue
+		}
 		configEnabled := cfgManager.IsIntegrationEnabled(integrationName)
 		if serverEnabled != configEnabled {
 			logger.WithFields(logutil.SanitizeMap(map[string]interface{}{
@@ -444,15 +451,14 @@ func runServiceLoop(stopCh <-chan struct{}) error {
 			case "docker_inventory_refresh":
 				logger.Info("Refreshing Docker inventory on server request...")
 				go refreshDockerInventory(ctx)
-			case "reboot":
-				go handleRestartCommand(m.reboot, m.requestID)
-			case "reboot_cancel":
-				go handleRestartCancel(m.requestID)
 			case "run_patch":
 				go func(msg wsMsg) {
-					if err := runPatch(msg.patchRunID, msg.patchType, msg.packageNames, msg.dryRun, msg.reboot); err != nil {
+					switch err := runPatch(msg.patchRunID, msg.patchType, msg.packageNames, msg.dryRun, msg.reboot); {
+					case errors.Is(err, errDuplicatePatchRun):
+						// beginPatchRun logged it; the real run goes on.
+					case err != nil:
 						logger.WithError(err).Warn("run_patch failed")
-					} else {
+					default:
 						logger.Info("run_patch completed successfully")
 					}
 				}(m)
@@ -559,10 +565,10 @@ func runServiceLoop(stopCh <-chan struct{}) error {
 					logger.Debug("Compliance scan cancel requested but no scan is running")
 				}
 			case "patch_run_stop":
-				if v, ok := patchRunCancels.Load(m.patchRunID); ok {
-					if cancelFn, ok := v.(context.CancelFunc); ok && cancelFn != nil {
+				if run, ok := lookupPatchRun(m.patchRunID); ok {
+					if run.cancel != nil {
 						patchRunStopped.Store(m.patchRunID, true)
-						cancelFn()
+						run.cancel()
 						logger.WithField("patch_run_id", logutil.Sanitize(m.patchRunID)).Info("Patch run stop honored; interrupt sent")
 					}
 				} else {
@@ -618,7 +624,7 @@ func runServiceLoop(stopCh <-chan struct{}) error {
 				if err := applyConfig(m.applyConfig); err != nil {
 					logger.WithError(err).Warn("apply_config failed")
 				} else {
-					logger.Info("apply_config completed, service will restart")
+					logger.Info("apply_config completed")
 				}
 			case "ssh_proxy":
 				logger.WithField("session_id", logutil.Sanitize(m.sshProxySessionID)).Info("Handling SSH proxy connection request")
@@ -1345,10 +1351,8 @@ type wsMsg struct {
 	patchType    string
 	packageNames []string
 	dryRun       bool
-	// run_patch and reboot: whether and when to restart the host
-	reboot reboot.Options
-	// reboot and reboot_cancel: identifies the command in the agent's reply
-	requestID    string
+	// run_patch: whether and when to restart the host
+	reboot       reboot.Options
 	sshProxyData string // SSH input data
 	// RDP proxy fields
 	rdpProxySessionID string // Unique session ID for RDP proxy
@@ -1972,27 +1976,9 @@ func connectOnce(out chan<- wsMsg, dockerEvents <-chan interface{}, backoff *tim
 				reboot:       restart,
 			})
 		case "reboot", "reboot_cancel":
-			requestID := payload.RequestID
-			if requestID != "" && !requestIDPattern.MatchString(requestID) {
-				logger.Warn("Ignoring restart command with an invalid request_id")
-				continue
-			}
-			if payload.Type == "reboot_cancel" {
-				logger.Info("reboot_cancel received")
-				dispatchWSMessage(out, wsMsg{kind: "reboot_cancel", requestID: requestID})
-				continue
-			}
-			var restart reboot.Options
-			if payload.Reboot != nil {
-				restart = *payload.Reboot
-			}
-			if err := restart.Validate(); err != nil {
-				logger.WithError(err).Warn("Ignoring invalid reboot command")
-				sendRestartReply(restartReply{RequestID: requestID, Action: "reboot", Error: "invalid restart options"})
-				continue
-			}
-			logger.Info("reboot received")
-			dispatchWSMessage(out, wsMsg{kind: "reboot", reboot: restart, requestID: requestID})
+			// Answered from here, not through the service loop: see
+			// handleRestartMessage.
+			handleRestartMessage(payload.Type, payload.RequestID, payload.Reboot)
 		case "compliance_scan":
 			// Validate profile ID to prevent command injection
 			if err := validateProfileID(payload.ProfileID); err != nil {
@@ -2559,12 +2545,14 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool, 
 
 	// Register cancel fn so the server can request an interrupt via
 	// "patch_run_stop". A real run is refused when a restart scheduled on
-	// this host would cut it off.
-	if err := registerPatchRun(patchRunID, cancel, dryRun); err != nil {
-		_ = httpClient.SendPatchOutput(ctx, patchRunID, "failed", "", err.Error())
+	// this host would cut it off; a run_patch delivered twice is ignored.
+	run, err := beginPatchRun(patchRunID, cancel, dryRun, func(reason string) {
+		_ = httpClient.SendPatchOutput(ctx, patchRunID, "failed", "", reason)
+	})
+	if err != nil {
 		return err
 	}
-	defer patchRunCancels.Delete(patchRunID)
+	defer unregisterPatchRun(patchRunID, run)
 	packageMgr := packages.New(logger, packages.CacheRefreshConfig{
 		Mode:   cfgManager.GetPackageCacheRefreshMode(),
 		MaxAge: cfgManager.GetPackageCacheRefreshMaxAge(),
@@ -2915,7 +2903,9 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool, 
 	return stepErr // nil, or the restart that could not be scheduled
 }
 
-// applyConfig applies a full config update from the server and restarts the service.
+// applyConfig applies a full config update from the server and restarts the
+// service, at once or, while a patch run is in progress, once it is over. The
+// configuration is saved straight away either way.
 func applyConfig(cfg map[string]interface{}) error {
 	if cfg == nil {
 		return fmt.Errorf("config is nil")
@@ -2999,8 +2989,7 @@ func applyConfig(cfg map[string]interface{}) error {
 	}
 	logger.WithFields(logutil.SanitizeMap(map[string]interface{}{"openscap": openscap, "docker_bench": dockerBench})).Info("Compliance scanner toggles updated")
 
-	logger.Info("Config updated, restarting patchmon-agent service...")
-	return restartService("", "")
+	return restartAgentForConfig()
 }
 
 // sendComplianceProgress sends a progress update via the global channel

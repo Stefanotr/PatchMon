@@ -34,6 +34,31 @@ Exemple : sur une base 2.1.3, on publie `v2.1.4-fork.1`, puis `v2.1.4-fork.2`, e
 
 Une version, c'est un tag, pas une branche. Le tag fige le code, et la CI garde l'image `ghcr.io/stefanotr/patchmon-server:X.Y.Z-fork.N` et la release GitHub correspondantes : on peut donc toujours revenir à une version précise. Une branche `release/X.Y` ne sert que si l'on doit corriger une ancienne version pendant que `fork` avance. On la crée alors depuis son tag, au moment où on en a besoin.
 
+### La base réelle
+
+Le message du tag, repris dans les notes de la release GitHub, dit sur quel code PatchMon la release est construite : `based on PatchMon v2.1.3` quand seules des versions officielles ont été fusionnées, ou `based on PatchMon v2.1.3-113-gc8f42251` quand le fork contient des commits que PatchMon n'a pas encore publiés.
+
+**La règle : ne fusionner que des tags officiels** (`git merge vX.Y.Z`), jamais `upstream/main`. Du code PatchMon non publié peut encore changer, migrations de base comprises. `tools/fork-release.sh` refuse une telle release, et liste les migrations qu'elle apporterait. L'option `--unreleased-base` permet de passer outre en connaissance de cause.
+
+**État actuel** : le fork contient du code de `PatchMon/main` que PatchMon n'a pas encore publié, et ce depuis sa première release, même si les tags de ces releases disent « based on v2.1.3 » :
+
+| Release | Base réelle | Migrations 2.1.4 incluses |
+|---|---|---|
+| `v2.1.4-fork.2` | `v2.1.3-24-g05576062` | `000048_v2-1-4_body_limit_settings` |
+| `v2.1.4-fork.3` à `fork.7` | `v2.1.3-113-gc8f42251` (fusion de `136fff6`) | `000048`, `000049_v2-1-4_hosts_machine_id_index` |
+
+Les builds faits avant `fork.2` (les binaires de `deploy-patchmon-custom.sh`, la première `fork.1` dont le tag a été supprimé) partaient de la même branche et contenaient déjà `000048`. Trois conséquences :
+
+1. La base du serveur a déjà ces migrations. Revenir à l'image officielle 2.1.3 demande de restaurer une sauvegarde faite quand le serveur tournait encore sur l'image officielle, avant tout build du fork. Une sauvegarde faite sous une release du fork ne suffit pas : l'image 2.1.3 refuse de démarrer sur une base en version 48 ou 49.
+2. Avant de fusionner la 2.1.4 officielle, vérifie que PatchMon n'a pas modifié ces deux migrations. Le workflow « Upstream release watch » le vérifie chaque jour contre `PatchMon/main` et ouvre une issue `upstream-migration` si l'une d'elles change. Au moment de fusionner, la commande suivante ne doit rien afficher :
+   ```bash
+   git diff c8f42251 v2.1.4 -- server-source-code/internal/migrate/migrations/000048_* server-source-code/internal/migrate/migrations/000049_*
+   ```
+   Si elle affiche quelque chose, ne déploie pas. La base croit avoir appliqué ces migrations alors que leur contenu a changé, et il faut corriger la base à la main.
+3. Jusqu'à la fusion de la 2.1.4 officielle, les releases du fork se publient avec `tools/fork-release.sh --push --unreleased-base`.
+
+**Colonnes propres au fork** : le fork n'ajoute jamais de migration numérotée, car elle entrerait en collision avec celles de PatchMon. Ses changements de base sont des étapes idempotentes (`server-source-code/internal/forkschema`), lancées au démarrage après les migrations. Aujourd'hui, il n'y en a qu'une : la colonne `can_restart_hosts` des rôles.
+
 ## Le tampon du fork
 
 La CI (`.github/workflows/docker.yml`) grave dans le binaire du serveur le dépôt et le commit d'où il est construit (`internal/forksource`) :
@@ -85,7 +110,7 @@ Les étapes 1 à 5 sont faites. Elles restent ici pour refaire un fork de zéro.
    | `main` (*New branch ruleset*) | *Include by pattern* : `main` | *Restrict deletions*, *Block force pushes*. Pas de PR obligatoire, sinon *Sync fork* ne passe plus. |
    | `tags` (*New tag ruleset*) | *Include by pattern* : `v*` | *Restrict updates*, *Restrict deletions* : une release publiée ne bouge plus. |
 
-   - Pour *Require status checks to pass*, ajoute `Test (server)`, `Lint (server)`, `Build (server)`, `Frontend Tests`, `Agent Tests`, `Agent Lint`, `Agent Tests (windows-latest)` et `Secrets (Gitleaks)`. Ces checks tournent sur toutes les PR vers `fork`.
+   - Pour *Require status checks to pass*, ajoute `Test (server)`, `Lint (server)`, `Build (server)`, `Frontend Tests`, `Agent Tests`, `Agent Lint`, `Agent Tests (windows-latest)`, `Agent Scripts (Windows PowerShell 5.1)` et `Secrets (Gitleaks)`. Ces checks tournent sur toutes les PR vers `fork`.
    - N'ajoute pas `Biome (frontend)` : il ne tourne pas sur une PR qui ne touche que `docker/`, et cette PR resterait bloquée.
    - Une PR ne peut alors plus être fusionnée avant la fin des checks. En cas d'urgence, ajoute le rôle *Repository admin* dans la *Bypass list* du ruleset `fork`.
    - Pour supprimer ou déplacer un tag, désactive le ruleset `tags` le temps de l'opération.
@@ -117,10 +142,10 @@ $gitBash = Join-Path (Split-Path (Split-Path (Get-Command git).Source)) 'bin\bas
 & $gitBash tools/fork-release.sh --push
 ```
 
-Le script calcule le tag suivant, le crée sur `HEAD` et le pousse. La CI construit alors :
+Le script calcule le tag suivant, le crée sur `HEAD` et le pousse. Il refuse un commit déjà publié, et un fork qui contient du code PatchMon non publié sans `--unreleased-base` (voir « La base réelle »). La CI construit alors :
 
 - l'image `ghcr.io/stefanotr/patchmon-server:<version>` et le tag flottant `:fork`, avec les agents de toutes les plateformes ;
-- la release GitHub avec les binaires, les sommes de contrôle et l'attestation de provenance.
+- la release GitHub avec les binaires, les sommes de contrôle et l'attestation de provenance. Ses notes reprennent le message du tag, base réelle comprise.
 
 La release GitHub n'est créée qu'à la fin du build, environ six minutes après le push du tag : suis-le avec `gh run watch`. Les serveurs la voient ensuite au plus tard un quart d'heure après, et tout de suite avec le bouton *Check for updates* (*Settings > Server Version*).
 
@@ -128,21 +153,30 @@ Les serveurs jusqu'à `2.1.4-fork.4` gardent leur réponse un quart d'heure, mê
 
 ## Serveur : installer le fork sur une nouvelle machine
 
-On installe PatchMon normalement, puis on remplace l'image du service `server` avant le premier démarrage :
+On installe une release précise du fork. Le script d'installation, le `docker-compose.yml` et l'image viennent tous du même tag : rien ne dépend de `main`, ni du tag flottant `:fork`.
 
-```bash
-mkdir patchmon && cd patchmon
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/PatchMon/PatchMon/refs/heads/main/docker/setup-env.sh)"
-cat > docker-compose.override.yml <<'YAML'
-services:
-  server:
-    image: ghcr.io/stefanotr/patchmon-server:fork
-YAML
-docker compose pull server
-docker compose up -d
-```
+1. Vérifie l'image depuis ton poste, avec `gh`. L'attestation prouve qu'elle a été construite par la CI du fork, depuis ce tag :
+   ```bash
+   gh attestation verify oci://ghcr.io/stefanotr/patchmon-server:2.1.4-fork.8 --repo Stefanotr/PatchMon
+   ```
+2. Installe sur le serveur :
+   ```bash
+   VERSION=2.1.4-fork.8
+   BASE="https://raw.githubusercontent.com/Stefanotr/PatchMon/refs/tags/v$VERSION"
+   mkdir patchmon && cd patchmon
+   UPSTREAM="$BASE" bash -c "$(curl -fsSL "$BASE/docker/setup-env.sh")"
+   cat > docker-compose.override.yml <<YAML
+   services:
+     server:
+       image: ghcr.io/stefanotr/patchmon-server:$VERSION
+   YAML
+   docker compose pull server
+   docker compose up -d
+   ```
 
-Le script d'installation est celui de PatchMon : il génère les secrets et le `docker-compose.yml` officiel, et l'override n'en change que l'image.
+Le script génère les secrets et le `docker-compose.yml`, et l'override n'en change que l'image. Pour figer l'image elle-même, et pas seulement son tag, remplace `:$VERSION` par son empreinte. Tu la trouves avec `docker buildx imagetools inspect ghcr.io/stefanotr/patchmon-server:$VERSION --format '{{json .Manifest.Digest}}'` ; elle s'écrit sous la forme `ghcr.io/stefanotr/patchmon-server@sha256:...`.
+
+Ensuite, sur chaque hôte que PatchMon peut redémarrer, active les redémarrages à distance dans le `config.yml` de l'agent : section « Before PatchMon can restart a host » de `docs/patchmon-admin-guide.md`.
 
 ## Serveur : passer sur l'image du fork (une seule fois)
 
@@ -156,7 +190,7 @@ cd /opt/patchmon
 cat > docker-compose.override.yml <<'EOF'
 services:
   server:
-    image: ghcr.io/stefanotr/patchmon-server:fork
+    image: ghcr.io/stefanotr/patchmon-server:2.1.4-fork.8
 EOF
 docker compose pull server
 docker compose up -d --force-recreate server
@@ -165,14 +199,20 @@ rm -rf custom custom.old custom.new custom-src
 
 ## Serveur : mettre à jour
 
-C'est le même geste qu'avec l'image officielle :
+On change de version explicitement, après avoir vérifié la nouvelle image :
 
-```bash
-cd /opt/patchmon
-docker compose pull server && docker compose up -d server
-```
+1. Sur ton poste : `gh attestation verify oci://ghcr.io/stefanotr/patchmon-server:<version> --repo Stefanotr/PatchMon`. Lis aussi les notes de la release, en particulier sa base réelle.
+2. Sur le serveur :
+   ```bash
+   cd /opt/patchmon
+   (umask 077 && docker compose exec -T database sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+     | gzip > "backup-$(date +%Y%m%d-%H%M%S).sql.gz")
+   sed -i 's#patchmon-server:.*#patchmon-server:<version>#' docker-compose.override.yml
+   docker compose pull server && docker compose up -d server
+   ```
+3. Sur chaque hôte : onglet *Host Info*, puis **Update Now**. Tu peux aussi activer l'auto-update, mais seulement sur les hôtes de test.
 
-Ensuite, sur chaque host : onglet *Host Info*, puis **Update Now**. Tu peux aussi activer l'auto-update, mais seulement sur les hosts de test.
+Si ton override utilise encore `:fork`, remplace-le par la version installée : un tag flottant change sans que tu le décides.
 
 ## Suivre les versions officielles
 
@@ -183,10 +223,13 @@ Pour intégrer la nouvelle version :
 ```bash
 git fetch upstream --tags
 git checkout fork
-git merge vX.Y.Z           # résoudre les conflits, lancer les tests
+git merge vX.Y.Z           # un tag officiel, jamais upstream/main
+# résoudre les conflits, lancer les tests
 git push origin fork
 tools/fork-release.sh --push   # tag v(X.Y.Z+1)-fork.1
 ```
+
+Pour la 2.1.4, vérifie d'abord ses migrations 000048 et 000049 (section « La base réelle »).
 
 Puis ferme l'issue, et remets `main` à jour avec *Sync fork*.
 
@@ -196,5 +239,5 @@ GitHub suspend les workflows planifiés d'un dépôt resté 60 jours sans activi
 
 ## Revenir à l'image officielle
 
-1. Supprime `docker-compose.override.yml`, puis lance `docker compose pull server && docker compose up -d server`. Attention à la base de données : l'image officielle doit être au moins de la version de la base du fork. Sinon, restaure la sauvegarde.
+1. Supprime `docker-compose.override.yml`, puis lance `docker compose pull server && docker compose up -d server`. Attention à la base de données : l'image officielle doit connaître toutes les migrations déjà appliquées. Aujourd'hui, la base contient celles de la 2.1.4 (section « La base réelle »), donc il faut l'image officielle 2.1.4 ou plus récente, sinon restaure une sauvegarde faite sous l'image officielle, avant tout build du fork. La colonne `can_restart_hosts` ajoutée par le fork reste en place, sans effet sur l'image officielle.
 2. Les agents en version fork sont plus hauts que l'officielle de même base. Ils ne redescendent donc pas tout seuls : **Update Now** les y ramène.

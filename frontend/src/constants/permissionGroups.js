@@ -12,6 +12,7 @@ import {
 	Package,
 	PackageSearch,
 	PencilRuler,
+	Power,
 	Send,
 	Server,
 	Settings,
@@ -21,6 +22,7 @@ import {
 	Users,
 	Wrench,
 } from "lucide-react";
+import { tk } from "../i18n";
 
 export const RISK_LEVELS = {
 	LOW: "low",
@@ -29,6 +31,8 @@ export const RISK_LEVELS = {
 	HIGH: "high",
 };
 
+// Labels and descriptions are rendered with t(): a string marked with tk() is
+// translated, any other one shows in English.
 export const PERMISSION_GROUPS = [
 	{
 		id: "monitoring",
@@ -111,6 +115,14 @@ export const PERMISSION_GROUPS = [
 				label: "Manage Patching",
 				description: "Trigger patches, approve runs, manage patch policies",
 				icon: Wrench,
+			},
+			{
+				key: "can_restart_hosts",
+				label: tk("Restart Hosts"),
+				description: tk(
+					"Restart hosts now or later, cancel scheduled restarts, and restart hosts after a patch run",
+				),
+				icon: Power,
 			},
 			{
 				key: "can_manage_compliance",

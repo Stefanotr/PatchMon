@@ -20,7 +20,10 @@ import (
 // compiles. These tests execute them for real, under pwsh (preinstalled on the
 // GitHub Ubuntu runners) or Windows PowerShell, against a fake of the WUA COM
 // objects, so every branch of the install logic runs on every CI build without
-// touching a real Windows Update.
+// touching a real Windows Update. PATCHMON_TEST_POWERSHELL picks the
+// interpreter (a name looked up in PATH, or a path): CI sets it to
+// powershell.exe to run them under Windows PowerShell 5.1, which the agent
+// uses.
 
 // fakeWUAPrelude shadows New-Object with a fake Windows Update Agent driven by
 // the JSON in PATCHMON_FAKE_WUA. Calls are echoed as CALL: lines.
@@ -37,6 +40,8 @@ function global:Fake-Update($spec) {
     EulaAccepted = [bool]$spec.eula
     IsInstalled = [bool]$spec.installed
     MsrcSeverity = $spec.severity
+    Type = [int]$spec.type
+    BrowseOnly = [bool]$spec.browse_only
     Identity = [pscustomobject]@{ UpdateID = [string]$spec.guid }
     InstallationBehavior = [pscustomobject]@{ RebootBehavior = [int]$spec.reboot; CanRequestUserInput = [bool]$spec.needs_input }
   }
@@ -122,6 +127,7 @@ func fakeUpdate(overrides map[string]any) map[string]any {
 	u := map[string]any{
 		"guid": fakeGUID, "title": "2026-09 Cumulative Update for Windows Server 2022", "kbs": []string{"5065432"},
 		"size": 734003200, "reboot": 1, "downloaded": false, "eula": true, "installed": false, "severity": "Critical",
+		"type": 1, "browse_only": false,
 	}
 	for k, v := range overrides {
 		u[k] = v
@@ -129,8 +135,19 @@ func fakeUpdate(overrides map[string]any) map[string]any {
 	return u
 }
 
+// testPowerShellEnv names the interpreter the script tests use.
+const testPowerShellEnv = "PATCHMON_TEST_POWERSHELL"
+
 func findPowerShell(t *testing.T) string {
 	t.Helper()
+	if want := os.Getenv(testPowerShellEnv); want != "" {
+		// Asked for explicitly: missing is a failure, never a skip.
+		p, err := exec.LookPath(want)
+		if err != nil {
+			t.Fatalf("%s=%s: %v", testPowerShellEnv, want, err)
+		}
+		return p
+	}
 	if p, err := exec.LookPath("pwsh"); err == nil {
 		return p
 	}
@@ -176,8 +193,9 @@ func TestWUAScanScript(t *testing.T) {
 	_, raw := runFakeWUA(t, wuaScanScript, fakeWUA{
 		Updates: []map[string]any{
 			fakeUpdate(nil),
-			fakeUpdate(map[string]any{"guid": "11111111-2222-3333-4444-555555555555", "title": "Intel - Net", "kbs": []string{}, "reboot": 0, "needs_input": true, "eula": false}),
+			fakeUpdate(map[string]any{"guid": "11111111-2222-3333-4444-555555555555", "title": "Intel - Net", "kbs": []string{}, "reboot": 0, "needs_input": true, "eula": false, "type": 2}),
 			fakeUpdate(map[string]any{"guid": "22222222-2222-3333-4444-555555555555", "installed": true}),
+			fakeUpdate(map[string]any{"guid": "33333333-2222-3333-4444-555555555555", "title": "2026-09 Cumulative Update Preview", "kbs": []string{"5066000"}, "browse_only": true}),
 		},
 		Busy:         true,
 		RebootBefore: true,
@@ -186,16 +204,21 @@ func TestWUAScanScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseWUAScan: %v\n%s", err, raw)
 	}
-	if len(scan.Updates) != 2 {
-		t.Fatalf("updates = %+v, want the two not installed", scan.Updates)
+	if len(scan.Updates) != 3 {
+		t.Fatalf("updates = %+v, want the three not installed", scan.Updates)
 	}
-	cu, drv := scan.Updates[0], scan.Updates[1]
+	cu, drv, preview := scan.Updates[0], scan.Updates[1], scan.Updates[2]
 	if cu.GUID != fakeGUID || cu.DisplayName() != "2026-09 Cumulative Update for Windows Server 2022 (KB5065432)" ||
-		cu.SizeBytes != 734003200 || cu.RebootBehavior != 1 || cu.Severity != "Critical" || !cu.EulaAccepted || cu.Downloaded {
+		cu.SizeBytes != 734003200 || cu.RebootBehavior != 1 || cu.Severity != "Critical" || !cu.EulaAccepted || cu.Downloaded ||
+		cu.Type != 1 || cu.BrowseOnly {
 		t.Errorf("cumulative update = %+v", cu)
 	}
-	if len(drv.KBs) != 0 || drv.DisplayName() != "Intel - Net" || !drv.CanRequestUserInput || drv.EulaAccepted {
+	if len(drv.KBs) != 0 || drv.DisplayName() != "Intel - Net" || !drv.CanRequestUserInput || drv.EulaAccepted ||
+		drv.Type != wuaDriverUpdate || drv.BrowseOnly {
 		t.Errorf("driver update = %+v", drv)
+	}
+	if !preview.BrowseOnly || preview.Type != 1 {
+		t.Errorf("optional update = %+v", preview)
 	}
 	if !scan.InstallerBusy || !scan.RebootBeforeInstall {
 		t.Errorf("installer state = busy %v, reboot before %v", scan.InstallerBusy, scan.RebootBeforeInstall)
@@ -313,6 +336,15 @@ func TestWUAInstallScript(t *testing.T) {
 				t.Errorf("result line leaked into the run output:\n%s", shown)
 			}
 		})
+	}
+}
+
+// TestScriptHostVersion logs which PowerShell ran the script tests.
+func TestScriptHostVersion(t *testing.T) {
+	raw := runScript(t, "Write-Output ('PSVERSION:' + $PSVersionTable.PSVersion.ToString() + ' ' + $PSVersionTable.PSEdition)", nil, nil)
+	t.Logf("%s", strings.TrimSpace(string(raw)))
+	if !strings.Contains(string(raw), "PSVERSION:") {
+		t.Fatalf("no version from PowerShell:\n%s", raw)
 	}
 }
 

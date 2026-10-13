@@ -2,7 +2,8 @@ name: Upstream release watch
 
 # Fork only. Opens an issue when PatchMon publishes an official release that
 # the fork's branch does not contain yet, so the fork gets synced and a new
-# fork release built. Never runs in the upstream repository.
+# fork release built, and another when PatchMon changes a database migration
+# the fork already carries. Never runs in the upstream repository.
 #
 # It compares against the fork's default branch (fork, see FORK.md); the
 # FORK_BRANCH repository variable can name another. GitHub only runs
@@ -25,7 +26,7 @@ jobs:
   watch:
     if: github.repository != 'PatchMon/PatchMon'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
       UPSTREAM: PatchMon/PatchMon
@@ -108,3 +109,61 @@ jobs:
           } > body.md
 
           gh issue create -R "$FORK" --title "$title" --label "$LABEL" --body-file body.md
+
+      # The fork carries PatchMon commits that PatchMon has not released yet
+      # (see FORK.md), including database migrations its databases have run.
+      # PatchMon may still change such a migration before releasing it; a
+      # database that ran the old file would then never run the new one. The
+      # fork adds no migration of its own (its schema changes are steps in
+      # internal/forkschema), so every file here must match PatchMon's main.
+      # Runs even when the release check failed (an API error, say).
+      - name: Check out the fork branch
+        if: ${{ !cancelled() }}
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ vars.FORK_BRANCH || github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Open an issue when PatchMon changed a migration the fork has
+        if: ${{ !cancelled() }}
+        env:
+          MIGRATION_LABEL: upstream-migration
+          MIGRATIONS: server-source-code/internal/migrate/migrations
+        run: |
+          set -euo pipefail
+          git fetch -q --depth=1 --no-tags "https://github.com/$UPSTREAM.git" main
+          changed=()
+          while IFS= read -r -d '' f; do
+            if ! git cat-file -e "FETCH_HEAD:$f" 2>/dev/null; then
+              changed+=("$f (removed or renumbered by PatchMon)")
+            elif ! git diff --quiet FETCH_HEAD HEAD -- "$f"; then
+              changed+=("$f (changed by PatchMon)")
+            fi
+          done < <(git ls-files -z -- "$MIGRATIONS")
+          if [ "${#changed[@]}" -eq 0 ]; then
+            echo "Every migration of the fork matches PatchMon's main"
+            exit 0
+          fi
+          printf 'Differs from PatchMon main: %s\n' "${changed[@]}"
+
+          title="PatchMon a modifié des migrations déjà présentes dans le fork"
+          gh label create "$MIGRATION_LABEL" -R "$FORK" --color B60205 \
+            --description "A migration the fork carries changed upstream" --force
+          open="$(gh issue list -R "$FORK" --label "$MIGRATION_LABEL" --state open --json title \
+            --jq "[.[] | select(.title == \"$title\")] | length")"
+          if [ "$open" != "0" ]; then
+            echo "An open issue already reports it"
+            exit 0
+          fi
+          {
+            echo "Ces migrations du fork ne correspondent plus à celles de PatchMon \`main\` :"
+            echo
+            for c in "${changed[@]}"; do echo "- \`$c\`"; done
+            echo
+            echo "Une base qui a déjà exécuté l'ancienne version ne lancera pas la nouvelle : golang-migrate ne retient que le numéro."
+            echo "Avant de fusionner la prochaine version officielle, compare les deux versions de chaque fichier et prévois la correction de la base (voir « Suivre les versions officielles » dans FORK.md)."
+            echo
+            echo "cc @$OWNER"
+          } > migrations.md
+          gh issue create -R "$FORK" --title "$title" --label "$MIGRATION_LABEL" --body-file migrations.md

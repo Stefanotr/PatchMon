@@ -111,6 +111,11 @@ api.interceptors.response.use(
 	},
 );
 
+// The server waits up to 20 s for an agent's answer to a restart command,
+// within its own 30 s request limit: wait for its answer rather than the
+// default 10 s.
+const RESTART_COMMAND_TIMEOUT_MS = 35000;
+
 // Dashboard API
 export const dashboardAPI = {
 	getStats: () => api.get("/dashboard/stats"),
@@ -197,8 +202,19 @@ export const adminHostsAPI = {
 	refreshIntegrationStatus: (hostId) =>
 		api.post(`/hosts/${hostId}/refresh-integration-status`),
 	fetchReport: (hostId) => api.post(`/hosts/${hostId}/fetch-report`),
-	rebootHost: (hostId, reboot) => api.post(`/hosts/${hostId}/reboot`, reboot),
-	cancelHostReboot: (hostId) => api.post(`/hosts/${hostId}/reboot/cancel`),
+	// Restart commands always send a JSON body, an empty object if need be:
+	// the server refuses any other (a cross-site form cannot send JSON). It
+	// waits up to 20 s for the agent's answer.
+	rebootHost: (hostId, reboot) =>
+		api.post(`/hosts/${hostId}/reboot`, reboot ?? {}, {
+			timeout: RESTART_COMMAND_TIMEOUT_MS,
+		}),
+	cancelHostReboot: (hostId) =>
+		api.post(
+			`/hosts/${hostId}/reboot/cancel`,
+			{},
+			{ timeout: RESTART_COMMAND_TIMEOUT_MS },
+		),
 	fetchReportBulk: (hostIds) =>
 		api.post("/hosts/bulk/fetch-report", { hostIds }),
 	updateFriendlyName: (hostId, friendlyName) =>

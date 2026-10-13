@@ -646,10 +646,28 @@ jobs:
         with:
           subject-path: 'dist/patchmon-*'
 
+      # A fork release says which PatchMon code it is built on, and whether
+      # that includes commits PatchMon has not released yet: the message of
+      # its annotated tag, written by tools/fork-release.sh.
+      - name: Release notes from the tag message (fork releases)
+        if: contains(github.ref_name, '-fork.')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-fork\.[0-9]+$'; then
+            echo "::error::unexpected fork tag ${TAG}"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "+refs/tags/${TAG}:refs/tags/${TAG}"
+          git tag -l "$TAG" --format='%(contents)' > release-body.md
+          cat release-body.md
+
       - name: Upload binaries, checksums and SBOM to release
         uses: softprops/action-gh-release@b25b93d384199fc0fc8c2e126b2d937a0cbeb2ae
         with:
           tag_name: ${{ github.ref_name }}
+          body_path: ${{ contains(github.ref_name, '-fork.') && 'release-body.md' || '' }}
           files: |
             dist/patchmon-*
             dist/SHA256SUMS

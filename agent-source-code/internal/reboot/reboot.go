@@ -5,7 +5,8 @@
 // three are bounded here, and the restart itself goes through the operating
 // system's own scheduler (InitiateSystemShutdownEx on Windows, shutdown(8)
 // elsewhere) with an argument vector, never a shell. The OS scheduler warns
-// signed-in users and survives the agent being restarted.
+// signed-in users and survives the agent being restarted. A cancel only
+// touches the restart PatchMon scheduled, as the caller recorded it.
 package reboot
 
 import (
@@ -36,6 +37,10 @@ const (
 	MinDelay = 5 * time.Minute
 	// MaxDelay bounds how far ahead a restart can be scheduled.
 	MaxDelay = 7 * 24 * time.Hour
+	// LateTolerance is how long an absolute time can have passed and still
+	// mean "now": a time picked a few seconds late, or delayed on its way by
+	// the network or a clock a little behind.
+	LateTolerance = 15 * time.Minute
 	// MaxMessageBytes bounds the message shown to signed-in users.
 	MaxMessageBytes = 200
 
@@ -43,12 +48,61 @@ const (
 	defaultMessage = "this computer restarts to finish installing updates"
 )
 
-// ErrNothingScheduled is returned by Cancel when no restart was pending.
+// ErrNothingScheduled is returned by CancelScheduled when no restart was
+// pending.
 var ErrNothingScheduled = errors.New("no restart is scheduled")
 
 // ErrAlreadyScheduled is returned by Schedule when the operating system
 // already has a restart or shutdown pending, whoever asked for it.
 var ErrAlreadyScheduled = errors.New("a restart or shutdown is already pending on this host")
+
+// ErrNotScheduledByPatchMon is returned by CancelScheduled when the restart
+// or shutdown pending, if any, is not the one PatchMon scheduled.
+var ErrNotScheduledByPatchMon = errors.New("no restart scheduled by PatchMon is pending on this host; a restart or shutdown scheduled outside PatchMon is left alone")
+
+// ErrOwnerUnconfirmed is returned by CancelScheduled when the system cannot
+// confirm that the restart pending is the one PatchMon scheduled: rather
+// than risk cancelling someone else's, it leaves it alone.
+var ErrOwnerUnconfirmed = errors.New("PatchMon could not confirm that the restart pending on this host is the one it scheduled, so it is left alone")
+
+// unconfirmed is ErrOwnerUnconfirmed with the reason.
+func unconfirmed(why error) error {
+	if why == nil {
+		return ErrOwnerUnconfirmed
+	}
+	return fmt.Errorf("%w: %v", ErrOwnerUnconfirmed, why)
+}
+
+// Scheduled is the record of a restart PatchMon scheduled, what tells it
+// apart from one scheduled outside PatchMon.
+type Scheduled struct {
+	// At is when the restart happens.
+	At time.Time
+	// Since is when it was scheduled.
+	Since time.Time
+}
+
+// Owner says whether the restart the operating system has pending is the
+// one PatchMon recorded.
+type Owner int
+
+const (
+	// OwnerNone means the recorded restart is no longer pending: nothing is
+	// pending (Linux, FreeBSD), the host restarted since, or the System event
+	// log shows it aborted (Windows).
+	OwnerNone Owner = iota
+	// OwnerPatchMon means the pending restart is the recorded one.
+	OwnerPatchMon
+	// OwnerOther means a restart or shutdown scheduled outside PatchMon is
+	// pending.
+	OwnerOther
+	// OwnerUnknown means whose restart is pending is not confirmed: its state
+	// could not be read (logind's record, the process list, the System event
+	// log on Windows), or PatchMon's restart is pending alongside someone
+	// else's. The record may still be pending, but nothing is cancelled on its
+	// say.
+	OwnerUnknown
+)
 
 // Options is the restart part of a patch run or of a restart command, as the
 // server sends it.
@@ -87,14 +141,21 @@ func (o Options) Wanted(needed bool) bool {
 	return o.Mode == ModeAlways || (o.Mode == ModeIfNeeded && needed)
 }
 
+// localZone is the host's time zone, a variable so tests do not depend on
+// the machine's.
+var localZone = time.Local
+
 // When returns the time the restart happens, at least MinDelay from now.
 //
-// A delay counts from now. An absolute time that has passed moves on by
-// whole days: "at 03:00" picked for a run that a policy delayed, or that
-// waited for its host to come online, waits for the next 03:00 instead of
-// restarting the host right after the run, in the middle of the day. A time
-// still ahead but closer than MinDelay is pushed back to MinDelay. A time
-// more than MaxDelay away is refused rather than brought forward.
+// A delay counts from now. An absolute time still ahead is kept, or pushed
+// back to MinDelay when closer than that. An absolute time that passed less
+// than LateTolerance ago was meant as "now" and gives MinDelay from now. One
+// that passed longer ago waits for the next occurrence of the same
+// wall-clock time in the host's time zone: "at 03:00" picked for a run that a
+// policy delayed, or that waited for its host to come online, waits for the
+// next 03:00 instead of restarting the host right after the run, in the
+// middle of the day, and stays 03:00 across a daylight saving time change. A
+// time more than MaxDelay away is refused rather than brought forward.
 func (o Options) When(now time.Time) (time.Time, error) {
 	earliest := now.Add(MinDelay)
 	if o.At.IsZero() {
@@ -102,9 +163,8 @@ func (o Options) When(now time.Time) (time.Time, error) {
 		return now.Add(d), nil
 	}
 	at := o.At
-	if at.Before(now) {
-		days := int(earliest.Sub(at)/(24*time.Hour)) + 1
-		at = at.AddDate(0, 0, days)
+	if now.Sub(at) > LateTolerance {
+		at = nextOccurrence(at, now, localZone)
 	}
 	if at.Before(earliest) {
 		at = earliest
@@ -113,6 +173,18 @@ func (o Options) When(now time.Time) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("the requested time %s is more than %s away", at.UTC().Format(time.RFC3339), MaxDelay)
 	}
 	return at, nil
+}
+
+// nextOccurrence returns the first time after now with the wall-clock time
+// of at in loc. Days are counted in loc, not as 24 hours, so a daylight
+// saving time change does not shift it by an hour.
+func nextOccurrence(at, now time.Time, loc *time.Location) time.Time {
+	a, n := at.In(loc), now.In(loc)
+	next := time.Date(n.Year(), n.Month(), n.Day(), a.Hour(), a.Minute(), a.Second(), a.Nanosecond(), loc)
+	if !next.After(now) {
+		next = time.Date(n.Year(), n.Month(), n.Day()+1, a.Hour(), a.Minute(), a.Second(), a.Nanosecond(), loc)
+	}
+	return next
 }
 
 // ShutdownMessage is the text shown to signed-in users. It is one printable

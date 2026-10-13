@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
+import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { tk } from "../i18n";
 import { formatDate, packagesAPI } from "../utils/api";
@@ -178,6 +179,10 @@ export default function PatchWizard({
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const { warning: toastWarning } = useToast();
+	// Restarting the hosts after the run needs its own permission: without
+	// it the wizard neither offers nor sends a restart.
+	const { canRestartHosts } = useAuth();
+	const canRestart = canRestartHosts();
 	const isApprove = mode === "approve";
 	const isPatchAll = patchType === "patch_all";
 	// "Packages are fixed" means the Select Packages step has no useful
@@ -428,7 +433,8 @@ export default function PatchWizard({
 	// whole submission. Not sent when the run is submitted for approval: the
 	// approver chooses then.
 	const [restartChoice, setRestartChoice] = useState(DEFAULT_RESTART_CHOICE);
-	const restartInvalid = Boolean(restartChoiceError(restartChoice));
+	const restartInvalid =
+		canRestart && Boolean(restartChoiceError(restartChoice));
 	// Per-target: which rows have dependencies expanded in the Submit step
 	const [expandedDepsByTarget, setExpandedDepsByTarget] = useState({});
 	// Per-target outcome of the submit attempts:
@@ -795,7 +801,7 @@ export default function PatchWizard({
 		const userChoseSubmit = !isApprove && approvalDecision === "submit";
 		const nextSubmitMode = userChoseSubmit ? "approval" : "patch";
 		// Built once so every host gets the same restart time.
-		const reboot = buildRebootRequest(restartChoice);
+		const reboot = canRestart ? buildRebootRequest(restartChoice) : null;
 		// A validation still running on the host counts: it becomes a
 		// validated run waiting for approval once it finishes.
 		const targetHasPendingRun = (id) => {
@@ -1831,23 +1837,25 @@ export default function PatchWizard({
 							})}
 
 							{/* Restart after the run, for every host above. */}
-							<div className="border border-secondary-200 dark:border-secondary-600 rounded-lg px-4 py-3 bg-white dark:bg-secondary-800">
-								<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-2 flex items-center gap-1">
-									<Power className="h-3 w-3" />
-									{t("Restart")}
-								</p>
-								<RestartOptions
-									value={restartChoice}
-									onChange={setRestartChoice}
-								/>
-								{restartChoice.mode !== "never" && (
-									<p className="mt-2 text-[11px] text-secondary-500 dark:text-secondary-400">
-										{t(
-											"The agent restarts the host once the run is over, never after a dry run or a stopped run, nor after a failed run on Linux. Signed-in users are warned; applications are closed when the countdown ends. Ignored if you submit the run for approval: the approver chooses then.",
-										)}
+							{canRestart && (
+								<div className="border border-secondary-200 dark:border-secondary-600 rounded-lg px-4 py-3 bg-white dark:bg-secondary-800">
+									<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-2 flex items-center gap-1">
+										<Power className="h-3 w-3" />
+										{t("Restart")}
 									</p>
-								)}
-							</div>
+									<RestartOptions
+										value={restartChoice}
+										onChange={setRestartChoice}
+									/>
+									{restartChoice.mode !== "never" && (
+										<p className="mt-2 text-[11px] text-secondary-500 dark:text-secondary-400">
+											{t(
+												"The agent restarts the host once the run is over, never after a dry run or a stopped run, nor after a failed run on Linux. Signed-in users are warned; applications are closed when the countdown ends. Ignored if you submit the run for approval: the approver chooses then.",
+											)}
+										</p>
+									)}
+								</div>
+							)}
 						</div>
 					)}
 

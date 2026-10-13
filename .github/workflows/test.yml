@@ -606,6 +606,35 @@ jobs:
               Write-Host "Service removed"
           }
 
+  # The agent runs its embedded scripts under Windows PowerShell 5.1, while
+  # the script tests in the jobs above pick pwsh 7 whenever it is installed.
+  # This runs them under 5.1, the interpreter the agent actually uses, so
+  # syntax or behaviour that only PowerShell 7 has fails here.
+  agent-windows-powershell51:
+    name: Agent Scripts (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
+        with:
+          go-version-file: "agent-source-code/go.mod"
+          cache-dependency-path: "agent-source-code/go.sum"
+
+      # PATCHMON_TEST_POWERSHELL makes the script tests fail, rather than
+      # skip, when that interpreter is missing; TestScriptHostVersion logs the
+      # version that ran them.
+      - name: Run the script tests under Windows PowerShell 5.1
+        working-directory: agent-source-code
+        env:
+          PATCHMON_TEST_POWERSHELL: powershell.exe
+        run: go test -count=1 -v -run 'Script' ./internal/packages/
+
   # The installer and uninstaller are real .ps1 files, so unlike the scripts
   # embedded in Go they can be checked statically.
   powershell-scripts:

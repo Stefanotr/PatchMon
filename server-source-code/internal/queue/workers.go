@@ -560,6 +560,7 @@ func (h *PatchRunCleanupHandler) ProcessTask(ctx context.Context, t *asynq.Task)
 	stallMin := h.resolveStallTimeoutMin()
 	if len(t.Payload()) > 0 {
 		ctx, d := resolveDBFromPayload(ctx, t.Payload(), h.defaultDB, h.poolCache)
+		h.sweepRestartRecords(ctx, d, "")
 		count, err := h.cleanupDB(ctx, d, stallMin)
 		if err != nil {
 			return err
@@ -570,6 +571,7 @@ func (h *PatchRunCleanupHandler) ProcessTask(ctx context.Context, t *asynq.Task)
 		return nil
 	}
 	forEachDB(ctx, h.defaultDB, h.poolCache, func(ctx context.Context, d *database.DB, host string) {
+		h.sweepRestartRecords(ctx, d, host)
 		count, err := h.cleanupDB(ctx, d, stallMin)
 		if err != nil {
 			h.log.Warn("patch run cleanup failed", "host", host, "error", err)

@@ -188,3 +188,28 @@ func TestSyncIntegrationStatusKeepsScannerToggles(t *testing.T) {
 		t.Fatalf("compliance mode = %q, want %q", got, config.ComplianceOnDemand)
 	}
 }
+
+// The server's integration status never changes the local-only switches,
+// whatever it sends; the integrations it owns still sync.
+func TestSyncIntegrationStatusLeavesLocalOnlySwitchesAlone(t *testing.T) {
+	m := withTestConfig(t, "on-demand")
+
+	syncIntegrationStatus(&models.IntegrationStatusResponse{
+		Success: true,
+		Integrations: map[string]bool{
+			"docker":                        true,
+			"ssh-proxy-enabled":             true,
+			"rdp-proxy-enabled":             true,
+			config.RemoteRestartIntegration: true,
+		},
+	})
+
+	for _, name := range config.LocalOnlyIntegrations {
+		if m.IsIntegrationEnabled(name) {
+			t.Errorf("the server turned %s on", name)
+		}
+	}
+	if !m.IsIntegrationEnabled("docker") {
+		t.Error("docker did not sync")
+	}
+}

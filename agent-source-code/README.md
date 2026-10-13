@@ -122,6 +122,7 @@ integrations:
     docker_bench_enabled: false
   ssh-proxy-enabled: false
   rdp-proxy-enabled: false
+  remote-restart-enabled: false
 ```
 
 | Field | Description |
@@ -250,6 +251,15 @@ Enables browser-based RDP sessions through the agent (relaying traffic via the `
 ```yaml
 integrations:
   rdp-proxy-enabled: true
+```
+
+### Remote Restarts
+
+Lets PatchMon restart the host: the restart command from the host page and the restart option of patch runs. Off by default, it must be enabled manually in `config.yml`, then the agent service restarted; the server's configuration messages cannot change it (this does not guard against a server able to push an agent update). While it is off, restart commands are refused and a patch run's restart is skipped. Cancelling a restart PatchMon scheduled stays possible.
+
+```yaml
+integrations:
+  remote-restart-enabled: true
 ```
 
 ## Agent Updates

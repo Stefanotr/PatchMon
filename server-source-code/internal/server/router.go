@@ -229,8 +229,9 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 	agentOpts := []handler.AgentWSHandlerOption{
 		handler.WithOnAgentDisconnect(handler.NewAgentDisconnectHandler(dbProvider, hostsStore, patchRunsStore, registry, notifyEmit, log)),
 		handler.WithOnAgentConnect(handler.NewAgentConnectHandler(dbProvider, queueClient, queueInspector, integrationStatusStore, notifyEmit, log)),
-		// Restarts scheduled by patch runs, recorded in the host's Agent Activity.
-		handler.WithOnRestartEvent(handler.RecordRunRestart(hostsStore, store.NewJobHistoryStore(dbProvider))),
+		// Restarts scheduled by patch runs, and late answers to restart
+		// commands, recorded in the host's Agent Activity.
+		handler.WithOnRestartEvent(handler.RecordRestartEvent(hostsStore, store.NewJobHistoryStore(dbProvider))),
 	}
 	if rdpHandler != nil {
 		agentOpts = append(agentOpts, handler.WithOnRDPProxyMessage(rdpHandler.HandleRDPProxyMessage))
@@ -272,6 +273,8 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 	// for the stop-run endpoint. Kept as optional dependencies so unrelated
 	// call-sites don't need to thread them.
 	patchingHandler.SetStreamDependencies(patchstream.NewHub(), registry)
+	// A run that restarts the host also needs can_restart_hosts.
+	patchingHandler.WithRestartPermission(permissionsStore)
 	windowsUpdatesHandler := handler.NewWindowsUpdatesHandler(hostsStore, dbProvider, notifyEmit)
 
 	aiSvc := ai.NewService(enc)
@@ -545,10 +548,9 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore), hostctx.RequireModule("compliance")).Post("/hosts/{hostId}/integrations/compliance/scanners", hostsHandler.SetComplianceScanners)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore), hostctx.RequireModule("compliance")).Post("/hosts/{hostId}/integrations/compliance/default-profile", hostsHandler.SetComplianceDefaultProfile)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/{hostId}/integrations/apply-pending-config", hostsHandler.ApplyPendingConfig)
-			// Restarting a host belongs with patching, not with editing host
-			// records (can_manage_hosts), and is part of the patching module.
-			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot", hostsHandler.RebootHost)
-			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/hosts/{hostId}/reboot/cancel", hostsHandler.CancelHostReboot)
+			// Routes that can order a host restart: the restart command, and
+			// patch runs that restart the host (trigger, approval).
+			registerRestartRoutes(r, permissionsStore, hostsHandler, patchingHandler)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/{hostId}/integrations/{integrationName}/toggle", hostsHandler.ToggleIntegration)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore)).Get("/hosts/{hostId}", hostsHandler.GetByID)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/create", hostsHandler.Create)
@@ -634,11 +636,11 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore), hostctx.RequireModule("patching")).Get("/patching/runs/{id}", patchingHandler.GetRun)
 			// Live patch-run output stream (WebSocket, JWT cookie/bearer auth via outer group).
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore), hostctx.RequireModule("patching")).Get("/patching/runs/{id}/stream", patchingHandler.ServeRunStream)
-			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/patching/runs/{id}/approve", patchingHandler.ApproveRun)
+			// POST /patching/runs/{id}/approve: registerRestartRoutes.
 			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/patching/runs/{id}/retry-validation", patchingHandler.RetryValidation)
 			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/patching/runs/{id}/stop", patchingHandler.StopRun)
 			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Delete("/patching/runs/{id}", patchingHandler.DeleteRun)
-			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/patching/trigger", patchingHandler.Trigger)
+			// POST /patching/trigger: registerRestartRoutes.
 			// Policies + approval workflow: patching_policies module.
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore), hostctx.RequireModule("patching_policies")).Get("/patching/policies", patchingHandler.ListPolicies)
 			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching_policies")).Post("/patching/policies", patchingHandler.CreatePolicy)

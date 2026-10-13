@@ -17,7 +17,7 @@ var (
 		GUID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", Title: "2026-09 Cumulative Update for .NET Framework 3.5 and 4.8.1",
 		KBs: stringList{"KB5064401", "KB5064400"}, SizeBytes: 70 << 20,
 	}
-	driverUpdate = WUAUpdate{GUID: "99999999-8888-7777-6666-555555555555", Title: "Intel - Net - 1.2.3.4"}
+	driverUpdate = WUAUpdate{GUID: "99999999-8888-7777-6666-555555555555", Title: "Intel - Net - 1.2.3.4", Type: wuaDriverUpdate}
 
 	firefox = WinGetUpgrade{Name: "Mozilla Firefox (x64 en-US)", ID: "Mozilla.Firefox", Version: "130.0", Available: "131.0.2", Source: "winget"}
 	vcX64   = WinGetUpgrade{Name: "Microsoft Visual C++ 2015-2022 Redist", ID: "Microsoft.VCRedist.2015+.x64", NameTruncated: true, Source: "winget"}
@@ -235,7 +235,8 @@ func TestSelectPatchAllTargetsHoldsBackUnreportedUpdates(t *testing.T) {
 	if got := refs(targets); !reflect.DeepEqual(got, want) {
 		t.Fatalf("targets = %v, want %v", got, want)
 	}
-	if len(held) != 2 || held[0].GUID != netUpdate.GUID || held[1].GUID != driverUpdate.GUID {
+	if len(held) != 2 || held[0].Update.GUID != netUpdate.GUID || held[1].Update.GUID != driverUpdate.GUID ||
+		!strings.Contains(held[0].Reason, "not in PatchMon's pending list") {
 		t.Fatalf("held = %+v, want the .NET and driver updates", held)
 	}
 	if len(heldApps) != 1 || heldApps[0].ID != pinned.ID {
@@ -243,6 +244,40 @@ func TestSelectPatchAllTargetsHoldsBackUnreportedUpdates(t *testing.T) {
 	}
 	if targets[0].Name != cuUpdate.DisplayName() {
 		t.Errorf("patch_all target name = %q, want the collector's display name", targets[0].Name)
+	}
+}
+
+// patch_all leaves drivers and optional updates out, as Windows Update does,
+// even when PatchMon lists them; named, they still resolve and install.
+func TestSelectPatchAllTargetsLeavesDriversAndOptionalUpdatesOut(t *testing.T) {
+	preview := WUAUpdate{GUID: "cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee", Title: "2026-09 Cumulative Update Preview", KBs: stringList{"KB5066000"}, Type: 1, BrowseOnly: true}
+	optionalDriver := driverUpdate
+	optionalDriver.BrowseOnly = true
+	optionalDriver.GUID, optionalDriver.Title = "dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee", "Realtek - Audio - 6.0.1"
+	inv := WindowsInventory{WUA: WUAScan{Updates: []WUAUpdate{cuUpdate, driverUpdate, preview, optionalDriver}}}
+
+	targets, held, _ := SelectPatchAllTargets(inv, []string{cuUpdate.GUID, driverUpdate.GUID, preview.GUID, optionalDriver.GUID})
+
+	if got := refs(targets); !reflect.DeepEqual(got, []string{"wua " + cuUpdate.GUID}) {
+		t.Fatalf("targets = %v, want only the cumulative update", got)
+	}
+	wantReasons := map[string]string{
+		driverUpdate.GUID:   "driver update",
+		preview.GUID:        "optional update",
+		optionalDriver.GUID: "driver update",
+	}
+	if len(held) != len(wantReasons) {
+		t.Fatalf("held = %+v", held)
+	}
+	for _, h := range held {
+		if want := wantReasons[h.Update.GUID]; !strings.HasPrefix(h.Reason, want) || !strings.Contains(h.Reason, "patch it by name") {
+			t.Errorf("held %s: reason %q, want %q and a pointer to patching it by name", h.Update.GUID, h.Reason, want)
+		}
+	}
+
+	named, unres := ResolveWindowsNames([]string{driverUpdate.Title, preview.DisplayName()}, inv)
+	if got := refs(named); len(unres) != 0 || !reflect.DeepEqual(got, []string{"wua " + driverUpdate.GUID, "wua " + preview.GUID}) {
+		t.Errorf("named targets = %v, unresolved %+v, want the driver and the preview", got, unres)
 	}
 }
 
@@ -303,7 +338,7 @@ func TestClassifyWinGetExit(t *testing.T) {
 	}{
 		{0, StatusOK, false},
 		{0x8A150109, StatusOK, true},
-		{0x8A15010B, StatusOK, true},
+		{0x8A15010B, StatusOK, true}, // restart initiated: see below
 		{0x8A15002B, StatusSkip, false},
 		{0x8A15004F, StatusSkip, false},
 		{0x8A150014, StatusSkip, false},
@@ -319,6 +354,13 @@ func TestClassifyWinGetExit(t *testing.T) {
 		if r.Status != tt.status || r.RebootRequired != tt.wantReboot || r.Detail == "" {
 			t.Errorf("ClassifyWinGetExit(0x%08X) = %+v, want status %s reboot %v", tt.code, r, tt.status, tt.wantReboot)
 		}
+		// Only the installer that restarts the computer itself stops the run.
+		if r.RestartInitiated != (tt.code == wingetRebootInitiated) {
+			t.Errorf("ClassifyWinGetExit(0x%08X).RestartInitiated = %v", tt.code, r.RestartInitiated)
+		}
+	}
+	if r := ClassifyWinGetExit(wingetRebootInitiated); !strings.Contains(r.Detail, "is restarting the computer") {
+		t.Errorf("restart initiated: detail %q", r.Detail)
 	}
 }
 
@@ -597,6 +639,36 @@ func TestParseWinGetListOutput(t *testing.T) {
 			body:           wingetTable([]string{"이름", "ID", "버전", "사용 가능", "원본"}, gitRow),
 			wantUnreadable: 1,
 		},
+		{
+			// The footer is only recognised after a row, so with a single
+			// row that does not fit, nothing else would catch it.
+			name:           "a single row that does not fit is unreadable",
+			body:           misfit(wingetTable(wingetHeader, firefoxRow)) + "1 upgrades available.\n",
+			wantUnreadable: 1,
+		},
+		{
+			name:           "a single row that does not fit, without a footer",
+			body:           misfit(wingetTable(wingetHeader, firefoxRow)),
+			wantUnreadable: 1,
+		},
+		{
+			name:           "every row of a table that does not fit counts at least once",
+			body:           misfit(misfit(wingetTable(wingetHeader, zipRow, firefoxRow))) + "2 upgrades available.\n",
+			wantUnreadable: 1,
+		},
+		{
+			name:           "a table with no row at all is unreadable",
+			body:           wingetSpinner + wingetTable(wingetHeader, gitRow)[:strings.Index(wingetTable(wingetHeader, gitRow), "Git ")],
+			wantUnreadable: 1,
+		},
+		{
+			// The footer counts both tables; the rowless explicit table
+			// already accounts for its row.
+			name: "an explicit-targeting table whose only row does not fit",
+			body: wingetTable(wingetHeader, gitRow) + "2 upgrades available.\n" + explicitIntro +
+				misfit(wingetTable(wingetHeader, pinnedRow)),
+			want: []string{"Git.Git"}, wantUnreadable: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -654,6 +726,36 @@ func TestParseWinGetListOutput(t *testing.T) {
 			t.Errorf("path = %q, err = %v, want the first marker", l.Path, err)
 		}
 	})
+
+	// The run must not report a name as "not pending" when the only row of
+	// the listing could not be read.
+	t.Run("a single unreadable row makes an app name fatal", func(t *testing.T) {
+		listing, err := parseWinGetListOutput(wingetScriptOutput(misfit(wingetTable(wingetHeader, firefoxRow)) + "1 upgrades available.\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		inv := WindowsInventory{WinGet: listing.Apps, WinGetUnreadable: listing.Unreadable, WinGetPath: testWinGetPath}
+		_, unres := ResolveWindowsNames([]string{"Mozilla Firefox (x64 en-US)"}, inv)
+		if len(unres) != 1 || !unres[0].Fatal || !strings.Contains(unres[0].Reason, "could not be read") {
+			t.Errorf("unresolved = %+v, want a fatal unreadable listing", unres)
+		}
+	})
+}
+
+// misfit inserts a space where the second column starts in the first row of
+// an ASCII table that still fits it, so that row no longer lines up with the
+// header, as when a cell is wider than winget made its column.
+func misfit(table string) string {
+	lines := strings.SplitAfter(table, "\n")
+	cols := parseWinGetHeader(lines[0])
+	at := cols.starts[1]
+	for j := 2; j < len(lines); j++ {
+		if _, ok := cols.parseRow(lines[j]); ok {
+			lines[j] = lines[j][:at] + " " + lines[j][at:]
+			return strings.Join(lines, "")
+		}
+	}
+	return table
 }
 
 func TestValidWinGetPath(t *testing.T) {

@@ -62,6 +62,10 @@ type PatchingHandler struct {
 	// call-sites don't need to thread these values immediately.
 	hub      *patchstream.Hub
 	registry *agentregistry.Registry
+
+	// restartAllowed says whether the user may order a restart with a run
+	// (can_restart_hosts). Set by WithRestartPermission; nil refuses.
+	restartAllowed func(*http.Request) bool
 }
 
 // NewPatchingHandler creates a new patching handler.
@@ -551,17 +555,9 @@ func (h *PatchingHandler) ApproveRun(w http.ResponseWriter, r *http.Request) {
 		JSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid run ID"})
 		return
 	}
-	valRun, err := h.patchRuns.GetByID(r.Context(), validationID)
-	if err != nil || valRun == nil {
-		JSON(w, http.StatusNotFound, map[string]string{"error": "Patch run not found"})
-		return
-	}
-	if valRun.Status != "validated" && valRun.Status != "pending_validation" && valRun.Status != "pending_approval" {
-		JSON(w, http.StatusBadRequest, map[string]string{"error": "Only validated, pending-validation, or pending-approval runs can be approved"})
-		return
-	}
 
-	// Parse optional body for schedule_override.
+	// Parse optional body for schedule_override. Read before anything else
+	// so a restart the user may not order is refused before any lookup.
 	var body struct {
 		ScheduleOverride string         `json:"schedule_override"`
 		Reboot           *rebootRequest `json:"reboot"`
@@ -578,6 +574,19 @@ func (h *PatchingHandler) ApproveRun(w http.ResponseWriter, r *http.Request) {
 	rebootOpts, err := body.Reboot.forRun(time.Now())
 	if err != nil {
 		JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if h.refuseRestart(w, r, rebootOpts) {
+		return
+	}
+
+	valRun, err := h.patchRuns.GetByID(r.Context(), validationID)
+	if err != nil || valRun == nil {
+		JSON(w, http.StatusNotFound, map[string]string{"error": "Patch run not found"})
+		return
+	}
+	if valRun.Status != "validated" && valRun.Status != "pending_validation" && valRun.Status != "pending_approval" {
+		JSON(w, http.StatusBadRequest, map[string]string{"error": "Only validated, pending-validation, or pending-approval runs can be approved"})
 		return
 	}
 
@@ -936,6 +945,9 @@ func (h *PatchingHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 			JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+	}
+	if h.refuseRestart(w, r, rebootOpts) {
+		return
 	}
 
 	host, err := h.hosts.GetByID(r.Context(), body.HostID)
