@@ -73,11 +73,6 @@ func unconfirmed(why error) error {
 	return fmt.Errorf("%w: %v", ErrOwnerUnconfirmed, why)
 }
 
-// scheduleTolerance is how far the time the system records for a restart
-// can be from the time asked for: shutdown(8) counts whole minutes, rounded
-// up.
-const scheduleTolerance = 2 * time.Minute
-
 // Scheduled is the record of a restart PatchMon scheduled, what tells it
 // apart from one scheduled outside PatchMon.
 type Scheduled struct {

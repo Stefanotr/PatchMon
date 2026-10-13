@@ -818,11 +818,12 @@ func TestCommandAnswersWhenTheSystemHangs(t *testing.T) {
 		<-release
 		return nil
 	}
-	// Let the hung calls finish before the next test takes the lock.
+	// Let the hung calls finish before the next test takes the lock: taking
+	// the gate waits for them to let go of it.
 	defer func() {
 		close(release)
 		restartGate.Lock()
-		restartGate.Unlock()
+		defer restartGate.Unlock()
 	}()
 
 	start := time.Now()

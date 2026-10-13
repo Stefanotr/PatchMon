@@ -40,6 +40,11 @@ var (
 	processListTimeout = 5 * time.Second
 )
 
+// scheduleTolerance is how far the time the system records for a restart
+// can be from the time asked for: shutdown(8) counts whole minutes, rounded
+// up.
+const scheduleTolerance = 2 * time.Minute
+
 func shutdownPath() (string, error) {
 	for _, p := range shutdownCandidates {
 		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() {
