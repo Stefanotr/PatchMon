@@ -69,6 +69,10 @@ import { getRequiredTier } from "../constants/tiers";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { usePageRefresh } from "../hooks/usePageRefresh";
+import {
+	REMOTE_RESTART_DISABLED_HINT,
+	useHostRemoteRestart,
+} from "../hooks/useRemoteRestart";
 import { useTick } from "../hooks/useTick";
 import i18n, { tk } from "../i18n";
 import {
@@ -155,6 +159,10 @@ const HostDetail = () => {
 	const toast = useToast();
 	const { canManageHosts, canRestartHosts, hasModule } = useAuth();
 	const canRestart = canRestartHosts() && hasModule("patching");
+	// false when the host's agent refuses remote restarts: the restart is
+	// greyed out rather than refused once sent.
+	const remoteRestart = useHostRemoteRestart(hostId, canRestart);
+	const restartRefused = remoteRestart === false;
 	const [showCredentialsModal, setShowCredentialsModal] = useState(false);
 
 	// Get plaintext API key from navigation state (only available immediately after host creation)
@@ -273,6 +281,7 @@ const HostDetail = () => {
 			["compliance-setup-status", hostId],
 			["docker", "host", hostId],
 			["patching-runs", hostId],
+			["remote-restart", "host", hostId],
 		],
 		[hostId],
 	);
@@ -1431,8 +1440,11 @@ const HostDetail = () => {
 								hostDownThresholdSeconds={hostDownThresholdSeconds}
 								updateIntervalMinutes={updateIntervalMinutes}
 								onRebootClick={
-									canRestart ? () => setShowRestartModal(true) : undefined
+									canRestart && !restartRefused
+										? () => setShowRestartModal(true)
+										: undefined
 								}
+								rebootBlocked={canRestart && restartRefused}
 							/>
 							{host.awaiting_post_patch_report_run_id && (
 								<Link
@@ -1513,14 +1525,16 @@ const HostDetail = () => {
 							<button
 								type="button"
 								onClick={() => setShowRestartModal(true)}
-								disabled={!wsStatus?.connected}
-								className="btn-outline flex items-center gap-2 text-sm whitespace-nowrap"
+								disabled={!wsStatus?.connected || restartRefused}
+								className="btn-outline flex items-center gap-2 text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
 								title={
-									!wsStatus?.connected
-										? t("Agent must be connected to restart the host")
-										: t(
-												"Restart this host now or later, or cancel a scheduled restart",
-											)
+									restartRefused
+										? t(REMOTE_RESTART_DISABLED_HINT)
+										: !wsStatus?.connected
+											? t("Agent must be connected to restart the host")
+											: t(
+													"Restart this host now or later, or cancel a scheduled restart",
+												)
 								}
 							>
 								<Power className="h-4 w-4" />

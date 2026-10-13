@@ -215,6 +215,11 @@ export const adminHostsAPI = {
 			{},
 			{ timeout: RESTART_COMMAND_TIMEOUT_MS },
 		),
+	// Whether the host's agent allows remote restarts, as it last said:
+	// { enabled: true | false | null }, and the same for every host that said,
+	// { hosts: { [hostId]: true | false } }.
+	getRemoteRestart: (hostId) => api.get(`/hosts/${hostId}/remote-restart`),
+	listRemoteRestart: () => api.get("/hosts/remote-restart"),
 	fetchReportBulk: (hostIds) =>
 		api.post("/hosts/bulk/fetch-report", { hostIds }),
 	updateFriendlyName: (hostId, friendlyName) =>

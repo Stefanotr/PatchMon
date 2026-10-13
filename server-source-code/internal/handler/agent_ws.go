@@ -36,7 +36,10 @@ type AgentWSHandler struct {
 	onDisconnect      OnAgentDisconnect
 	onConnect         OnAgentConnect
 	onRestartEvent    OnAgentRestartEvent
-	upgrader          websocket.Upgrader
+	// onRemoteRestartOptIn receives the agent's remote restart announcement
+	// (RemoteRestartHeader), once authenticated.
+	onRemoteRestartOptIn OnRemoteRestartOptIn
+	upgrader             websocket.Upgrader
 }
 
 // OnAgentRestartEvent receives the reboot_result messages no command is
@@ -126,6 +129,10 @@ func (h *AgentWSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	// Capture request context for onConnect/onDisconnect so host DB is preserved.
 	connCtx := r.Context()
+
+	if h.onRemoteRestartOptIn != nil {
+		h.onRemoteRestartOptIn(connCtx, host.ID, ParseRemoteRestartHeader(r.Header.Get(RemoteRestartHeader)))
+	}
 
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {

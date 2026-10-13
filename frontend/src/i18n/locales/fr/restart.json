@@ -62,5 +62,10 @@
 	"{{count}} security update available._one": "{{count}} mise à jour de sécurité disponible.",
 	"{{count}} security update available._other": "{{count}} mises à jour de sécurité disponibles.",
 	"{{count}} non-security update available._one": "{{count}} mise à jour hors sécurité disponible.",
-	"{{count}} non-security update available._other": "{{count}} mises à jour hors sécurité disponibles."
+	"{{count}} non-security update available._other": "{{count}} mises à jour hors sécurité disponibles.",
+	"Remote restarts are disabled on this host. To allow them, set remote-restart-enabled to true under integrations in the agent's config.yml, then restart the agent.": "Les redémarrages à distance sont désactivés sur cet hôte. Pour les autoriser, passez remote-restart-enabled à true dans la section integrations du config.yml de l'agent, puis redémarrez l'agent.",
+	"{{reason}} Remote restarts are disabled on this host.": "{{reason}} Les redémarrages à distance sont désactivés sur cet hôte.",
+	"{{reason}}. Remote restarts are disabled on this host.": "{{reason}}. Les redémarrages à distance sont désactivés sur cet hôte.",
+	"Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}._one": "Les redémarrages à distance sont désactivés sur {{count}} des hôtes sélectionnés, qui sera patché mais pas redémarré\u00a0: {{hosts}}.",
+	"Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}._other": "Les redémarrages à distance sont désactivés sur {{count}} des hôtes sélectionnés, qui seront patchés mais pas redémarrés\u00a0: {{hosts}}."
 }

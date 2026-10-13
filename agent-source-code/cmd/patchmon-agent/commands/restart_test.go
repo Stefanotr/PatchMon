@@ -856,3 +856,49 @@ func TestCancelCommandReplyUnconfirmed(t *testing.T) {
 		t.Fatal("the record was dropped")
 	}
 }
+
+// The agent tells the server, on connecting, whether this host allows remote
+// restarts, so that the UI can grey the restart out where it is refused.
+func TestRemoteRestartHeaderValue(t *testing.T) {
+	resetRestartState(t)
+	remoteRestartsAllowed = func() bool { return true }
+	if got := remoteRestartHeaderValue(); got != "enabled" {
+		t.Errorf("allowed: %q, want enabled", got)
+	}
+	remoteRestartsAllowed = func() bool { return false }
+	if got := remoteRestartHeaderValue(); got != "disabled" {
+		t.Errorf("disabled: %q, want disabled", got)
+	}
+}
+
+// While restarts are disabled, a restart the agent scheduled earlier keeps
+// the header out, so the dialog that cancels it stays open in the UI.
+func TestRemoteRestartHeaderLeftOutWhileOwnRestartPending(t *testing.T) {
+	resetRestartState(t)
+	remoteRestartsAllowed = func() bool { return false }
+	now := time.Now()
+	restartGate.Lock()
+	setRestartRecordLocked(reboot.Scheduled{At: now.Add(time.Hour), Since: now})
+	restartGate.Unlock()
+	if got := remoteRestartHeaderValue(); got != "" {
+		t.Errorf("own restart pending: %q, want no header", got)
+	}
+
+	// Long past its time, the record no longer counts.
+	if ownRestartMayBePending(now.Add(time.Hour + pendingRestartGrace + time.Minute)) {
+		t.Error("a restart long past its time still counts as pending")
+	}
+
+	// A busy lock errs on the side of leaving the cancel reachable.
+	restartGate.Lock()
+	restartGate.record, restartGate.recordLoaded = nil, true
+	busy := ownRestartMayBePending(now)
+	restartGate.Unlock()
+	if !busy {
+		t.Error("busy lock: want pending (header left out)")
+	}
+
+	if got := remoteRestartHeaderValue(); got != "disabled" {
+		t.Errorf("no record: %q, want disabled", got)
+	}
+}

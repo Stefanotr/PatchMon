@@ -19,7 +19,7 @@
 // starting together do not race; a step that fails rolls back entirely and is
 // retried on the next start.
 //
-// The columns added here are also declared at the end of
+// The columns and tables added here are also declared at the end of
 // internal/sqlc/schema/schema.sql, so that sqlc sees them.
 package forkschema
 
@@ -53,6 +53,7 @@ type step struct {
 // does, since databases have already run it.
 var steps = []step{
 	{name: "role_permissions.can_restart_hosts", apply: addCanRestartHosts},
+	{name: "host_remote_restart", apply: addHostRemoteRestart},
 }
 
 // lockKey is the transaction-level advisory lock taken by every step. Any
@@ -129,6 +130,29 @@ func addCanRestartHosts(ctx context.Context, q querier) (bool, error) {
 	if _, err := q.Exec(ctx, `UPDATE role_permissions
 		SET can_restart_hosts = true
 		WHERE can_manage_patching OR role IN ('superadmin', 'admin')`); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// addHostRemoteRestart creates host_remote_restart: whether each host's agent
+// allows remote restarts (remote-restart-enabled in its config.yml), as the
+// agent announced it when it last connected. The agent alone decides; the
+// row only lets the UI grey the restart out where the host would refuse it.
+// No row: the host has not said (older agent, never connected since).
+func addHostRemoteRestart(ctx context.Context, q querier) (bool, error) {
+	var exists bool
+	if err := q.QueryRow(ctx, `SELECT to_regclass('host_remote_restart') IS NOT NULL`).Scan(&exists); err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+	if _, err := q.Exec(ctx, `CREATE TABLE host_remote_restart (
+		host_id TEXT PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+		enabled BOOLEAN NOT NULL,
+		reported_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`); err != nil {
 		return false, err
 	}
 	return true, nil

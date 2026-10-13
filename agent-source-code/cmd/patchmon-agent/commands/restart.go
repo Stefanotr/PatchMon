@@ -141,6 +141,40 @@ func remoteRestartsEnabledInConfig() bool {
 	return cfgManager != nil && cfgManager.IsIntegrationEnabled(config.RemoteRestartIntegration)
 }
 
+// remoteRestartHeader is the header in which the agent tells the server, on
+// every WebSocket connection, whether this host allows remote restarts, so
+// that the UI can grey the restart out where it would be refused. The agent
+// still refuses them on its own (remoteRestartsAllowed).
+const remoteRestartHeader = "X-PatchMon-Remote-Restart"
+
+// remoteRestartHeaderValue is the header's value: "enabled" or "disabled",
+// or "" (header left out, the server then shows no opinion) while restarts
+// are disabled but a restart this agent scheduled may still be pending: the
+// restart dialog must stay open to cancel it, which the agent still accepts.
+func remoteRestartHeaderValue() string {
+	if remoteRestartsAllowed() {
+		return "enabled"
+	}
+	if ownRestartMayBePending(time.Now()) {
+		return ""
+	}
+	return "disabled"
+}
+
+// ownRestartMayBePending reports whether a restart this agent scheduled is
+// recorded and its time not long past. It does not ask the operating system,
+// which can take seconds a connection should not wait, and it answers yes
+// when the lock is busy: a wrong yes only leaves the restart button active
+// (the agent still refuses), a wrong no would hide the cancel.
+func ownRestartMayBePending(now time.Time) bool {
+	if !restartGate.TryLock() {
+		return true
+	}
+	defer restartGate.Unlock()
+	s, ok := restartRecordLocked()
+	return ok && !now.After(s.At.Add(pendingRestartGrace))
+}
+
 // localConfigPath is the config.yml the host's administrator edits.
 func localConfigPath() string {
 	if cfgManager == nil {

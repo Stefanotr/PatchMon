@@ -115,3 +115,33 @@ func TestAFailedGrantRollsTheColumnBack(t *testing.T) {
 		t.Fatal("a half-applied step was committed")
 	}
 }
+
+func TestCreatesTheRemoteRestartTable(t *testing.T) {
+	db := &fakeDB{}
+	if err := Apply(context.Background(), db, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(db.txs) != len(steps) {
+		t.Fatalf("%d transactions for %d steps", len(db.txs), len(steps))
+	}
+	tx := db.txs[1]
+	if tx.stmts[0] != "SELECT pg_advisory_xact_lock($1)" {
+		t.Fatalf("the lock is not taken first: %q", tx.stmts)
+	}
+	if !tx.ran("CREATE TABLE host_remote_restart") || !tx.ran("REFERENCES hosts(id) ON DELETE CASCADE") {
+		t.Fatalf("table not created: %q", tx.stmts)
+	}
+	if !tx.commit {
+		t.Fatal("not committed")
+	}
+}
+
+func TestLeavesAnExistingRemoteRestartTableAlone(t *testing.T) {
+	db := &fakeDB{hasColumn: true}
+	if err := Apply(context.Background(), db, nil); err != nil {
+		t.Fatal(err)
+	}
+	if tx := db.txs[1]; tx.ran("CREATE TABLE") {
+		t.Fatalf("an existing table was recreated: %q", tx.stmts)
+	}
+}

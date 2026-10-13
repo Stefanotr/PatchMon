@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
+import { useRemoteRestartMap } from "../hooks/useRemoteRestart";
 import { tk } from "../i18n";
 import { formatDate, packagesAPI } from "../utils/api";
 import {
@@ -183,6 +184,7 @@ export default function PatchWizard({
 	// it the wizard neither offers nor sends a restart.
 	const { canRestartHosts } = useAuth();
 	const canRestart = canRestartHosts();
+	const remoteRestartByHost = useRemoteRestartMap(canRestart);
 	const isApprove = mode === "approve";
 	const isPatchAll = patchType === "patch_all";
 	// "Packages are fixed" means the Select Packages step has no useful
@@ -528,6 +530,14 @@ export default function PatchWizard({
 	const selectedTargets = useMemo(
 		() => targets.filter((t) => selectedTargetIds.has(t.id)),
 		[targets, selectedTargetIds],
+	);
+
+	// Selected hosts whose agent refuses remote restarts: patched, never
+	// restarted, whatever the restart choice.
+	const restartRefusedTargets = useMemo(
+		() =>
+			selectedTargets.filter((tg) => remoteRestartByHost[tg.hostId] === false),
+		[selectedTargets, remoteRestartByHost],
 	);
 
 	// How many selected hosts already have a pending validation run we could
@@ -1847,6 +1857,28 @@ export default function PatchWizard({
 										value={restartChoice}
 										onChange={setRestartChoice}
 									/>
+									{restartChoice.mode !== "never" &&
+										restartRefusedTargets.length > 0 && (
+											<p className="mt-2 flex items-start gap-1.5 rounded border border-warning-200 bg-warning-50 px-2 py-1.5 text-xs text-warning-800 dark:border-warning-800 dark:bg-warning-900/30 dark:text-warning-200">
+												<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+												<span>
+													{t(
+														"Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}.",
+														{
+															count: restartRefusedTargets.length,
+															hosts: restartRefusedTargets
+																.map(
+																	(tg) =>
+																		tg.friendly_name ||
+																		tg.hostname ||
+																		tg.hostId,
+																)
+																.join(", "),
+														},
+													)}
+												</span>
+											</p>
+										)}
 									{restartChoice.mode !== "never" && (
 										<p className="mt-2 text-[11px] text-secondary-500 dark:text-secondary-400">
 											{t(

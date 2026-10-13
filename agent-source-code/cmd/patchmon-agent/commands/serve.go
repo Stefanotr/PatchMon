@@ -1716,6 +1716,9 @@ func connectOnce(out chan<- wsMsg, dockerEvents <-chan interface{}, backoff *tim
 	header := http.Header{}
 	header.Set("X-API-ID", apiID)
 	header.Set("X-API-KEY", apiKey)
+	if v := remoteRestartHeaderValue(); v != "" {
+		header.Set(remoteRestartHeader, v)
+	}
 
 	skipSSLVerify := cfgManager.GetConfig().SkipSSLVerify || client.IsSkipSSLVerifyEnvSet()
 	if skipSSLVerify {
