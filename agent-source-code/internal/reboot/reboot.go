@@ -87,19 +87,20 @@ type Scheduled struct {
 type Owner int
 
 const (
-	// OwnerNone: the recorded restart is no longer pending. Nothing is
-	// (Linux, FreeBSD), or the host restarted since, or the System event log
-	// shows it aborted (Windows).
+	// OwnerNone means the recorded restart is no longer pending: nothing is
+	// pending (Linux, FreeBSD), the host restarted since, or the System event
+	// log shows it aborted (Windows).
 	OwnerNone Owner = iota
-	// OwnerPatchMon: the pending restart is the recorded one.
+	// OwnerPatchMon means the pending restart is the recorded one.
 	OwnerPatchMon
-	// OwnerOther: a restart or shutdown scheduled outside PatchMon is
+	// OwnerOther means a restart or shutdown scheduled outside PatchMon is
 	// pending.
 	OwnerOther
-	// OwnerUnknown: whose restart is pending is not confirmed. Its state could
-	// not be read (logind's record, the process list, the System event log on
-	// Windows), or PatchMon's restart is pending alongside someone else's.
-	// The record may still be pending, but nothing is cancelled on its say.
+	// OwnerUnknown means whose restart is pending is not confirmed: its state
+	// could not be read (logind's record, the process list, the System event
+	// log on Windows), or PatchMon's restart is pending alongside someone
+	// else's. The record may still be pending, but nothing is cancelled on its
+	// say.
 	OwnerUnknown
 )
 

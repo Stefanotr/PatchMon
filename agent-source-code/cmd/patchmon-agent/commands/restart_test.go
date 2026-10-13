@@ -416,7 +416,7 @@ func TestRestartCommand(t *testing.T) {
 func TestDuplicatePatchRunIsIgnored(t *testing.T) {
 	resetRestartState(t)
 	stopped := false
-	real, err := registerPatchRun("run-1", func() { stopped = true }, false)
+	first, err := registerPatchRun("run-1", func() { stopped = true }, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +439,7 @@ func TestDuplicatePatchRunIsIgnored(t *testing.T) {
 	}
 
 	got, ok := lookupPatchRun("run-1")
-	if !ok || got != real {
+	if !ok || got != first {
 		t.Fatal("the duplicate replaced the real run's entry")
 	}
 	got.cancel()
@@ -452,7 +452,7 @@ func TestDuplicatePatchRunIsIgnored(t *testing.T) {
 	if _, ok := lookupPatchRun("run-1"); !ok {
 		t.Fatal("another entry removed the real run's")
 	}
-	unregisterPatchRun("run-1", real)
+	unregisterPatchRun("run-1", first)
 	if _, ok := lookupPatchRun("run-1"); ok {
 		t.Fatal("the run's entry was not removed")
 	}
@@ -460,7 +460,7 @@ func TestDuplicatePatchRunIsIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	unregisterPatchRun("run-1", real)
+	unregisterPatchRun("run-1", first)
 	if got, ok := lookupPatchRun("run-1"); !ok || got != again {
 		t.Fatal("a finished run removed the entry of a later run with the same id")
 	}
@@ -520,7 +520,7 @@ func TestApplyConfigWaitsForPatchRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	real, err := registerPatchRun("real", noop, false)
+	realRun, err := registerPatchRun("real", noop, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +548,7 @@ func TestApplyConfigWaitsForPatchRuns(t *testing.T) {
 	if s.agentRestarts.Load() != 1 {
 		t.Fatal("the agent restarted while a run was still in progress")
 	}
-	unregisterPatchRun("real", real)
+	unregisterPatchRun("real", realRun)
 	if s.agentRestarts.Load() != 2 {
 		t.Fatalf("agent restarted %d time(s) in all, want 2: once after the last run", s.agentRestarts.Load())
 	}
