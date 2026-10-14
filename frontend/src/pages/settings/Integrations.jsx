@@ -16,10 +16,12 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
+import AllowRemoteRestartOption from "../../components/AllowRemoteRestartOption";
 import ModalPortal from "../../components/ui/ModalPortal";
 import { useConfirm } from "../../contexts/ConfirmContext";
 import { useToast } from "../../contexts/ToastContext";
 import api, { dashboardAPI, formatDate, settingsAPI } from "../../utils/api";
+import { withScriptArgs } from "../../utils/installCommand";
 
 // Checkmk CSV export: format per https://docs.checkmk.com/latest/en/hosts_setup.html#import
 const CHECKMK_CSV_DELIMITER = ";";
@@ -166,6 +168,8 @@ const Integrations = () => {
 	const [new_token, setNewToken] = useState(null);
 	const [show_secret, setShowSecret] = useState(false);
 	const [force_proxmox_install, setForceProxmoxInstall] = useState(false);
+	const [enrollAllowRemoteRestart, setEnrollAllowRemoteRestart] =
+		useState(false);
 	const [_usage_type, setUsageType] = useState("proxmox-lxc");
 	const [_selected_script_type, setSelectedScriptType] =
 		useState("proxmox-lxc");
@@ -2275,10 +2279,15 @@ const Integrations = () => {
 												</p>
 											</div>
 
+											<AllowRemoteRestartOption
+												checked={enrollAllowRemoteRestart}
+												onChange={setEnrollAllowRemoteRestart}
+											/>
+
 											<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
 												<input
 													type="text"
-													value={`curl ${curl_flags} "${getEnrollmentUrl("proxmox-lxc")}" | bash`}
+													value={`curl ${curl_flags} "${getEnrollmentUrl("proxmox-lxc")}" | ${withScriptArgs("bash", { allowRemoteRestart: enrollAllowRemoteRestart })}`}
 													readOnly
 													className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs break-all"
 												/>
@@ -2286,7 +2295,7 @@ const Integrations = () => {
 													type="button"
 													onClick={() =>
 														copy_to_clipboard(
-															`curl ${curl_flags} "${getEnrollmentUrl("proxmox-lxc")}" | bash`,
+															`curl ${curl_flags} "${getEnrollmentUrl("proxmox-lxc")}" | ${withScriptArgs("bash", { allowRemoteRestart: enrollAllowRemoteRestart })}`,
 															"enrollment-command",
 														)
 													}
@@ -2341,10 +2350,15 @@ const Integrations = () => {
 												</p>
 											</div>
 
+											<AllowRemoteRestartOption
+												checked={enrollAllowRemoteRestart}
+												onChange={setEnrollAllowRemoteRestart}
+											/>
+
 											<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
 												<input
 													type="text"
-													value={`curl ${curl_flags} "${getEnrollmentUrl("direct-host")}" | sh`}
+													value={`curl ${curl_flags} "${getEnrollmentUrl("direct-host")}" | ${withScriptArgs("sh", { allowRemoteRestart: enrollAllowRemoteRestart })}`}
 													readOnly
 													className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs break-all"
 												/>
@@ -2352,7 +2366,7 @@ const Integrations = () => {
 													type="button"
 													onClick={() =>
 														copy_to_clipboard(
-															`curl ${curl_flags} "${getEnrollmentUrl("direct-host")}" | sh`,
+															`curl ${curl_flags} "${getEnrollmentUrl("direct-host")}" | ${withScriptArgs("sh", { allowRemoteRestart: enrollAllowRemoteRestart })}`,
 															"direct-enrollment-command",
 														)
 													}

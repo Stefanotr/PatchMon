@@ -163,6 +163,7 @@ patchmon-agent [command] [flags]
 | `ping` | Test server connectivity and validate API credentials | Yes |
 | `config set-api <ID> <KEY> <URL>` | Configure API credentials and server URL | Yes |
 | `config show` | Display current configuration and credentials status | No |
+| `config remote-restart <on\|off>` | Allow or forbid restarts asked for by PatchMon (`remote-restart-enabled`) | Yes |
 | `check-version` | Check if an agent update is available | Yes |
 | `update-agent` | Download and install the latest agent version | Yes |
 | `diagnostics` | Show detailed system and agent diagnostics | No |
@@ -255,7 +256,7 @@ integrations:
 
 ### Remote Restarts
 
-Lets PatchMon restart the host: the restart command from the host page and the restart option of patch runs. Off by default, it must be enabled manually in `config.yml`, then the agent service restarted; the server's configuration messages cannot change it (this does not guard against a server able to push an agent update). While it is off, restart commands are refused and a patch run's restart is skipped. Cancelling a restart PatchMon scheduled stays possible.
+Lets PatchMon restart the host: the restart command from the host page and the restart option of patch runs. Off by default, it is turned on from the host only: the install option `--allow-remote-restart` (`-AllowRemoteRestart` on Windows), `patchmon-agent config remote-restart on`, or an edit of `config.yml`. The server's configuration messages cannot change it (this does not guard against a server able to push an agent update). The agent reads it from the file when a restart is asked for, so a change applies at once. While it is off, restart commands are refused and a patch run's restart is skipped. Cancelling a restart PatchMon scheduled stays possible.
 
 ```yaml
 integrations:

@@ -32,6 +32,17 @@ DRY_RUN="${DRY_RUN:-false}"
 HOST_PREFIX="${HOST_PREFIX:-}"
 FORCE_INSTALL="${FORCE_INSTALL:-false}"
 
+# --allow-remote-restart: the hosts enrolled allow the restarts PatchMon asks
+# for (remote-restart-enabled in their config.yml). Only this argument, in
+# the command whoever runs the enrollment types, turns it on: it is passed on
+# to the agent install script, and the server cannot change it later.
+INSTALL_ARGS=""
+for arg in "$@"; do
+    if [ "$arg" = "--allow-remote-restart" ]; then
+        INSTALL_ARGS="--allow-remote-restart"
+    fi
+done
+
 # ===== COLOR OUTPUT =====
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -346,7 +357,7 @@ while read -r vmid status; do
                 -H \"X-API-KEY: $api_key\" \
                 -o patchmon-install.sh \
                 '$install_url' && \
-            sh patchmon-install.sh && \
+            sh patchmon-install.sh $INSTALL_ARGS && \
             rm -f patchmon-install.sh
         " 2>&1 </dev/null) || install_exit_code=$?
 
@@ -490,7 +501,7 @@ if [[ ${#dpkg_error_containers[@]} -gt 0 ]]; then
                         -H \"X-API-KEY: $api_key\" \
                         -o patchmon-install.sh \
                         '$PATCHMON_URL/api/v1/hosts/install?arch=$architecture' && \
-                    sh patchmon-install.sh && \
+                    sh patchmon-install.sh $INSTALL_ARGS && \
                     rm -f patchmon-install.sh
                 " 2>&1 </dev/null) || install_exit_code=$?
                 

@@ -3594,6 +3594,21 @@ curl -s "https://patchmon.example.com/api/v1/hosts/install?force=true" \
   -H "X-API-ID: ..." -H "X-API-KEY: ..." | sudo sh -s -- --force
 ```
 
+##### Allowing Remote Restarts at Install
+
+**Allow remote restarts** (unticked by default) adds an argument to the command that lets PatchMon restart the host, by writing `remote-restart-enabled: true` under `integrations` in the agent's `config.yml`:
+
+```bash
+curl -s "https://patchmon.example.com/api/v1/hosts/install" \
+  -H "X-API-ID: ..." -H "X-API-KEY: ..." | sudo sh -s -- --allow-remote-restart
+```
+
+```powershell
+... ; & "$env:TEMP\patchmon-install.ps1" -AllowRemoteRestart
+```
+
+It combines with `--force` (`sh -s -- --force --allow-remote-restart`) and with the auto-enrollment commands (`| bash -s -- --allow-remote-restart`, passed on to every host or container enrolled). The decision stays on the host: only the argument, in the command whoever installs the agent runs, turns it on, and the server cannot change the setting afterwards. On a host whose agent already works, the Linux script only turns the setting on, then restarts the agent unless a package operation is running. A reinstall without the argument keeps what the previous `config.yml` said. Afterwards, `patchmon-agent config remote-restart on|off` changes it.
+
 #### Step 5: Run the Command on the Target Host
 
 Paste the command into a terminal on the target host.
@@ -3865,6 +3880,7 @@ patchmon-agent [command] [flags]
 | `diagnostics` | Show comprehensive system and agent diagnostics | Yes |
 | `config show` | Display current configuration and credential status | No |
 | `config set-api` | Configure API credentials and server URL | Yes |
+| `config remote-restart on\|off` | Allow or forbid restarts asked for by PatchMon on this host | Yes |
 | `check-version` | Check if an agent update is available | Yes |
 | `update-agent` | Download and install the latest agent version | Yes |
 | `--version` | Print the agent version. A flag, not a subcommand | No |
@@ -4070,6 +4086,15 @@ Credentials:
 > **Security:** The API key is never shown. The output only confirms whether it is set.
 
 ---
+
+#### `config remote-restart`: Allow or Forbid Remote Restarts
+
+```bash
+sudo patchmon-agent config remote-restart on
+sudo patchmon-agent config remote-restart off
+```
+
+Sets `remote-restart-enabled` under `integrations` in `config.yml`: whether PatchMon may restart the host (the **Restart** button and the restart option of patch runs). The server cannot change it; only this command, the install option `--allow-remote-restart` or an edit of the file do. The agent reads it from the file when a restart is asked for, so it applies at once; restart the agent service so that PatchMon shows the change right away (otherwise it does once the agent reconnects).
 
 #### `config set-api`: Configure Credentials
 

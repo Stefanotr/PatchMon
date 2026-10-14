@@ -137,8 +137,18 @@ func ownRestartLocked(ctx context.Context, now time.Time) (s reboot.Scheduled, p
 	}
 }
 
+// remoteRestartsEnabledInConfig reads the switch from config.yml at each
+// decision: turning it on or off (by hand, or with config remote-restart)
+// applies without restarting the agent. The values loaded at startup stand
+// in when the file cannot be read.
 func remoteRestartsEnabledInConfig() bool {
-	return cfgManager != nil && cfgManager.IsIntegrationEnabled(config.RemoteRestartIntegration)
+	if cfgManager == nil {
+		return false
+	}
+	if on, ok := config.LocalSwitchOnDisk(cfgManager.GetConfigFile(), config.RemoteRestartIntegration); ok {
+		return on
+	}
+	return cfgManager.IsIntegrationEnabled(config.RemoteRestartIntegration)
 }
 
 // remoteRestartHeader is the header in which the agent tells the server, on
@@ -460,7 +470,7 @@ func restartCommand(ctx context.Context, opts reboot.Options) (time.Time, error)
 		return time.Time{}, errors.New("invalid restart command")
 	}
 	if !remoteRestartsAllowed() {
-		return time.Time{}, fmt.Errorf("remote restarts are disabled on this host: set \"%s: true\" under integrations in %s to allow them",
+		return time.Time{}, fmt.Errorf("remote restarts are disabled on this host: to allow them, run \"patchmon-agent config remote-restart on\" on the host, or set \"%s: true\" under integrations in %s",
 			config.RemoteRestartIntegration, localConfigPath())
 	}
 	if err := lockRestartGate(ctx); err != nil {

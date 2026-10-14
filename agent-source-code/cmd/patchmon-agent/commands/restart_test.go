@@ -576,7 +576,7 @@ func TestRemoteRestartsDisabled(t *testing.T) {
 	path := cfgManager.GetConfigFile()
 
 	_, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways})
-	want := `remote restarts are disabled on this host: set "remote-restart-enabled: true" under integrations in ` + path + ` to allow them`
+	want := `remote restarts are disabled on this host: to allow them, run "patchmon-agent config remote-restart on" on the host, or set "remote-restart-enabled: true" under integrations in ` + path
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %q", err, want)
 	}
@@ -900,5 +900,19 @@ func TestRemoteRestartHeaderLeftOutWhileOwnRestartPending(t *testing.T) {
 
 	if got := remoteRestartHeaderValue(); got != "disabled" {
 		t.Errorf("no record: %q, want disabled", got)
+	}
+}
+
+func TestParseOnOff(t *testing.T) {
+	for in, want := range map[string]bool{"on": true, " ON ": true, "enable": true, "true": true, "off": false, "Disabled": false, "no": false} {
+		got, err := parseOnOff(in)
+		if err != nil || got != want {
+			t.Errorf("parseOnOff(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "maybe", "1"} {
+		if _, err := parseOnOff(in); err == nil {
+			t.Errorf("parseOnOff(%q) accepted", in)
+		}
 	}
 }

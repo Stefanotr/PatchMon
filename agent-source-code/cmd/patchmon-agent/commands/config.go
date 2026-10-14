@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"patchmon-agent/internal/config"
 	"patchmon-agent/internal/pkgversion"
 
 	"github.com/spf13/cobra"
@@ -51,10 +52,60 @@ Example:
 	},
 }
 
+// configRemoteRestartCmd allows or forbids, on this host, the restarts
+// PatchMon asks for (remote-restart-enabled in config.yml). It runs on the
+// host, as root: the server has no way to run it, and still cannot change
+// the switch.
+var configRemoteRestartCmd = &cobra.Command{
+	Use:   "remote-restart <on|off>",
+	Short: "Allow or forbid restarts asked for by PatchMon on this host",
+	Long: `Allow or forbid, on this host, the restarts PatchMon asks for: the
+Restart button and the restart option of patch runs. It sets
+remote-restart-enabled under integrations in config.yml, which the server
+cannot change. Restart the agent service afterwards: the agent reads the
+setting when it starts.
+
+Examples:
+  patchmon-agent config remote-restart on
+  patchmon-agent config remote-restart off`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		if err := checkRoot(); err != nil {
+			return err
+		}
+		on, err := parseOnOff(args[0])
+		if err != nil {
+			return err
+		}
+		if err := cfgManager.SetLocalSwitch(config.RemoteRestartIntegration, on); err != nil {
+			return fmt.Errorf("failed to update %s: %w", cfgManager.GetConfigFile(), err)
+		}
+		state := "forbidden"
+		if on {
+			state = "allowed"
+		}
+		fmt.Printf("Remote restarts %s on this host (%s: %t in %s).\n", state, config.RemoteRestartIntegration, on, cfgManager.GetConfigFile())
+		fmt.Println("Restart the PatchMon agent service to apply it.")
+		return nil
+	},
+}
+
+// parseOnOff reads on/off, and the usual synonyms.
+func parseOnOff(s string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "on", "true", "yes", "enable", "enabled":
+		return true, nil
+	case "off", "false", "no", "disable", "disabled":
+		return false, nil
+	}
+	return false, fmt.Errorf("expected on or off, got %q", s)
+}
+
 func init() {
 	// Add subcommands to config
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configSetAPICmd)
+	configCmd.AddCommand(configRemoteRestartCmd)
 }
 
 func showConfig() error {

@@ -94,3 +94,77 @@ func TestSaveKeepsLocalOnlySwitchesFromTheFile(t *testing.T) {
 		t.Fatalf("the unrelated setting was not saved:\n%s", after)
 	}
 }
+
+// The administrator's command on the host (config remote-restart) turns a
+// local-only switch on or off; later saves keep what it wrote, and it takes
+// nothing but local-only switches.
+func TestSetLocalSwitch(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	if err := m.SetLocalSwitch(RemoteRestartIntegration, true); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(m.GetConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "remote-restart-enabled: true") {
+		t.Fatalf("config.yml does not allow remote restarts:\n%s", b)
+	}
+	// Read back as the agent reads it at startup.
+	fresh := New()
+	fresh.SetConfigFile(m.GetConfigFile())
+	if err := fresh.LoadConfig(); err != nil || !fresh.IsIntegrationEnabled(RemoteRestartIntegration) {
+		t.Fatalf("switch not honoured after a reload: %v", err)
+	}
+	// An unrelated save keeps it on, and the other local-only switches off.
+	if err := m.SetUpdateInterval(45); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(m.GetConfigFile())
+	if !strings.Contains(string(after), "remote-restart-enabled: true") || !strings.Contains(string(after), "ssh-proxy-enabled: false") {
+		t.Fatalf("a later save changed the switches:\n%s", after)
+	}
+
+	if err := m.SetLocalSwitch(RemoteRestartIntegration, false); err != nil {
+		t.Fatal(err)
+	}
+	if m.IsIntegrationEnabled(RemoteRestartIntegration) {
+		t.Fatal("switch still on after turning it off")
+	}
+	off, _ := os.ReadFile(m.GetConfigFile())
+	if !strings.Contains(string(off), "remote-restart-enabled: false") {
+		t.Fatalf("config.yml still allows remote restarts:\n%s", off)
+	}
+
+	if err := m.SetLocalSwitch("docker", true); err == nil {
+		t.Fatal("SetLocalSwitch changed a server-synced integration")
+	}
+}
+
+// The switch is read from the file as it is now, not as it was loaded.
+func TestLocalSwitchOnDisk(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	path := m.GetConfigFile()
+	if on, ok := LocalSwitchOnDisk(path, RemoteRestartIntegration); !ok || on {
+		t.Fatalf("default = %v (ok %v), want off", on, ok)
+	}
+	b, _ := os.ReadFile(path)
+	if err := os.WriteFile(path, []byte(strings.Replace(string(b), "remote-restart-enabled: false", "remote-restart-enabled: true", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if on, ok := LocalSwitchOnDisk(path, RemoteRestartIntegration); !ok || !on {
+		t.Fatalf("after the edit = %v (ok %v), want on", on, ok)
+	}
+	// Not a YAML boolean: off, as IsIntegrationEnabled reads it.
+	if err := os.WriteFile(path, []byte(strings.Replace(string(b), "remote-restart-enabled: false", `remote-restart-enabled: "true"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if on, _ := LocalSwitchOnDisk(path, RemoteRestartIntegration); on {
+		t.Fatal("a quoted string counts as on")
+	}
+	if _, ok := LocalSwitchOnDisk(path+".missing", RemoteRestartIntegration); ok {
+		t.Fatal("a missing file reads as ok")
+	}
+}

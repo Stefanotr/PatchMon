@@ -1732,16 +1732,24 @@ Many updates (a kernel, Windows cumulative updates, a .NET runtime) only take ef
 
 Two things must be allowed, one on each side:
 
-- **On the host**, remote restarts must be enabled in the agent's `config.yml` (`/etc/patchmon/config.yml`, or `C:\ProgramData\PatchMon\config.yml` on Windows), then the agent service restarted:
+- **On the host**, remote restarts must be enabled in the agent's `config.yml` (`/etc/patchmon/config.yml`, or `C:\ProgramData\PatchMon\config.yml` on Windows):
 
   ```yaml
   integrations:
     remote-restart-enabled: true
   ```
 
+  Three ways to set it, all on the host:
+
+  - **At install**: tick **Allow remote restarts** above the install command (host setup dialog, Add Host wizard, auto-enrollment commands). The command then ends with `--allow-remote-restart` (`-AllowRemoteRestart` on Windows), in plain sight of whoever runs it; the option is off by default. Running the same command on a host whose agent already works only turns the setting on (an agent older than this release says it cannot: update it first). A reinstall without the option keeps what the previous `config.yml` said.
+  - **With the agent**: `sudo patchmon-agent config remote-restart on` (or `off`), `patchmon-agent.exe config remote-restart on` in an administrator PowerShell. Handy for a configuration management tool.
+  - **By hand**: edit the file as above.
+
+  The agent reads the setting from the file each time a restart is asked for, so a change applies at once; PatchMon shows it once the agent reconnects (restart the agent service to show it now).
+
   The setting is off by default and the server cannot change it, like `ssh-proxy-enabled`: whoever administers the host decides whether PatchMon may restart it. Leave it off on hosts that must never be restarted remotely (domain controllers, hypervisors). While it is off, restart commands are refused and the restart a patch run asks for is skipped; cancelling a restart PatchMon scheduled stays possible.
 
-  The agent tells the server the setting each time it connects, so the interface knows where a restart would be refused: on those hosts the **Restart** button, the **Reboot pending** pill and the Hosts list's **Required** badge are greyed out with the reason, and the patch wizard warns which selected hosts will be patched but not restarted. While a restart PatchMon scheduled before the setting was turned off may still be pending, the agent says nothing, so the dialog stays available to cancel it. Agents from before this change say nothing either: the button stays active and the agent refuses the restart as before. A change to the setting shows once the agent has been restarted (it reads `config.yml` at startup) and the page refreshed.
+  The agent tells the server the setting each time it connects, so the interface knows where a restart would be refused: on those hosts the **Restart** button, the **Reboot pending** pill and the Hosts list's **Required** badge are greyed out with the reason, and the patch wizard warns which selected hosts will be patched but not restarted. While a restart PatchMon scheduled before the setting was turned off may still be pending, the agent says nothing, so the dialog stays available to cancel it. Agents from before this change say nothing either: the button stays active and the agent refuses the restart as before. A change to the setting shows once the agent reconnects (restart the agent service to show it at once) and the page refreshed.
 - **In PatchMon**, the user needs the `can_restart_hosts` permission, apart from `can_manage_patching`, so that restarting hosts can be given to fewer people than patching. The Restart button, the restart dialog and the wizard's Restart section only appear with it, and the server refuses a restart command or a patch run asking for a restart without it (`403 Restarting hosts requires the can_restart_hosts permission: submit the run without a restart`). When the permission was added, every role that could manage patching received it, so nothing changed for existing roles until an administrator removes it.
 
 #### Restart after a patch run

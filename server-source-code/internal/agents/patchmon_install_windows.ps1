@@ -85,6 +85,14 @@ $InstallPath   = "C:\Program Files\PatchMon"
 $ConfigPath    = "C:\ProgramData\PatchMon"
 $SkipSslVerify = ($env:PATCHMON_IGNORE_SSL -eq "true" -or $env:PATCHMON_IGNORE_SSL -eq "1")
 
+# -AllowRemoteRestart: this host allows the restarts PatchMon asks for
+# (remote-restart-enabled under integrations in config.yml). Only this
+# argument, in the command whoever installs the agent runs, turns it on: no
+# variable the server sets does, and the server cannot change it later.
+# Without it, a reinstall keeps what config.yml already says. The script has
+# no param() block (the server prepends lines to it), so it reads $args.
+$AllowRemoteRestart = $args -contains "-AllowRemoteRestart"
+
 # Check if running as Administrator
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
@@ -275,6 +283,23 @@ if ($ServerURL -and $APIID -and $APIKey) {
     Write-Host "" -ForegroundColor Yellow
     Write-Host "No credentials provided. Configure them manually with:" -ForegroundColor Yellow
     Write-Host "  patchmon-agent.exe config set-api <API_ID> <API_KEY> <SERVER_URL>" -ForegroundColor Cyan
+}
+
+# Allow remote restarts when asked to, before the service starts.
+if ($AllowRemoteRestart) {
+    Write-Host "Allowing remote restarts on this host..." -ForegroundColor Yellow
+    try {
+        Invoke-AgentBinary -Path $targetPath -AgentArgs @("--config", $configFile, "config", "remote-restart", "on")
+    } catch {
+        Show-AgentLaunchFailure -Path $targetPath -InstallDir $InstallPath -ConfigFile $configFile -Reason $_.Exception.Message
+        exit 1
+    }
+    $configNow = Get-Content -Path $configFile -Raw -ErrorAction SilentlyContinue
+    if ($LASTEXITCODE -eq 0 -and $configNow -match '(?m)^\s*remote-restart-enabled\s*:\s*true\s*$') {
+        Write-Host "Remote restarts allowed (remote-restart-enabled: true)." -ForegroundColor Green
+    } else {
+        Write-Warning "Could not allow remote restarts. Set remote-restart-enabled: true under integrations in $configFile, then restart the PatchMon Agent service."
+    }
 }
 
 # Test the installation

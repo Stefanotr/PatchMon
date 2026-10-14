@@ -33,6 +33,17 @@ CURL_FLAGS="${CURL_FLAGS:--s}"
 FORCE_INSTALL="${FORCE_INSTALL:-false}"
 FRIENDLY_NAME="${FRIENDLY_NAME:-}" # Optional: Custom friendly name for the host
 
+# --allow-remote-restart: the hosts enrolled allow the restarts PatchMon asks
+# for (remote-restart-enabled in their config.yml). Only this argument, in
+# the command whoever runs the enrollment types, turns it on: it is passed on
+# to the agent install script, and the server cannot change it later.
+INSTALL_ARGS=""
+for arg in "$@"; do
+    if [ "$arg" = "--allow-remote-restart" ]; then
+        INSTALL_ARGS="--allow-remote-restart"
+    fi
+done
+
 # ===== COLOR OUTPUT =====
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -304,13 +315,16 @@ if [ "$http_code" = "201" ]; then
         info "Using force mode - will bypass broken packages"
     fi
     info "Using architecture: $architecture ($os_type)"
+    if [ -n "$INSTALL_ARGS" ]; then
+        info "Remote restarts will be allowed on this host"
+    fi
     
     # Download and execute installation script
     install_exit_code=0
     install_output=$(curl $CURL_FLAGS \
         -H "X-API-ID: $api_id" \
         -H "X-API-KEY: $api_key" \
-        "$install_url" | sh 2>&1) || install_exit_code=$?
+        "$install_url" | sh -s -- $INSTALL_ARGS 2>&1) || install_exit_code=$?
 
     # Check both exit code AND success message in output
     if [ "$install_exit_code" -eq 0 ] || echo "$install_output" | grep -q "PatchMon Agent installation completed successfully"; then
