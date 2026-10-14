@@ -841,3 +841,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS mv_package_stats_pkey ON mv_package_stats (pac
 -- Fork schema steps (internal/forkschema): columns this fork adds outside
 -- the numbered migrations, declared here so sqlc sees them.
 ALTER TABLE role_permissions ADD COLUMN can_restart_hosts BOOLEAN NOT NULL DEFAULT false;
+CREATE TABLE host_remote_restart (
+    host_id TEXT PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+    enabled BOOLEAN NOT NULL,
+    reported_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

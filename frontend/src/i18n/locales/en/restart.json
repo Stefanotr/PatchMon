@@ -2,5 +2,7 @@
 	"{{count}} security update available._one": "{{count}} security update available.",
 	"{{count}} security update available._other": "{{count}} security updates available.",
 	"{{count}} non-security update available._one": "{{count}} non-security update available.",
-	"{{count}} non-security update available._other": "{{count}} non-security updates available."
+	"{{count}} non-security update available._other": "{{count}} non-security updates available.",
+	"Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}._one": "Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}.",
+	"Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}._other": "Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}."
 }

@@ -358,6 +358,12 @@ type HostPendingConfig struct {
 	UpdatedAt                    pgtype.Timestamp `json:"updated_at"`
 }
 
+type HostRemoteRestart struct {
+	HostID     string           `json:"host_id"`
+	Enabled    bool             `json:"enabled"`
+	ReportedAt pgtype.Timestamp `json:"reported_at"`
+}
+
 type HostRepository struct {
 	ID           string           `json:"id"`
 	HostID       string           `json:"host_id"`

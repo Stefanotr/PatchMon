@@ -174,6 +174,8 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 		integrationStatusStore = store.NewIntegrationStatusStore(redisResolver)
 	}
 	pendingConfigStore := store.NewPendingConfigStore(dbProvider)
+	remoteRestartStore := store.NewHostRemoteRestartStore(dbProvider)
+	remoteRestartHandler := handler.NewRemoteRestartHandler(remoteRestartStore)
 	hostsHandler := handler.NewHostsHandler(hostsStore, hostGroupsStore, settingsStore, queueClient, registry, integrationStatusStore, pendingConfigStore, dbProvider, notifyEmit)
 	packagesHandler := handler.NewPackagesHandler(store.NewPackagesStore(dbProvider))
 	repositoriesHandler := handler.NewRepositoriesHandler(store.NewRepositoriesStore(dbProvider))
@@ -232,6 +234,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 		// Restarts scheduled by patch runs, and late answers to restart
 		// commands, recorded in the host's Agent Activity.
 		handler.WithOnRestartEvent(handler.RecordRestartEvent(hostsStore, store.NewJobHistoryStore(dbProvider))),
+		handler.WithOnRemoteRestartOptIn(handler.RecordRemoteRestartOptIn(remoteRestartStore)),
 	}
 	if rdpHandler != nil {
 		agentOpts = append(agentOpts, handler.WithOnRDPProxyMessage(rdpHandler.HandleRDPProxyMessage))
@@ -551,6 +554,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 			// Routes that can order a host restart: the restart command, and
 			// patch runs that restart the host (trigger, approval).
 			registerRestartRoutes(r, permissionsStore, hostsHandler, patchingHandler)
+			registerRemoteRestartRoutes(r, permissionsStore, remoteRestartHandler)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/{hostId}/integrations/{integrationName}/toggle", hostsHandler.ToggleIntegration)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore)).Get("/hosts/{hostId}", hostsHandler.GetByID)
 			r.With(middleware.RequirePermission("can_manage_hosts", permissionsStore)).Post("/hosts/create", hostsHandler.Create)

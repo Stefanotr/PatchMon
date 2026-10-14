@@ -198,6 +198,8 @@ type Querier interface {
 	DeleteHostPackagesByHostID(ctx context.Context, hostID string) error
 	// Bulk-removes superseded Windows Update entries for a host.
 	DeleteHostPackagesByWUAGUIDs(ctx context.Context, arg DeleteHostPackagesByWUAGUIDsParams) error
+	// Forgets the host's answer: its agent no longer says (older agent).
+	DeleteHostRemoteRestart(ctx context.Context, hostID string) error
 	DeleteHostRepositoriesByHostID(ctx context.Context, hostID string) error
 	DeleteHostsByIDs(ctx context.Context, dollar_1 []string) error
 	DeleteImageByID(ctx context.Context, id string) error
@@ -342,6 +344,7 @@ type Querier interface {
 	GetHostPackagesWithHostsByPackageID(ctx context.Context, packageID string) ([]GetHostPackagesWithHostsByPackageIDRow, error)
 	GetHostPackagesWithPackages(ctx context.Context, hostID string) ([]GetHostPackagesWithPackagesRow, error)
 	GetHostRefsForPackageIDs(ctx context.Context, arg GetHostRefsForPackageIDsParams) ([]GetHostRefsForPackageIDsRow, error)
+	GetHostRemoteRestart(ctx context.Context, hostID string) (HostRemoteRestart, error)
 	GetHostRepositoriesByHostID(ctx context.Context, hostID string) ([]GetHostRepositoriesByHostIDRow, error)
 	GetHostRepositoriesForRepo(ctx context.Context, repositoryID string) ([]GetHostRepositoriesForRepoRow, error)
 	GetHostRepositoryCountByHostIDs(ctx context.Context, dollar_1 []string) ([]GetHostRepositoryCountByHostIDsRow, error)
@@ -499,6 +502,7 @@ type Querier interface {
 	ListHostGroups(ctx context.Context) ([]HostGroup, error)
 	ListHostGroupsWithHostCount(ctx context.Context) ([]ListHostGroupsWithHostCountRow, error)
 	ListHostOptions(ctx context.Context, arg ListHostOptionsParams) ([]ListHostOptionsRow, error)
+	ListHostRemoteRestart(ctx context.Context) ([]HostRemoteRestart, error)
 	ListHosts(ctx context.Context) ([]Host, error)
 	ListHostsForComplianceDashboard(ctx context.Context) ([]ListHostsForComplianceDashboardRow, error)
 	ListHostsForPackage(ctx context.Context, arg ListHostsForPackageParams) ([]ListHostsForPackageRow, error)
@@ -698,6 +702,9 @@ type Querier interface {
 	UpsertDockerImageUpdate(ctx context.Context, arg UpsertDockerImageUpdateParams) error
 	UpsertDockerNetwork(ctx context.Context, arg UpsertDockerNetworkParams) error
 	UpsertDockerVolume(ctx context.Context, arg UpsertDockerVolumeParams) error
+	// Records whether the host's agent allows remote restarts, as it announced
+	// it on connecting.
+	UpsertHostRemoteRestart(ctx context.Context, arg UpsertHostRemoteRestartParams) error
 	UpsertPendingConfig(ctx context.Context, arg UpsertPendingConfigParams) error
 	// Replaces the previous GetRepositoryByURLDistComponents + InsertRepository
 	// SELECT-then-INSERT pattern. Migration 000040 added a UNIQUE constraint on

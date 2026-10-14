@@ -24,6 +24,8 @@ import Tooltip from "./ui/Tooltip";
  *   compact                    — boolean
  *   onRebootClick              — optional; makes the reboot pill a button
  *                                (opens the restart dialog)
+ *   rebootBlocked              — boolean; the host refuses remote restarts,
+ *                                said in the reboot pill's tooltip
  */
 const PILL_BASE =
 	"inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap";
@@ -105,6 +107,7 @@ const HostStatusPills = ({
 	updateIntervalMinutes = 60,
 	compact = false,
 	onRebootClick,
+	rebootBlocked = false,
 }) => {
 	const { t } = useTranslation();
 	if (!host) return null;
@@ -267,6 +270,18 @@ const HostStatusPills = ({
 	);
 
 	// ---------- Reboot pill (only when needed) ----------
+	const rebootReason =
+		host.reboot_reason || t("Host requires a reboot to apply pending updates.");
+	let rebootTooltip = rebootReason;
+	if (onRebootClick) {
+		rebootTooltip = t("{{reason}} Click to restart the host.", {
+			reason: rebootReason,
+		});
+	} else if (rebootBlocked) {
+		rebootTooltip = t("{{reason}} Remote restarts are disabled on this host.", {
+			reason: rebootReason,
+		});
+	}
 	const rebootPill = host.needs_reboot ? (
 		<Pill
 			key="reboot"
@@ -278,16 +293,7 @@ const HostStatusPills = ({
 					? t("Reboot pending: restart the host")
 					: t("Reboot pending")
 			}
-			tooltip={
-				onRebootClick
-					? t("{{reason}} Click to restart the host.", {
-							reason:
-								host.reboot_reason ||
-								t("Host requires a reboot to apply pending updates."),
-						})
-					: host.reboot_reason ||
-						t("Host requires a reboot to apply pending updates.")
-			}
+			tooltip={rebootTooltip}
 			onClick={onRebootClick}
 		/>
 	) : null;

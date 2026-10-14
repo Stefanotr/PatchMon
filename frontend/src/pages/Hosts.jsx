@@ -49,6 +49,7 @@ import ModalPortal from "../components/ui/ModalPortal";
 import Tooltip from "../components/ui/Tooltip";
 import { useAuth } from "../contexts/AuthContext";
 import { usePageRefresh } from "../hooks/usePageRefresh";
+import { useRemoteRestartMap } from "../hooks/useRemoteRestart";
 import { useTick } from "../hooks/useTick";
 import i18n, { tk } from "../i18n";
 import {
@@ -73,6 +74,7 @@ const HOSTS_REFRESH_KEYS = [
 	["hostFilterOptions"],
 	["hostGroups"],
 	["wsStatusSummary"],
+	["remote-restart", "all"],
 ];
 
 const HOSTS_PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500];
@@ -161,6 +163,9 @@ const Hosts = () => {
 	const [restartHost, setRestartHost] = useState(null);
 	const { canRestartHosts, hasModule } = useAuth();
 	const canRestart = canRestartHosts() && hasModule("patching");
+	// Hosts whose agent refuses remote restarts: their restart is greyed out.
+	const remoteRestartByHost = useRemoteRestartMap(canRestart);
+	const restartRefused = (host) => remoteRestartByHost[host.id] === false;
 	const [selectedHosts, setSelectedHosts] = useState([]);
 	// O(1) `.has()` lookup for the per-row "is this host selected?" check
 	// inside the table's row map. Without this, `selectedHosts.includes(id)`
@@ -1703,25 +1708,33 @@ const Hosts = () => {
 						{host.needs_reboot ? (
 							<Tooltip
 								content={
-									canRestart
+									canRestart && !restartRefused(host)
 										? t("{{reason}}. Click to restart the host.", {
 												reason: host.reboot_reason || t("Reboot required"),
 											})
-										: host.reboot_reason || t("Reboot required")
+										: canRestart
+											? t(
+													"{{reason}}. Remote restarts are disabled on this host.",
+													{
+														reason: host.reboot_reason || t("Reboot required"),
+													},
+												)
+											: host.reboot_reason || t("Reboot required")
 								}
 							>
 								<button
 									type="button"
-									className={`badge bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200 gap-1 ${canRestart ? "cursor-pointer hover:opacity-80" : "cursor-help"} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1`}
+									className={`badge bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200 gap-1 ${canRestart && !restartRefused(host) ? "cursor-pointer hover:opacity-80" : "cursor-help"} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1`}
 									aria-label={
-										canRestart
+										canRestart && !restartRefused(host)
 											? t("Reboot required: restart the host")
 											: t("Reboot required")
 									}
 									onClick={(e) => {
 										e.preventDefault();
 										e.stopPropagation();
-										if (canRestart) setRestartHost(host);
+										if (canRestart && !restartRefused(host))
+											setRestartHost(host);
 									}}
 								>
 									<RotateCcw className="h-3 w-3" />
@@ -2475,9 +2488,12 @@ const Hosts = () => {
 																		}
 																		compact
 																		onRebootClick={
-																			canRestart
+																			canRestart && !restartRefused(host)
 																				? () => setRestartHost(host)
 																				: undefined
+																		}
+																		rebootBlocked={
+																			canRestart && restartRefused(host)
 																		}
 																	/>
 																</div>

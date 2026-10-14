@@ -33,3 +33,11 @@ func registerRestartRoutes(r chi.Router, permissions *store.PermissionsStore, ho
 	patchRun.Post("/patching/trigger", patching.Trigger)
 	patchRun.Post("/patching/runs/{id}/approve", patching.ApproveRun)
 }
+
+// registerRemoteRestartRoutes registers the routes that tell the UI which
+// hosts allow remote restarts, read-only: whoever sees the hosts may know.
+func registerRemoteRestartRoutes(r chi.Router, permissions *store.PermissionsStore, h *handler.RemoteRestartHandler) {
+	read := r.With(middleware.RequirePermission("can_view_hosts", permissions), hostctx.RequireModule("patching"))
+	read.Get("/hosts/remote-restart", h.List)
+	read.Get("/hosts/{hostId}/remote-restart", h.Get)
+}

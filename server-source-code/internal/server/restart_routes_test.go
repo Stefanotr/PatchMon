@@ -51,3 +51,16 @@ func TestRestartRoutesTakeJSONOnly(t *testing.T) {
 		}
 	}
 }
+
+// The remote restart settings are for signed-in users who may see hosts.
+func TestRemoteRestartRoutesNeedASignedInUser(t *testing.T) {
+	r := chi.NewRouter()
+	registerRemoteRestartRoutes(r, store.NewPermissionsStore(nil), handler.NewRemoteRestartHandler(nil))
+	for _, path := range []string{"/hosts/remote-restart", "/hosts/h1/remote-restart"} {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("GET %s: status %d, want 401 from the permission check", path, rec.Code)
+		}
+	}
+}

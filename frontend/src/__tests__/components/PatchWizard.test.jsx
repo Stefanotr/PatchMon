@@ -42,6 +42,7 @@ vi.mock("../../contexts/ToastContext", () => ({
 vi.mock("../../utils/api", () => ({
 	formatDate: (value) => String(value),
 	packagesAPI: { getHosts: vi.fn() },
+	adminHostsAPI: { listRemoteRestart: vi.fn() },
 }));
 
 vi.mock("../../utils/patchingApi", async (importOriginal) => ({
@@ -56,7 +57,7 @@ vi.mock("../../utils/patchingApi", async (importOriginal) => ({
 }));
 
 import PatchWizard from "../../components/PatchWizard";
-import { packagesAPI } from "../../utils/api";
+import { adminHostsAPI, packagesAPI } from "../../utils/api";
 import { patchingAPI, pollDryRunUntilDone } from "../../utils/patchingApi";
 import { extraDependencies, hasExtraDependencies } from "../../utils/patchRun";
 
@@ -590,6 +591,7 @@ describe("PatchWizard restart option", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		auth.canRestart = true;
+		adminHostsAPI.listRemoteRestart.mockResolvedValue({ data: { hosts: {} } });
 		patchingAPI.getPreviewRun.mockResolvedValue({});
 		patchingAPI.trigger.mockImplementation(async (hostId) => ({
 			patch_run_id: `run-${hostId}`,
@@ -653,5 +655,27 @@ describe("PatchWizard restart option", () => {
 			null,
 			{},
 		);
+	});
+
+	it("warns about the selected hosts that refuse remote restarts", async () => {
+		adminHostsAPI.listRemoteRestart.mockResolvedValue({
+			data: { hosts: { h1: true, h2: false } },
+		});
+		renderWizard(HOSTS, { initialStep: 0 });
+		const warning = /Remote restarts are disabled on 1 of the selected hosts/;
+
+		// No restart asked for: nothing to warn about.
+		await waitFor(() =>
+			expect(adminHostsAPI.listRemoteRestart).toHaveBeenCalled(),
+		);
+		expect(screen.queryByText(warning)).not.toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("Restart after patching"), {
+			target: { value: "if_needed" },
+		});
+		const shown = await screen.findByText(warning);
+		expect(shown.textContent).toContain(": bravo.");
+		expect(shown.textContent).not.toContain("alpha");
+		expect(shown.textContent).not.toContain("charlie");
 	});
 });
