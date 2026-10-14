@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -690,12 +691,27 @@ func (h *HostsHandler) ForceAgentUpdate(w http.ResponseWriter, r *http.Request) 
 		Error(w, http.StatusNotFound, "Host not found")
 		return
 	}
+	// One update at a time: a second request would race the first, and the
+	// agent would only refuse it.
+	if h.db != nil {
+		open, err := store.NewAgentUpdateStore(h.db).Open(r.Context(), host.ApiID)
+		if err != nil {
+			slog.Warn("agent update: open update check failed", "host_id", hostID, "error", err)
+		} else if open {
+			Error(w, http.StatusConflict, "An agent update is already in progress on this host")
+			return
+		}
+	}
 	task, err := queue.NewUpdateAgentTask(host.ApiID, hostFromRequest(r), true) // bypass_settings=true for force update
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "Failed to create agent update task")
 		return
 	}
 	info, err := h.queueClient.Enqueue(task)
+	if errors.Is(err, asynq.ErrDuplicateTask) {
+		Error(w, http.StatusConflict, "An agent update is already in progress on this host")
+		return
+	}
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "Failed to queue agent update")
 		return

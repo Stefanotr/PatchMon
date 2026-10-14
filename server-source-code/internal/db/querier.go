@@ -381,6 +381,9 @@ type Querier interface {
 	GetNetworksByHostID(ctx context.Context, hostID string) ([]DockerNetwork, error)
 	GetNotificationDestinationByID(ctx context.Context, id string) (NotificationDestination, error)
 	GetNotificationRouteByID(ctx context.Context, id string) (NotificationRoute, error)
+	// The agent update of a host still open (active, or waiting for the agent),
+	// the latest one sent after created_after.
+	GetOpenAgentUpdate(ctx context.Context, arg GetOpenAgentUpdateParams) (GetOpenAgentUpdateRow, error)
 	GetOSDistribution(ctx context.Context) ([]GetOSDistributionRow, error)
 	GetOSDistributionByTypeAndVersion(ctx context.Context) ([]GetOSDistributionByTypeAndVersionRow, error)
 	GetPackageByID(ctx context.Context, id string) (Package, error)
@@ -509,6 +512,13 @@ type Querier interface {
 	ListHostsPaginated(ctx context.Context, arg ListHostsPaginatedParams) ([]ListHostsPaginatedRow, error)
 	ListImages(ctx context.Context, arg ListImagesParams) ([]DockerImage, error)
 	ListJobHistoryByApiID(ctx context.Context, arg ListJobHistoryByApiIDParams) ([]JobHistory, error)
+	// What a host's agent is doing now: jobs still open that started after
+	// open_after, and jobs that ended after finished_after (shown for a moment
+	// with their outcome).
+	ListLiveJobHistory(ctx context.Context, arg ListLiveJobHistoryParams) ([]ListLiveJobHistoryRow, error)
+	// A host's patch runs queued or running, and those that ended after
+	// finished_after, with the end of their output.
+	ListLivePatchRuns(ctx context.Context, arg ListLivePatchRunsParams) ([]ListLivePatchRunsRow, error)
 	ListNeedingUpdates(ctx context.Context) ([]ListNeedingUpdatesRow, error)
 	ListNetworks(ctx context.Context, arg ListNetworksParams) ([]DockerNetwork, error)
 	ListNotificationDeliveryLog(ctx context.Context, arg ListNotificationDeliveryLogParams) ([]NotificationDeliveryLog, error)
@@ -569,6 +579,11 @@ type Querier interface {
 	// only one of them updates a row here, and the loser must be told so rather
 	// than going on to create a second patch run and enqueue a second task.
 	MarkValidationApproved(ctx context.Context, arg MarkValidationApprovedParams) (int64, error)
+	// Records a stage of an agent update on its row: the output keys in patch
+	// are merged, and stages.<stage> is set to at unless already set (when the
+	// stage began). Only an open row of that agent changes; status ends it when
+	// completed or failed.
+	RecordAgentUpdateStage(ctx context.Context, arg RecordAgentUpdateStageParams) (int64, error)
 	RevokeAllSessionsForUser(ctx context.Context, userID string) error
 	RevokeAllSessionsForUserExcept(ctx context.Context, arg RevokeAllSessionsForUserExceptParams) error
 	RevokeAllTrustedDevicesForUser(ctx context.Context, userID string) error

@@ -55,7 +55,8 @@ const JOB_LABELS = {
 	"session-cleanup": tk("Session Cleanup"),
 };
 
-const formatJobLabel = (jobName) => {
+// formatJobLabel is the display name of a queue job (translated).
+export const formatJobLabel = (jobName) => {
 	if (!jobName) return i18n.t("Job");
 	const lower = jobName.toString().toLowerCase();
 	if (JOB_LABELS[lower]) return i18n.t(JOB_LABELS[lower]);

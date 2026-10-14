@@ -442,7 +442,7 @@ func runServiceLoop(stopCh <-chan struct{}) error {
 					logger.WithError(err).Warn("report_now failed")
 				}
 			case "update_agent":
-				if err := updateAgent(); err != nil {
+				if err := updateAgent(updateFromServer); err != nil {
 					logger.WithError(err).Warn("update_agent failed")
 				}
 			case "refresh_integration_status":
@@ -1719,6 +1719,7 @@ func connectOnce(out chan<- wsMsg, dockerEvents <-chan interface{}, backoff *tim
 	if v := remoteRestartHeaderValue(); v != "" {
 		header.Set(remoteRestartHeader, v)
 	}
+	header.Set(agentVersionHeader, strings.TrimPrefix(pkgversion.Version, "v"))
 
 	skipSSLVerify := cfgManager.GetConfig().SkipSSLVerify || client.IsSkipSSLVerifyEnvSet()
 	if skipSSLVerify {

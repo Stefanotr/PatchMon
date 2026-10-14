@@ -53,19 +53,28 @@ func closeStaleRestartRecords(ctx context.Context, q staleCommandCloser, now tim
 	})
 }
 
-// sweepRestartRecords closes the stale restart records of one database, as
-// part of the patch-run cleanup (every 10 minutes, every context). A failure
-// is logged and leaves the patch-run sweep alone.
-func (h *PatchRunCleanupHandler) sweepRestartRecords(ctx context.Context, d *database.DB, host string) {
+// sweepCommandRecords closes the stale restart and agent update records of
+// one database, as part of the patch-run cleanup (every 10 minutes, every
+// context). A failure is logged and leaves the patch-run sweep alone.
+func (h *PatchRunCleanupHandler) sweepCommandRecords(ctx context.Context, d *database.DB, host string) {
 	if d == nil {
 		return
 	}
-	n, err := closeStaleRestartRecords(ctx, d.Queries, time.Now())
-	if err != nil {
-		h.log.Warn("restart record cleanup failed", "host", host, "error", err)
-		return
-	}
-	if n > 0 {
-		h.log.Info("restart record cleanup: closed records without an answer", "host", host, "count", n)
+	now := time.Now()
+	for _, sweep := range []struct {
+		what  string
+		close func(context.Context, staleCommandCloser, time.Time) (int64, error)
+	}{
+		{"restart records", closeStaleRestartRecords},
+		{"agent updates", closeStaleAgentUpdates},
+	} {
+		n, err := sweep.close(ctx, d.Queries, now)
+		if err != nil {
+			h.log.Warn("command record cleanup failed", "records", sweep.what, "host", host, "error", err)
+			continue
+		}
+		if n > 0 {
+			h.log.Info("command record cleanup: closed records without an answer", "records", sweep.what, "host", host, "count", n)
+		}
 	}
 }

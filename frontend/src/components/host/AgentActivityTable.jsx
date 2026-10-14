@@ -1,8 +1,17 @@
+import {
+	ArrowRight,
+	CheckCircle2,
+	Clock,
+	Clock3,
+	Loader2,
+	XCircle,
+} from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n, { tk } from "../../i18n";
 import { formatDate, formatRelativeTime } from "../../utils/api";
 import ActivityTypeBadge from "./ActivityTypeBadge";
+import { AGENT_UPDATE_STAGE_TEXT } from "./liveActivity";
 import SectionChips from "./SectionChips";
 
 const PLACEHOLDER = "-";
@@ -20,6 +29,17 @@ const STATUS_STYLE = {
 		"bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200",
 	delayed: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
 	active: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+};
+
+// Icons of the statuses, so they read at a glance.
+const STATUS_ICON = {
+	success: CheckCircle2,
+	completed: CheckCircle2,
+	error: XCircle,
+	failed: XCircle,
+	waiting: Clock,
+	delayed: Clock3,
+	active: Loader2,
 };
 
 // Display labels of the queue statuses above. Keys are API values.
@@ -48,13 +68,20 @@ const StatusBadge = ({ status }) => {
 			</span>
 		);
 	}
+	const key = status.toLowerCase();
 	const cls =
-		STATUS_STYLE[status.toLowerCase()] ||
+		STATUS_STYLE[key] ||
 		"bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200";
+	const Icon = STATUS_ICON[key];
 	return (
 		<span
-			className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${cls}`}
+			className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${cls}`}
 		>
+			{Icon && (
+				<Icon
+					className={`h-3 w-3 flex-shrink-0 ${key === "active" ? "animate-spin" : ""}`}
+				/>
+			)}
 			{Object.hasOwn(STATUS_LABELS, status)
 				? t(STATUS_LABELS[status])
 				: titleCase(status)}
@@ -158,7 +185,50 @@ const ExpandableText = ({ text, expanded, onToggle, tone = "neutral" }) => {
 	);
 };
 
+// agentUpdateOutput reads the stages recorded on an agent update row, or
+// null for another job.
+const agentUpdateOutput = (item) => {
+	if (item.job_name !== "update_agent" || !item.output) return null;
+	try {
+		const out =
+			typeof item.output === "string" ? JSON.parse(item.output) : item.output;
+		return out && typeof out === "object" && out.stage ? out : null;
+	} catch {
+		return null;
+	}
+};
+
+// An agent update in the history: its versions and where it got to.
+const AgentUpdateDetails = ({ out }) => {
+	const { t } = useTranslation();
+	const stage = AGENT_UPDATE_STAGE_TEXT[out.stage];
+	return (
+		<div className="flex flex-wrap items-center gap-2 min-w-0 text-xs">
+			{(out.from_version || out.to_version) && (
+				<span className="inline-flex items-center gap-1 rounded bg-secondary-100 dark:bg-secondary-700 px-1.5 py-0.5 font-mono text-secondary-700 dark:text-secondary-200">
+					{out.from_version ? `v${out.from_version}` : "?"}
+					<ArrowRight className="h-3 w-3" />
+					{out.to_version ? `v${out.to_version}` : "?"}
+				</span>
+			)}
+			<span className="text-secondary-600 dark:text-secondary-200">
+				{stage ? t(stage) : out.stage}
+				{out.stage === "downloading" &&
+					typeof out.percent === "number" &&
+					` (${out.percent}%)`}
+			</span>
+			{out.trigger === "agent" && (
+				<span className="text-secondary-500 dark:text-secondary-400">
+					{t("started by the agent")}
+				</span>
+			)}
+		</div>
+	);
+};
+
 const DetailsCell = ({ item, expanded, onToggleOutput }) => {
+	const update = agentUpdateOutput(item);
+	if (update) return <AgentUpdateDetails out={update} />;
 	if (item.kind === "report") {
 		return (
 			<SectionChips

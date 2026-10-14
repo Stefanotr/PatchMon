@@ -572,13 +572,7 @@ func writeRestartMessage(r restartReply) {
 	if err != nil {
 		return
 	}
-	globalWsConnMu.RLock()
-	conn := globalWsConn
-	globalWsConnMu.RUnlock()
-	if conn == nil {
-		return
-	}
-	if err := writeWebSocketTextMessage(conn, b); err != nil {
+	if err := sendServerMessage(b); err != nil {
 		logger.WithError(err).Debug("Failed to send a restart message")
 	}
 }
