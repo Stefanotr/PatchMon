@@ -583,7 +583,9 @@ func (h *DashboardHandler) HostActivity(w http.ResponseWriter, r *http.Request) 
 	for _, row := range rows {
 		item := activityItemFromStore(row)
 		if row.Kind == "job" && row.JobID != nil {
-			if live, ok := liveByJobID[*row.JobID]; ok {
+			// The queue task of an agent update ends once the command is
+			// sent; its row, not the task, says how the update went.
+			if live, ok := liveByJobID[*row.JobID]; ok && (row.Type != store.AgentUpdateJobName || live.Status != "completed") {
 				applyLiveJobState(&item, live)
 			}
 		}

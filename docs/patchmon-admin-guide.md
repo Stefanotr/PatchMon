@@ -714,7 +714,7 @@ Quick reference panel for the host's identity and agent settings. Fields include
 - **Operating System**: icon plus OS type and version (detected by the agent).
 - **Agent Version**: version of `patchmon-agent` currently reporting.
 - **Agent Auto-update**: per-host toggle. If global auto-update is disabled, a yellow warning badge is shown with a tooltip pointing to **Settings → Agent Updates**.
-- **Force Agent Version Upgrade**: the **Update Now** button sends an immediate upgrade command via WebSocket. Disabled when the agent is offline. The update restarts the agent, so the agent skips it while a patch run (dry run included) is in progress, and refuses new runs while it updates; press the button again once the run is over, or let auto-update pick it up.
+- **Force Agent Version Upgrade**: the **Update Now** button sends an immediate upgrade command via WebSocket. Disabled when the agent is offline, and while an update is in progress (the server also refuses a second one: `409 An agent update is already in progress on this host`). The update restarts the agent, so the agent skips it while a patch run (dry run included) is in progress, and refuses new runs while it updates; press the button again once the run is over, or let auto-update pick it up. While the update runs, a pill under the host name says where it is (*Agent update: downloading 40%*); **Agent Activity** shows it step by step.
 
 See Managing the PatchMon Agent for what the agent does when it receives an upgrade command.
 
@@ -746,14 +746,29 @@ This tab is read-only. All values come from the agent report.
 
 ### Agent Activity
 
+#### Happening now
+
+The top of the tab shows what the agent is doing now, refreshed every 2 seconds while something runs (every 15 seconds otherwise):
+
+- **Agent update**: the versions (`v1.4.0 → v1.5.0`) and a stepper, *Sent → Download → Verification → Installation → Agent restart → Back online*, with the download as a percentage. The agent reports each stage over its WebSocket; the update ends when the agent reconnects on the new version (it sends its version on every connection), or fails if it comes back on the one it left. *Already up to date* and *Postponed by the agent* (a patch run in progress, an update less than 5 minutes ago) end it early. An update the agent starts on its own after a report shows too (*started by the agent*), from its download on.
+- **Patch run**: queued or running, with the last line of its output and a link to the run (Patching module).
+- **Compliance scan**: the profile, the phase (*Evaluating the rules*, *Processing the results*...) and an approximate percentage (Compliance module and `can_view_reports`).
+- **Jobs**: what is queued for the agent and not picked up yet, retries, and commands waiting for the agent's answer (a restart).
+
+A task that ends stays there about 90 seconds with its outcome (green, amber or red), then lives on in the timeline below, which refreshes at once. On a phone, the panel shows at the top of the host page while something runs.
+
+Agents older than this server do not report the stages of an update: it shows as *Sent* until the new version connects (then *Back online*). If the agent says nothing for 45 minutes (the download alone may take 30), the patch-run cleanup closes the update as failed: `no news from the agent within 45 minutes`.
+
+#### Timeline
+
 Unified timeline of every agent comm cycle for this host. Each row is one of:
 
 - **Ping**: hash-gated check-in (every cycle, even when nothing changed).
 - **Full / Partial**: `/hosts/update` with the full inventory or just the sections the server flagged as stale.
 - **Docker / Compliance**: integration-specific submissions.
-- **Job**: outbound queue jobs the server sent to the agent (fetch report, patch run, integration setup, etc.).
+- **Job**: outbound queue jobs the server sent to the agent (fetch report, patch run, integration setup, etc.). An agent update shows its versions and where it got to; its duration is the whole update, from the command to the agent back online.
 
-The four queue stat cards (Waiting / Active / Delayed / Failed) sit above the table and reflect in-flight server-to-agent jobs. The auto-refresh interval is 30 seconds.
+The four queue stat cards (Waiting / Active / Delayed / Failed) sit above the table and reflect in-flight server-to-agent jobs. The auto-refresh interval is 30 seconds, 5 seconds while a task runs.
 
 Each report row also shows section chips: green "Updated" chips for sections the agent shipped fresh data for this cycle, and muted "Skipped" chips for sections the server already had a matching hash for. Use this tab to:
 

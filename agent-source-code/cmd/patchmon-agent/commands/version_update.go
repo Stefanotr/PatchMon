@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -87,7 +88,7 @@ var updateAgentCmd = &cobra.Command{
 			return err
 		}
 
-		return updateAgent()
+		return updateAgent(updateManual)
 	},
 }
 
@@ -129,18 +130,26 @@ func checkVersion() error {
 // rename over the same live binary.
 var updateInFlight atomic.Bool
 
-func updateAgent() error {
+// updateAgent downloads, checks and installs the server's agent binary, then
+// restarts the agent. origin decides which stages the server is told.
+func updateAgent(origin updateOrigin) (err error) {
+	// Another update reports its own stages: this one says nothing.
 	if !updateInFlight.CompareAndSwap(false, true) {
 		return fmt.Errorf("update skipped: another update is already in progress")
 	}
 	defer updateInFlight.Store(false)
+
+	currentVersion := strings.TrimPrefix(pkgversion.Version, "v")
+	progress := newUpdateReporter(origin, currentVersion)
+	defer func() { progress.fail(err) }()
+	progress.stage(updateStageChecking, "")
 
 	// The update restarts the agent, which would cut a patch run off in the
 	// middle of an install. updateInFlight, set above, keeps new runs from
 	// starting until the update is over.
 	if err := patchRunBlocksUpdate(); err != nil {
 		logger.WithError(err).Info("Agent update postponed")
-		return fmt.Errorf("update skipped: %w", err)
+		return updateSkippedError{err}
 	}
 
 	logger.Info("Updating agent...")
@@ -149,7 +158,7 @@ func updateAgent() error {
 	// This is especially important on ARM systems where restart might not work properly
 	if err := checkRecentUpdate(); err != nil {
 		logger.WithError(err).Warn("Recent update detected, skipping to prevent update loop")
-		return fmt.Errorf("update skipped: %w", err)
+		return updateSkippedError{err}
 	}
 
 	// Get current executable path
@@ -169,9 +178,6 @@ func updateAgent() error {
 		executablePath = resolvedPath
 	}
 
-	// Get current version for comparison
-	currentVersion := strings.TrimPrefix(pkgversion.Version, "v")
-
 	// First, check server version info to see if update is needed
 	logger.Debug("Checking server for latest version...")
 	versionInfo, err := getServerVersionInfo()
@@ -184,12 +190,15 @@ func updateAgent() error {
 		// Check if update is actually needed
 		if currentVersion == latestVersion && !versionInfo.HasUpdate {
 			logger.WithField("version", currentVersion).Info("Agent is already at the latest version, skipping update")
+			progress.stage(updateStageUpToDate, "")
 			return nil
 		}
+		progress.setTarget(latestVersion)
 	}
 
 	// Get latest binary info from server
-	binaryInfo, err := getLatestBinaryFromServer()
+	progress.stage(updateStageDownloading, "")
+	binaryInfo, err := getLatestBinaryFromServer(progress.percent)
 	if err != nil {
 		return fmt.Errorf("failed to get latest binary information: %w", err)
 	}
@@ -198,6 +207,8 @@ func updateAgent() error {
 	if len(newAgentData) == 0 {
 		return fmt.Errorf("no binary data received from server")
 	}
+
+	progress.stage(updateStageVerifying, "")
 
 	// SECURITY: Verify binary integrity against server-provided hash
 	// This prevents supply chain attacks where binary could be tampered during download
@@ -301,10 +312,13 @@ func updateAgent() error {
 		logger.WithError(versionErr).Debug("Could not verify binary version (non-critical)")
 	}
 
+	progress.setTarget(newVersion)
+	progress.stage(updateStageInstalling, "")
+
 	// Windows: os.Rename cannot overwrite a running .exe (file locked by SCM).
 	// Delegate the replacement and restart to a detached PowerShell script.
 	if runtime.GOOS == "windows" {
-		return updateAgentWindows(executablePath, tempPath, newVersion)
+		return updateAgentWindows(executablePath, tempPath, newVersion, progress)
 	}
 
 	// Replace current executable atomically
@@ -336,6 +350,7 @@ func updateAgent() error {
 	// Restart the service to pick up the new binary
 	// This is critical - the old process is still running the old binary
 	logger.Info("Restarting patchmon-agent service to load new binary...")
+	progress.stage(updateStageRestarting, "")
 	if err := restartService(executablePath, newVersion); err != nil {
 		logger.WithError(err).Error("Failed to restart service - new binary is in place but old process is still running")
 		logger.Warn("Manual service restart required to complete update")
@@ -375,7 +390,7 @@ func psQuote(s string) string {
 //     new binary into place, and restarts the service.
 //  3. Launch that script detached so it outlives this process.
 //  4. Exit immediately — the script takes over.
-func updateAgentWindows(executablePath, tempPath, newVersion string) error {
+func updateAgentWindows(executablePath, tempPath, newVersion string, progress *updateReporter) error {
 	dir, err := secureUpdateDir()
 	if err != nil {
 		_ = os.Remove(tempPath)
@@ -420,6 +435,7 @@ try {
 		"script":      psScriptPath,
 	})).Info("Launching Windows update script (stop service → replace binary → start service)...")
 
+	progress.stage(updateStageRestarting, "")
 	cmd := exec.Command("powershell",
 		"-NonInteractive", "-WindowStyle", "Hidden",
 		"-ExecutionPolicy", "Bypass",
@@ -521,8 +537,24 @@ func (s *stallReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// getLatestBinaryFromServer fetches the latest binary information from the PatchMon server
-func getLatestBinaryFromServer() (*ServerVersionResponse, error) {
+// agentBinarySizeHeader is the size of the binary the server sends, before
+// any compression, so the download can be reported as a percentage.
+const agentBinarySizeHeader = "X-PatchMon-Binary-Size"
+
+// downloadTotal is the size of the binary being downloaded, 0 when not known.
+func downloadTotal(resp *http.Response) int64 {
+	if n, err := strconv.ParseInt(resp.Header.Get(agentBinarySizeHeader), 10, 64); err == nil && n > 0 {
+		return n
+	}
+	if !resp.Uncompressed && resp.ContentLength > 0 {
+		return resp.ContentLength
+	}
+	return 0
+}
+
+// getLatestBinaryFromServer fetches the latest binary information from the
+// PatchMon server, reporting the download's progress to onProgress.
+func getLatestBinaryFromServer(onProgress func(percent int)) (*ServerVersionResponse, error) {
 	cfgManager := config.New()
 	if err := cfgManager.LoadConfig(); err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
@@ -602,10 +634,14 @@ func getLatestBinaryFromServer() (*ServerVersionResponse, error) {
 	// SECURITY: Limit binary download size to prevent DoS attacks
 	// Max 100MB should be more than enough for the agent binary
 	const maxBinarySize = 100 * 1024 * 1024
-	limitedReader := io.LimitReader(&stallReader{
-		r:     resp.Body,
-		timer: stallTimer,
-		idle:  downloadStallTimeout,
+	limitedReader := io.LimitReader(&progressReader{
+		r: &stallReader{
+			r:     resp.Body,
+			timer: stallTimer,
+			idle:  downloadStallTimeout,
+		},
+		total:  downloadTotal(resp),
+		report: onProgress,
 	}, maxBinarySize+1)
 
 	// Read the binary data with size limit

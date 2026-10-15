@@ -157,6 +157,10 @@ export const dashboardAPI = {
 		const url = `/dashboard/hosts/${hostId}/activity${queryString ? `?${queryString}` : ""}`;
 		return api.get(url);
 	},
+	// What the host's agent is doing now: open tasks with their steps, and
+	// those that just ended.
+	getHostLiveActivity: (hostId) =>
+		api.get(`/dashboard/hosts/${hostId}/activity/live`),
 	getHostWsStatus: (hostId) => api.get(`/dashboard/hosts/${hostId}/ws-status`),
 	getWsStatusSummary: () => api.get("/ws/status/summary"),
 	getWsStatusByApiId: (apiId) => api.get(`/ws/status/${apiId}`),

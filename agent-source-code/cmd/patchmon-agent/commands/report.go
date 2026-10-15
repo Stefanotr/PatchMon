@@ -315,7 +315,7 @@ func deliverReport(ctx context.Context, payload *models.ReportPayload) error {
 		}).Info("PatchMon agent update detected")
 
 		logger.Info("Automatically updating PatchMon agent to latest version...")
-		if err := updateAgent(); err != nil {
+		if err := updateAgent(updateAutomatic); err != nil {
 			logger.WithError(err).Warn("PatchMon agent update failed, but data was sent successfully")
 		} else {
 			logger.Info("PatchMon agent update completed successfully")
@@ -357,7 +357,7 @@ func deliverReport(ctx context.Context, payload *models.ReportPayload) error {
 					"latest":  versionInfo.LatestVersion,
 				}).Info("Update available, automatically updating...")
 
-				if err := updateAgent(); err != nil {
+				if err := updateAgent(updateAutomatic); err != nil {
 					logger.WithError(err).Warn("PatchMon agent update failed, but data was sent successfully")
 				} else {
 					logger.Info("PatchMon agent update completed successfully")

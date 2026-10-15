@@ -39,7 +39,22 @@ type AgentWSHandler struct {
 	// onRemoteRestartOptIn receives the agent's remote restart announcement
 	// (RemoteRestartHeader), once authenticated.
 	onRemoteRestartOptIn OnRemoteRestartOptIn
-	upgrader             websocket.Upgrader
+	// onAgentVersion receives the version the agent connects on
+	// (AgentVersionHeader), once authenticated.
+	onAgentVersion OnAgentVersion
+	// onUpdateProgress receives the stages of an agent update.
+	onUpdateProgress OnAgentUpdateProgress
+	// compliance keeps the agent's compliance scan progress.
+	compliance *ComplianceProgressTracker
+	upgrader   websocket.Upgrader
+}
+
+// WithComplianceProgress keeps the compliance_scan_progress messages agents
+// send in t.
+func WithComplianceProgress(t *ComplianceProgressTracker) AgentWSHandlerOption {
+	return func(h *AgentWSHandler) {
+		h.compliance = t
+	}
 }
 
 // OnAgentRestartEvent receives the reboot_result messages no command is
@@ -133,6 +148,9 @@ func (h *AgentWSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	if h.onRemoteRestartOptIn != nil {
 		h.onRemoteRestartOptIn(connCtx, host.ID, ParseRemoteRestartHeader(r.Header.Get(RemoteRestartHeader)))
 	}
+	if h.onAgentVersion != nil {
+		h.onAgentVersion(connCtx, apiID, ParseAgentVersion(r.Header.Get(AgentVersionHeader)))
+	}
 
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -206,6 +224,13 @@ func (h *AgentWSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// Update stages are recorded in order, off the read loop.
+	var updates *updateProgressWorker
+	if h.onUpdateProgress != nil {
+		updates = startUpdateProgressWorker(connCtx, apiID, host.ID, h.onUpdateProgress)
+		defer updates.stop()
+	}
+
 	// Read loop - process messages from agent
 	for {
 		_, message, err := conn.ReadMessage()
@@ -226,6 +251,19 @@ func (h *AgentWSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 				// Off the read loop: recording writes to the database. apiID
 				// is the authenticated connection's, never the message's.
 				go h.onRestartEvent(r.Context(), apiID, message)
+			}
+			continue
+		}
+		// Progress of an agent update or a compliance scan.
+		switch reply.Type {
+		case "update_progress":
+			if updates != nil {
+				updates.offer(message)
+			}
+			continue
+		case "compliance_scan_progress":
+			if h.compliance != nil {
+				h.compliance.Record(complianceKey(connCtx, apiID), message)
 			}
 			continue
 		}

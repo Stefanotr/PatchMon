@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/PatchMon/PatchMon/server-source-code/internal/db"
+	"github.com/PatchMon/PatchMon/server-source-code/internal/store"
 )
 
 type fakeCloser struct {
@@ -52,7 +53,32 @@ func TestRestartJobNamesCannotBeChangedByCallers(t *testing.T) {
 	}
 }
 
-func TestSweepRestartRecordsWithoutDatabase(t *testing.T) {
+func TestSweepCommandRecordsWithoutDatabase(t *testing.T) {
 	h := NewPatchRunCleanupHandler(nil, nil, slog.Default(), nil)
-	h.sweepRestartRecords(context.Background(), nil, "tenant.example") // must not panic
+	h.sweepCommandRecords(context.Background(), nil, "tenant.example") // must not panic
+}
+
+func TestCloseStaleAgentUpdates(t *testing.T) {
+	f := &fakeCloser{}
+	now := time.Date(2026, 10, 14, 18, 0, 0, 0, time.UTC)
+	if _, err := closeStaleAgentUpdates(context.Background(), f, now); err != nil || len(f.got) != 1 {
+		t.Fatalf("err=%v calls=%d", err, len(f.got))
+	}
+	p := f.got[0]
+	if p.QueueName != QueueAgentCommands || strings.Join(p.JobNames, ",") != TypeUpdateAgent {
+		t.Errorf("queue %q, job names %v: only agent updates", p.QueueName, p.JobNames)
+	}
+	if !strings.HasPrefix(p.ErrorMessage, "no news from the agent within 45 minutes") {
+		t.Errorf("message %q", p.ErrorMessage)
+	}
+	if want := now.Add(-45 * time.Minute); !p.StaleBefore.Time.Equal(want) {
+		t.Errorf("stale_before %v, want %v", p.StaleBefore.Time, want)
+	}
+}
+
+// The store records agent updates under the queue task's names.
+func TestAgentUpdateRecordsUseTheTaskNames(t *testing.T) {
+	if store.AgentUpdateQueue != QueueAgentCommands || store.AgentUpdateJobName != TypeUpdateAgent {
+		t.Fatalf("store records %s/%s, the task is %s/%s", store.AgentUpdateQueue, store.AgentUpdateJobName, QueueAgentCommands, TypeUpdateAgent)
+	}
 }

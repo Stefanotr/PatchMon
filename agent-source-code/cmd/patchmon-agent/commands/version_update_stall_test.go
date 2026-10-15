@@ -14,13 +14,18 @@ func TestUpdateAgentAdmitsOneUpdateAtATime(t *testing.T) {
 		t.Fatal("guard was already held before the test started")
 	}
 	defer updateInFlight.Store(false)
+	sent := captureServerMessages(t)
 
-	err := updateAgent()
+	err := updateAgent(updateFromServer)
 	if err == nil {
 		t.Fatal("expected the second concurrent update to be refused")
 	}
 	if !strings.Contains(err.Error(), "already in progress") {
 		t.Fatalf("error = %v, want an already-in-progress refusal", err)
+	}
+	// The update in progress reports its own stages: the refused one is silent.
+	if len(*sent) != 0 {
+		t.Fatalf("refused update sent %d progress messages, want none", len(*sent))
 	}
 }
 

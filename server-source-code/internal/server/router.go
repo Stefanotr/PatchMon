@@ -191,6 +191,11 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 		agentActivityStore,
 		queueInspector,
 	)
+	// Agent updates and compliance scans as the agents report them, for the
+	// live part of a host's activity.
+	agentUpdateStore := store.NewAgentUpdateStore(dbProvider)
+	complianceProgress := handler.NewComplianceProgressTracker()
+	liveActivityHandler := handler.NewHostLiveActivityHandler(hostsStore, store.NewLiveActivityStore(dbProvider), queueInspector, complianceProgress, permissionsStore)
 	hostGroupsHandler := handler.NewHostGroupsHandler(hostGroupsStore, hostsStore)
 	dashboardPrefsHandler := handler.NewDashboardPreferencesHandler(dashboardPrefsStore)
 	dockerHandler := handler.NewDockerHandler(dockerStore)
@@ -235,6 +240,9 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 		// commands, recorded in the host's Agent Activity.
 		handler.WithOnRestartEvent(handler.RecordRestartEvent(hostsStore, store.NewJobHistoryStore(dbProvider))),
 		handler.WithOnRemoteRestartOptIn(handler.RecordRemoteRestartOptIn(remoteRestartStore)),
+		handler.WithOnAgentVersion(handler.RecordAgentVersion(agentUpdateStore)),
+		handler.WithOnAgentUpdateProgress(handler.RecordAgentUpdateProgress(agentUpdateStore)),
+		handler.WithComplianceProgress(complianceProgress),
 	}
 	if rdpHandler != nil {
 		agentOpts = append(agentOpts, handler.WithOnRDPProxyMessage(rdpHandler.HandleRDPProxyMessage))
@@ -595,6 +603,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore)).Get("/dashboard/hosts/{hostId}", dashboardHandler.HostDetail)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore)).Get("/dashboard/hosts/{hostId}/queue", dashboardHandler.HostQueue)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore)).Get("/dashboard/hosts/{hostId}/activity", dashboardHandler.HostActivity)
+			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore)).Get("/dashboard/hosts/{hostId}/activity/live", liveActivityHandler.Get)
 			r.With(middleware.RequirePermission("can_view_packages", permissionsStore)).Get("/dashboard/packages", dashboardHandler.Packages)
 			r.With(middleware.RequirePermission("can_view_packages", permissionsStore)).Get("/dashboard/package-trends", dashboardHandler.PackageTrends)
 			r.With(middleware.RequirePermission("can_view_users", permissionsStore)).Get("/dashboard/recent-users", dashboardHandler.RecentUsers)

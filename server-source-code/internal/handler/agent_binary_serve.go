@@ -171,6 +171,9 @@ func evictIdleAgentGzip(now time.Time) int {
 	return evicted
 }
 
+// agentBinarySizeHeader carries the binary's size in a download response.
+const agentBinarySizeHeader = "X-PatchMon-Binary-Size"
+
 // serveAgentBinary writes an agent binary, serving a cached gzip copy when the
 // client accepts one.
 func serveAgentBinary(w http.ResponseWriter, r *http.Request, binaryPath string, info os.FileInfo, f *os.File) {
@@ -178,6 +181,9 @@ func serveAgentBinary(w http.ResponseWriter, r *http.Request, binaryPath string,
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, binaryName))
 	w.Header().Add("Vary", "Accept-Encoding")
+	// The size before compression, so the agent can report its download as
+	// a percentage (the transport hides a gzip body's length).
+	w.Header().Set(agentBinarySizeHeader, strconv.FormatInt(info.Size(), 10))
 
 	if !compressible(r) {
 		http.ServeContent(w, r, binaryName, info.ModTime(), f)

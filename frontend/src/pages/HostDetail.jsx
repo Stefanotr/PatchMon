@@ -54,6 +54,8 @@ import {
 	useSearchParams,
 } from "react-router-dom";
 import HostStatusPills from "../components/HostStatusPills";
+import LiveActivityPanel from "../components/host/LiveActivityPanel";
+import { agentUpdatePillText } from "../components/host/liveActivity";
 import InlineEdit from "../components/InlineEdit";
 import InlineMultiGroupEdit from "../components/InlineMultiGroupEdit";
 import { PackageListDisplay } from "../components/PackageListDisplay";
@@ -68,6 +70,7 @@ import ModalPortal from "../components/ui/ModalPortal";
 import { getRequiredTier } from "../constants/tiers";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
+import { useHostLiveActivity } from "../hooks/useHostLiveActivity";
 import { usePageRefresh } from "../hooks/usePageRefresh";
 import {
 	REMOTE_RESTART_DISABLED_HINT,
@@ -163,6 +166,10 @@ const HostDetail = () => {
 	// greyed out rather than refused once sent.
 	const remoteRestart = useHostRemoteRestart(hostId, canRestart);
 	const restartRefused = remoteRestart === false;
+	// What the agent is doing now: the activity tab shows it step by step,
+	// the header shows an agent update in progress.
+	const live = useHostLiveActivity(hostId);
+	const agentUpdate = live.agentUpdate;
 	const [showCredentialsModal, setShowCredentialsModal] = useState(false);
 
 	// Get plaintext API key from navigation state (only available immediately after host creation)
@@ -282,6 +289,7 @@ const HostDetail = () => {
 			["docker", "host", hostId],
 			["patching-runs", hostId],
 			["remote-restart", "host", hostId],
+			["host-live", hostId],
 		],
 		[hostId],
 	);
@@ -556,6 +564,7 @@ const HostDetail = () => {
 		onSuccess: (data) => {
 			queryClient.invalidateQueries({ queryKey: ["host", hostId] });
 			queryClient.invalidateQueries({ queryKey: ["hosts"] });
+			queryClient.invalidateQueries({ queryKey: ["host-live", hostId] });
 			// Show success message with job ID
 			if (data?.jobId) {
 				setUpdateMessage({
@@ -614,12 +623,16 @@ const HostDetail = () => {
 		);
 	};
 
+	// An update asked for, or one the agent is going through: one at a time.
+	const updateBusy = forceAgentUpdateMutation.isPending || Boolean(agentUpdate);
+
 	// Fetch report mutation
 	const fetchReportMutation = useMutation({
 		mutationFn: () => adminHostsAPI.fetchReport(hostId).then((res) => res.data),
 		onSuccess: (data) => {
 			queryClient.invalidateQueries({ queryKey: ["host", hostId] });
 			queryClient.invalidateQueries({ queryKey: ["hosts"] });
+			queryClient.invalidateQueries({ queryKey: ["host-live", hostId] });
 			// Show success message with job ID
 			if (data?.jobId) {
 				setReportMessage({
@@ -1458,6 +1471,17 @@ const HostDetail = () => {
 									{t("Awaiting inventory report")}
 								</Link>
 							)}
+							{agentUpdate && (
+								<button
+									type="button"
+									onClick={() => handleTabChange("activity")}
+									className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition-colors"
+									title={t("Follow the update step by step in Agent Activity")}
+								>
+									<RefreshCw className="h-3 w-3 animate-spin" />
+									{agentUpdatePillText(agentUpdate)}
+								</button>
+							)}
 						</div>
 						{/* Info row with uptime and last updated */}
 						{displayUptime && (
@@ -1674,6 +1698,10 @@ const HostDetail = () => {
 			<div className="flex-1 md:overflow-hidden">
 				{/* Mobile View - All sections as cards stacked vertically */}
 				<div className="md:hidden space-y-4 pb-4">
+					{/* What the agent is doing now (no activity tab on phones) */}
+					{live.tasks.length > 0 && (
+						<LiveActivityPanel tasks={live.tasks} error={live.error} />
+					)}
 					{/* Host Info Card */}
 					<div className="card p-4">
 						<h3 className="text-lg font-semibold text-secondary-900 dark:text-white mb-4 flex items-center gap-2">
@@ -1832,26 +1860,26 @@ const HostDetail = () => {
 									<button
 										type="button"
 										onClick={() => forceAgentUpdateMutation.mutate()}
-										disabled={
-											forceAgentUpdateMutation.isPending || !wsStatus?.connected
-										}
+										disabled={updateBusy || !wsStatus?.connected}
 										title={
-											!wsStatus?.connected
-												? t("Agent is not connected")
-												: t("Force agent to update now")
+											agentUpdate
+												? agentUpdatePillText(agentUpdate)
+												: !wsStatus?.connected
+													? t("Agent is not connected")
+													: t("Force agent to update now")
 										}
 										className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-md hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 									>
 										<RefreshCw
-											className={`h-3 w-3 ${
-												forceAgentUpdateMutation.isPending ? "animate-spin" : ""
-											}`}
+											className={`h-3 w-3 ${updateBusy ? "animate-spin" : ""}`}
 										/>
-										{forceAgentUpdateMutation.isPending
-											? t("Updating...")
-											: wsStatus?.connected
-												? t("Update Now")
-												: t("Offline")}
+										{agentUpdate
+											? t("Update in progress...")
+											: forceAgentUpdateMutation.isPending
+												? t("Updating...")
+												: wsStatus?.connected
+													? t("Update Now")
+													: t("Offline")}
 									</button>
 									{updateMessage.text && (
 										<p className="text-xs mt-1.5 text-secondary-600 dark:text-white">
@@ -2990,29 +3018,26 @@ const HostDetail = () => {
 										<button
 											type="button"
 											onClick={() => forceAgentUpdateMutation.mutate()}
-											disabled={
-												forceAgentUpdateMutation.isPending ||
-												!wsStatus?.connected
-											}
+											disabled={updateBusy || !wsStatus?.connected}
 											title={
-												!wsStatus?.connected
-													? t("Agent is not connected")
-													: t("Force agent to update now")
+												agentUpdate
+													? agentUpdatePillText(agentUpdate)
+													: !wsStatus?.connected
+														? t("Agent is not connected")
+														: t("Force agent to update now")
 											}
 											className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-md hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 										>
 											<RefreshCw
-												className={`h-3 w-3 ${
-													forceAgentUpdateMutation.isPending
-														? "animate-spin"
-														: ""
-												}`}
+												className={`h-3 w-3 ${updateBusy ? "animate-spin" : ""}`}
 											/>
-											{forceAgentUpdateMutation.isPending
-												? t("Updating...")
-												: wsStatus?.connected
-													? t("Update Now")
-													: t("Offline")}
+											{agentUpdate
+												? t("Update in progress...")
+												: forceAgentUpdateMutation.isPending
+													? t("Updating...")
+													: wsStatus?.connected
+														? t("Update Now")
+														: t("Offline")}
 										</button>
 										{updateMessage.text && (
 											<p className="text-xs mt-1.5 text-secondary-600 dark:text-white">
@@ -3547,7 +3572,9 @@ const HostDetail = () => {
 							)}
 
 						{/* Agent Activity (merged Package Reports + Agent Queue) */}
-						{activeTab === "activity" && <AgentActivityTab hostId={hostId} />}
+						{activeTab === "activity" && (
+							<AgentActivityTab hostId={hostId} live={live} />
+						)}
 
 						{/* Terminal - Always mounted and open to preserve connection, hidden when not active.
 						    Gated by the ssh_terminal module (Max tier). When the module

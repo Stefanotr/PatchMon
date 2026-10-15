@@ -12,6 +12,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import AgentActivityTable from "../../components/host/AgentActivityTable";
+import LiveActivityPanel from "../../components/host/LiveActivityPanel";
+import { isRunning } from "../../components/host/liveActivity";
 import QueueStatCards from "../../components/host/QueueStatCards";
 import { tk } from "../../i18n";
 import { dashboardAPI } from "../../utils/api";
@@ -151,7 +153,9 @@ const ChipMultiSelect = ({ label, options, values, onChange }) => {
 	);
 };
 
-const AgentActivityTab = ({ hostId }) => {
+// live: the host's live tasks (useHostLiveActivity, run by the host page so
+// its header shows an agent update too).
+const AgentActivityTab = ({ hostId, live = null }) => {
 	const { t } = useTranslation();
 	const [searchParams, setSearchParams] = useSearchParams();
 
@@ -237,6 +241,7 @@ const AgentActivityTab = ({ hostId }) => {
 		});
 
 	const [showFilters, setShowFilters] = useState(false);
+	const liveRunning = Boolean(live?.tasks?.some(isRunning));
 
 	// The query key carries the time-range KEYWORD, never a resolved timestamp:
 	// a timestamp in the key would mint a new key on every render. The absolute
@@ -274,7 +279,8 @@ const AgentActivityTab = ({ hostId }) => {
 		},
 		enabled: !!hostId,
 		staleTime: 30 * 1000,
-		refetchInterval: 30 * 1000,
+		// Closer while a task runs, so its row keeps up with the live view.
+		refetchInterval: liveRunning ? 5 * 1000 : 30 * 1000,
 		placeholderData: keepPreviousData,
 	});
 
@@ -322,6 +328,14 @@ const AgentActivityTab = ({ hostId }) => {
 
 	return (
 		<div className="space-y-4">
+			{live && (
+				<LiveActivityPanel
+					tasks={live.tasks}
+					isLoading={live.isLoading}
+					error={live.error}
+				/>
+			)}
+
 			<QueueStatCards stats={stats} />
 
 			<div className="card p-4 sm:p-6 space-y-4">

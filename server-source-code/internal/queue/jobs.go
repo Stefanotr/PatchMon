@@ -285,8 +285,15 @@ func NewUpdateAgentTask(apiID, host string, bypassSettings bool) (*asynq.Task, e
 	if err != nil {
 		return nil, err
 	}
-	return asynq.NewTask(TypeUpdateAgent, payload, asynq.Queue(QueueAgentCommands), asynq.MaxRetry(3)), nil
+	// Unique: two requests in a row make one task (the second gets
+	// asynq.ErrDuplicateTask), until the worker has recorded the first.
+	return asynq.NewTask(TypeUpdateAgent, payload, asynq.Queue(QueueAgentCommands), asynq.MaxRetry(3), asynq.Unique(UpdateAgentUniqueTTL)), nil
 }
+
+// UpdateAgentUniqueTTL bounds the uniqueness of an update_agent task: the
+// worker records the update within it, and the open record refuses another
+// one from then on (handler ForceAgentUpdate).
+const UpdateAgentUniqueTTL = 2 * time.Minute
 
 // AutomationRetention keeps completed automation tasks in Redis for 7 days for dashboard visibility.
 const AutomationRetention = 168 * time.Hour // 7 days
@@ -672,14 +679,28 @@ func (h *UpdateAgentHandler) ProcessTask(ctx context.Context, t *asynq.Task) err
 		}
 		return nil
 	}
+	// The update is not over once sent: the row stays open, and the agent's
+	// stages, then its reconnection on the new version, close it
+	// (store/agent_update.go). Recorded before the command goes out, so the
+	// agent's first stage cannot be overwritten by it.
+	if taskID != "" && d != nil {
+		from := ""
+		if host, err := d.Queries.GetHostByApiID(ctx, p.ApiID); err == nil && host.AgentVersion != nil {
+			from = *host.AgentVersion
+		}
+		if err := store.RecordAgentUpdateSent(ctx, d.Queries, taskID, p.ApiID, from, time.Now()); err != nil {
+			h.log.Warn("update_agent: sent stage not recorded", "api_id", p.ApiID, "error", err)
+		}
+	}
 	msg := []byte(`{"type":"update_agent"}`)
 	if err := h.registry.SendMessage(p.ApiID, websocket.TextMessage, msg); err != nil {
 		h.log.Warn("update_agent: write failed", "api_id", p.ApiID, "error", err)
+		// The last attempt: no retry will send it, the update is over.
+		if maxRetry, ok := asynq.GetMaxRetry(ctx); ok && retryCount >= maxRetry && taskID != "" && d != nil {
+			failure := "could not send the update command to the agent: " + err.Error()
+			_ = d.Queries.UpdateJobHistoryFailed(ctx, db.UpdateJobHistoryFailedParams{JobID: taskID, ErrorMessage: &failure})
+		}
 		return err
-	}
-
-	if taskID != "" && d != nil {
-		_ = d.Queries.UpdateJobHistoryCompleted(ctx, taskID)
 	}
 	h.log.Info("update_agent sent", "api_id", p.ApiID)
 	return nil
