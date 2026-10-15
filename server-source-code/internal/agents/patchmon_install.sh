@@ -203,6 +203,77 @@ if [ "$FORCE_INSTALL" = "true" ]; then
     warning "Force mode enabled - will bypass broken packages"
 fi
 
+# --allow-remote-restart: this host allows the restarts PatchMon asks for
+# (remote-restart-enabled under integrations in config.yml). Only this
+# argument, in the command whoever installs the agent runs, turns it on: no
+# variable the server sets does, and the server cannot change it later.
+# Without it, a reinstall keeps what the previous config.yml said.
+ALLOW_REMOTE_RESTART="false"
+for arg in "$@"; do
+    if [ "$arg" = "--allow-remote-restart" ]; then
+        ALLOW_REMOTE_RESTART="true"
+    fi
+done
+if [ "$ALLOW_REMOTE_RESTART" = "true" ]; then
+    info "Remote restarts will be allowed on this host (remote-restart-enabled: true)"
+fi
+
+# remote_restart_allowed_in reports whether a config file allows remote
+# restarts.
+remote_restart_allowed_in() {
+    [ -f "$1" ] && grep -Eq '^[[:space:]]*remote-restart-enabled:[[:space:]]*true[[:space:]]*$' "$1"
+}
+
+# restart_agent_service restarts the agent so that it reads its config.yml
+# again (it reads it when it starts).
+restart_agent_service() {
+    if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 && systemctl restart patchmon-agent.service 2>/dev/null; then
+        return 0
+    fi
+    if command -v rc-service >/dev/null 2>&1 && rc-service patchmon-agent restart >/dev/null 2>&1; then
+        return 0
+    fi
+    if [ -x /usr/local/etc/rc.d/patchmon_agent ] && command -v service >/dev/null 2>&1 && service patchmon_agent restart >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
+# package_operation_running reports whether a package manager is at work (a
+# patch run, say), which restarting the agent could cut off.
+package_operation_running() {
+    for proc in apt apt-get dpkg unattended-upgr dnf yum zypper pacman apk pkg; do
+        if pgrep -x "$proc" >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# allow_remote_restart_on_installed_agent turns remote restarts on for an
+# agent already installed and working. The agent reads the switch from its
+# config.yml when a restart is asked for, so it applies at once; restarting
+# the agent only makes it announce the change, which PatchMon otherwise
+# shows once the agent reconnects. An agent older than the config
+# remote-restart command only prints its help, so the file says whether it
+# worked.
+allow_remote_restart_on_installed_agent() {
+    /usr/local/bin/patchmon-agent config remote-restart on >/dev/null 2>&1 || true
+    if ! remote_restart_allowed_in /etc/patchmon/config.yml; then
+        warning "This agent is too old to allow remote restarts from the install command."
+        warning "Update it from PatchMon, or set remote-restart-enabled: true under integrations in /etc/patchmon/config.yml, then restart it."
+        return 0
+    fi
+    success "Remote restarts allowed on this host (remote-restart-enabled: true)"
+    if package_operation_running; then
+        warning "A package operation is running: not restarting the agent. PatchMon shows the change once the agent reconnects."
+    elif restart_agent_service; then
+        info "Agent restarted so that PatchMon shows the change"
+    else
+        warning "PatchMon shows the change once the agent reconnects (restart the agent to show it now)"
+    fi
+}
+
 # Get unique machine ID for this host
 MACHINE_ID=$(get_machine_id)
 export MACHINE_ID
@@ -543,6 +614,9 @@ if [ -f /etc/patchmon/config.yml ] && [ -f /etc/patchmon/credentials.yml ]; then
         
         if /usr/local/bin/patchmon-agent ping >/dev/null 2>&1; then
             success "Agent is already configured and ping successful"
+            if [ "$ALLOW_REMOTE_RESTART" = "true" ]; then
+                allow_remote_restart_on_installed_agent
+            fi
             info "Existing configuration is working - skipping installation"
             info ""
             info "If you want to reinstall, remove the configuration files first:"
@@ -566,6 +640,14 @@ fi
 
 # Step 2: Create configuration files
 info "Creating configuration files..."
+
+# A reinstall keeps remote restarts allowed when the config it replaces did.
+if remote_restart_allowed_in /etc/patchmon/config.yml; then
+    if [ "$ALLOW_REMOTE_RESTART" != "true" ]; then
+        info "The previous configuration allowed remote restarts: keeping them allowed"
+    fi
+    ALLOW_REMOTE_RESTART="true"
+fi
 
 # Check if config file already exists
 if [ -f "/etc/patchmon/config.yml" ]; then
@@ -619,6 +701,7 @@ integrations:
     openscap_enabled: true
     docker_bench_enabled: false
   ssh-proxy-enabled: false
+  remote-restart-enabled: ${ALLOW_REMOTE_RESTART}
 EOF
 
 # Create credentials file
@@ -961,6 +1044,11 @@ else
     echo "   • Service configured via crontab"
 fi
 echo "   • API credentials configured and tested"
+if [ "$ALLOW_REMOTE_RESTART" = "true" ]; then
+    echo "   • Remote restarts: allowed (remote-restart-enabled: true)"
+else
+    echo "   • Remote restarts: not allowed (re-run with --allow-remote-restart, or: patchmon-agent config remote-restart on)"
+fi
 echo "   • WebSocket connection established"
 echo "   • Logs directory: /etc/patchmon/logs"
 

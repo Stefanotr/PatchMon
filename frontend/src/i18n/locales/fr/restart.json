@@ -67,5 +67,7 @@
 	"{{reason}} Remote restarts are disabled on this host.": "{{reason}} Les redémarrages à distance sont désactivés sur cet hôte.",
 	"{{reason}}. Remote restarts are disabled on this host.": "{{reason}}. Les redémarrages à distance sont désactivés sur cet hôte.",
 	"Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}._one": "Les redémarrages à distance sont désactivés sur {{count}} des hôtes sélectionnés, qui sera patché mais pas redémarré\u00a0: {{hosts}}.",
-	"Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}._other": "Les redémarrages à distance sont désactivés sur {{count}} des hôtes sélectionnés, qui seront patchés mais pas redémarrés\u00a0: {{hosts}}."
+	"Remote restarts are disabled on {{count}} of the selected hosts, which will be patched but not restarted: {{hosts}}._other": "Les redémarrages à distance sont désactivés sur {{count}} des hôtes sélectionnés, qui seront patchés mais pas redémarrés\u00a0: {{hosts}}.",
+	"Allow remote restarts": "Autoriser les redémarrages à distance",
+	"Adds {{option}} to the command: the agent's config.yml gets remote-restart-enabled: true, so PatchMon can restart the host (Restart button, patch runs). The host keeps the decision: the server cannot change it afterwards.": "Ajoute {{option}} à la commande\u00a0: le config.yml de l'agent reçoit remote-restart-enabled: true, et PatchMon peut alors redémarrer l'hôte (bouton Redémarrer, exécutions de patch). La décision reste à l'hôte\u00a0: le serveur ne peut plus la changer ensuite."
 }

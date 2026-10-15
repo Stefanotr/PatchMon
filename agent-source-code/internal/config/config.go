@@ -451,6 +451,31 @@ func (m *Manager) SaveConfig() error {
 
 // Caller must hold the write lock.
 func (m *Manager) saveConfigLocked() error {
+	return m.saveConfigWithLocalLocked(nil)
+}
+
+// SetLocalSwitch turns a local-only switch on or off in config.yml. It is
+// for what the host's administrator runs on the host (the config
+// remote-restart command, which the install scripts call): nothing the
+// server sends goes through it, and the generic setter keeps refusing these
+// switches.
+func (m *Manager) SetLocalSwitch(name string, on bool) error {
+	if !IsLocalOnlyIntegration(name) {
+		return fmt.Errorf("%s is not a local-only switch", name)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.config.Integrations == nil {
+		m.config.Integrations = make(map[string]interface{})
+	}
+	m.config.Integrations[name] = on
+	return m.saveConfigWithLocalLocked(map[string]interface{}{name: on})
+}
+
+// saveConfigWithLocalLocked saves the config, the local-only switches as the
+// file has them but those in local, which SetLocalSwitch is changing.
+// Caller must hold the write lock.
+func (m *Manager) saveConfigWithLocalLocked(local map[string]interface{}) error {
 	if m.loadErr != nil {
 		return fmt.Errorf("%w (%s): %w", ErrConfigUnreadable, m.configFile, m.loadErr)
 	}
@@ -502,6 +527,7 @@ func (m *Manager) saveConfigLocked() error {
 	if onDisk, ok := localOnlyOnDisk(m.configFile); ok {
 		maps.Copy(m.config.Integrations, onDisk)
 	}
+	maps.Copy(m.config.Integrations, local)
 
 	configViper.Set("integrations", m.config.Integrations)
 
@@ -528,6 +554,18 @@ func localOnlyOnDisk(path string) (map[string]interface{}, bool) {
 		out[name] = val
 	}
 	return out, true
+}
+
+// LocalSwitchOnDisk reads a local-only switch from the config file as it is
+// now, so that an administrator's change applies without restarting the
+// agent. ok is false when the file cannot be read.
+func LocalSwitchOnDisk(path, name string) (on, ok bool) {
+	onDisk, ok := localOnlyOnDisk(path)
+	if !ok {
+		return false, false
+	}
+	v, _ := onDisk[name].(bool)
+	return v, true
 }
 
 // writeConfigAtomically stages the config to a sibling temp file and renames it

@@ -10,8 +10,10 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import AllowRemoteRestartOption from "../../components/AllowRemoteRestartOption";
 import ModalPortal from "../../components/ui/ModalPortal";
 import { adminHostsAPI, settingsAPI } from "../../utils/api";
+import { windowsScriptCall, withScriptArgs } from "../../utils/installCommand";
 import WaitingForConnection from "./WaitingForConnection";
 
 const CredentialsModal = ({ host, isOpen, onClose, plaintextApiKey }) => {
@@ -19,6 +21,7 @@ const CredentialsModal = ({ host, isOpen, onClose, plaintextApiKey }) => {
 	const [showApiKey, setShowApiKey] = useState(false);
 	const [activeTab, setActiveTab] = useState("quick-install");
 	const [forceInstall, setForceInstall] = useState(false);
+	const [allowRemoteRestart, setAllowRemoteRestart] = useState(false);
 	const [windowsIgnoreSsl, setWindowsIgnoreSsl] = useState(false);
 	const [windowsUseCurl, setWindowsUseCurl] = useState(false);
 	const [regeneratedCredentials, setRegeneratedCredentials] = useState(null);
@@ -95,7 +98,7 @@ const CredentialsModal = ({ host, isOpen, onClose, plaintextApiKey }) => {
 	const getShellCommand = () => {
 		const use_sudo = host?.expected_platform !== "freebsd";
 		const base = use_sudo ? "sudo sh" : "sh";
-		return forceInstall ? `${base} -s -- --force` : base;
+		return withScriptArgs(base, { force: forceInstall, allowRemoteRestart });
 	};
 
 	const isWindowsHost =
@@ -115,13 +118,13 @@ const CredentialsModal = ({ host, isOpen, onClose, plaintextApiKey }) => {
 			: "";
 		if (windowsUseCurl) {
 			const curlInsecure = windowsIgnoreSsl ? " -k" : "";
-			return `${sslBlock}curl.exe${curlInsecure} -s -H "X-API-ID: ${effectiveApiId}" -H "X-API-KEY: ${effectiveApiKey}" -o "$env:TEMP\\patchmon-install.ps1" "${installUrl}"; if ($LASTEXITCODE -eq 0) { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; & "$env:TEMP\\patchmon-install.ps1" } else { Write-Error "curl failed with exit code $LASTEXITCODE" }`;
+			return `${sslBlock}curl.exe${curlInsecure} -s -H "X-API-ID: ${effectiveApiId}" -H "X-API-KEY: ${effectiveApiKey}" -o "$env:TEMP\\patchmon-install.ps1" "${installUrl}"; if ($LASTEXITCODE -eq 0) { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; ${windowsScriptCall({ allowRemoteRestart })} } else { Write-Error "curl failed with exit code $LASTEXITCODE" }`;
 		}
 		// -OutFile writes the response bytes straight to disk. Reading
 		// $r.Content instead makes Windows PowerShell 5.1 decode the body
 		// through the Windows ANSI code page, which corrupts every non-ASCII
 		// character in the script.
-		return `${sslBlock}Invoke-WebRequest -Uri "${installUrl}" -Headers @{"X-API-ID"="${effectiveApiId}"; "X-API-KEY"="${effectiveApiKey}"} -UseBasicParsing -OutFile "$env:TEMP\\patchmon-install.ps1"; Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; & "$env:TEMP\\patchmon-install.ps1"`;
+		return `${sslBlock}Invoke-WebRequest -Uri "${installUrl}" -Headers @{"X-API-ID"="${effectiveApiId}"; "X-API-KEY"="${effectiveApiKey}"} -UseBasicParsing -OutFile "$env:TEMP\\patchmon-install.ps1"; Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; ${windowsScriptCall({ allowRemoteRestart })}`;
 	};
 
 	const getLinuxInstallCommand = () =>
@@ -320,6 +323,12 @@ const CredentialsModal = ({ host, isOpen, onClose, plaintextApiKey }) => {
 									</label>
 								</div>
 							)}
+
+							<AllowRemoteRestartOption
+								checked={allowRemoteRestart}
+								onChange={setAllowRemoteRestart}
+								windows={isWindowsHost}
+							/>
 
 							{isApiKeyHash && (
 								<div className="mb-3 p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-700 rounded-lg">

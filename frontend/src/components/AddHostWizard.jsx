@@ -10,7 +10,9 @@ import {
 	hostGroupsAPI,
 	settingsAPI,
 } from "../utils/api";
+import { windowsScriptCall, withScriptArgs } from "../utils/installCommand";
 import { invalidateHostScope } from "../utils/queryScopes";
+import AllowRemoteRestartOption from "./AllowRemoteRestartOption";
 import ServerUrlCorsWarning from "./ServerUrlCorsWarning";
 import ModalPortal from "./ui/ModalPortal";
 
@@ -55,6 +57,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 	const [hasNavigated, setHasNavigated] = useState(false);
 	const [windowsIgnoreSsl, setWindowsIgnoreSsl] = useState(false);
 	const [windowsUseCurl, setWindowsUseCurl] = useState(false);
+	const [allowRemoteRestart, setAllowRemoteRestart] = useState(false);
 	const transitionTimeoutRef = useRef(null);
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
@@ -111,19 +114,19 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 			: "";
 		if (useCurl) {
 			const curlInsecure = includeSslBypass ? " -k" : "";
-			return `${sslBlock}curl.exe${curlInsecure} -s -H "X-API-ID: ${createdHost?.api_id}" -H "X-API-KEY: ${plaintextApiKey}" -o "$env:TEMP\\patchmon-install.ps1" "${installUrl}"; if ($LASTEXITCODE -eq 0) { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; & "$env:TEMP\\patchmon-install.ps1" } else { Write-Error "curl failed with exit code $LASTEXITCODE" }`;
+			return `${sslBlock}curl.exe${curlInsecure} -s -H "X-API-ID: ${createdHost?.api_id}" -H "X-API-KEY: ${plaintextApiKey}" -o "$env:TEMP\\patchmon-install.ps1" "${installUrl}"; if ($LASTEXITCODE -eq 0) { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; ${windowsScriptCall({ allowRemoteRestart })} } else { Write-Error "curl failed with exit code $LASTEXITCODE" }`;
 		}
 		// -OutFile writes the response bytes straight to disk. Reading
 		// $r.Content instead makes Windows PowerShell 5.1 decode the body
 		// through the Windows ANSI code page, which corrupts every non-ASCII
 		// character in the script.
-		return `${sslBlock}Invoke-WebRequest -Uri "${installUrl}" -Headers @{"X-API-ID"="${createdHost?.api_id}"; "X-API-KEY"="${plaintextApiKey}"} -UseBasicParsing -OutFile "$env:TEMP\\patchmon-install.ps1"; Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; & "$env:TEMP\\patchmon-install.ps1"`;
+		return `${sslBlock}Invoke-WebRequest -Uri "${installUrl}" -Headers @{"X-API-ID"="${createdHost?.api_id}"; "X-API-KEY"="${plaintextApiKey}"} -UseBasicParsing -OutFile "$env:TEMP\\patchmon-install.ps1"; Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; ${windowsScriptCall({ allowRemoteRestart })}`;
 	};
 
 	const getShellCommand = (force) => {
 		const use_sudo = platform !== "freebsd";
 		const base = use_sudo ? "sudo sh" : "sh";
-		return force ? `${base} -s -- --force` : base;
+		return withScriptArgs(base, { force, allowRemoteRestart });
 	};
 
 	// Poll for connection (steps 4–7)
@@ -287,6 +290,8 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 	const resetWizard = () => {
 		setStep(1);
 		setPlatform("linux");
+		// Each host's administrator decides again.
+		setAllowRemoteRestart(false);
 		setFormData({
 			friendly_name: "",
 			hostGroupIds: [],
@@ -572,6 +577,11 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 							. After copying, the wizard will wait for the connection.
 						</p>
 						<ServerUrlCorsWarning enabled={isOpen} />
+						<AllowRemoteRestartOption
+							checked={allowRemoteRestart}
+							onChange={setAllowRemoteRestart}
+							windows={platform === "windows"}
+						/>
 						{platform === "windows" && (
 							<div className="flex flex-wrap items-center gap-4">
 								<label className="flex items-center gap-2 cursor-pointer">
