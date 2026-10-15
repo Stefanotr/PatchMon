@@ -22,6 +22,7 @@ import {
 	Wrench,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import PatchWizard from "../components/PatchWizard";
 import { useAuth } from "../contexts/AuthContext";
@@ -42,6 +43,7 @@ function formatRepoName(name) {
 const isHostPatchable = (host) => !!host.needsUpdate;
 
 const PackageDetail = () => {
+	const { t } = useTranslation();
 	const { packageId } = useParams();
 	const decodedPackageId = decodeURIComponent(packageId || "");
 	const navigate = useNavigate();
@@ -92,9 +94,7 @@ const PackageDetail = () => {
 		const runs = info?.runs || [];
 		if (mode === "approval") {
 			toast.success(
-				runs.length === 1
-					? "Submitted 1 run for approval"
-					: `Submitted ${runs.length} runs for approval`,
+				t("Submitted {{count}} runs for approval", { count: runs.length }),
 			);
 			return;
 		}
@@ -104,7 +104,7 @@ const PackageDetail = () => {
 			return;
 		}
 		if (runs.length > 0) {
-			toast.success("Patch queued. View progress in Patching.");
+			toast.success(t("Patch queued. View progress in Patching."));
 		}
 	};
 
@@ -234,17 +234,17 @@ const PackageDetail = () => {
 						<AlertTriangle className="h-5 w-5 text-danger-400" />
 						<div className="ml-3">
 							<h3 className="text-sm font-medium text-danger-800">
-								Error loading package
+								{t("Error loading package")}
 							</h3>
 							<p className="text-sm text-danger-700 mt-1">
-								{packageError.message || "Failed to load package details"}
+								{packageError.message || t("Failed to load package details")}
 							</p>
 							<button
 								type="button"
 								onClick={() => refetchPackage()}
 								className="mt-2 btn-danger text-xs"
 							>
-								Try again
+								{t("Try again")}
 							</button>
 						</div>
 					</div>
@@ -259,7 +259,7 @@ const PackageDetail = () => {
 				<div className="text-center py-8">
 					<Package className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 					<p className="text-secondary-500 dark:text-white">
-						Package not found
+						{t("Package not found")}
 					</p>
 				</div>
 			</div>
@@ -280,8 +280,8 @@ const PackageDetail = () => {
 						className="flex items-center gap-2 text-secondary-600 hover:text-secondary-900 dark:text-white dark:hover:text-white transition-colors text-sm sm:text-base"
 					>
 						<ArrowLeft className="h-4 w-4" />
-						<span className="hidden sm:inline">Back to Packages</span>
-						<span className="sm:hidden">Back</span>
+						<span className="hidden sm:inline">{t("Back to Packages")}</span>
+						<span className="sm:hidden">{t("Back")}</span>
 					</button>
 					<ChevronRight className="h-4 w-4 text-secondary-400 hidden sm:block" />
 					<h1 className="text-xl sm:text-2xl font-semibold text-secondary-900 dark:text-white truncate">
@@ -291,13 +291,13 @@ const PackageDetail = () => {
 						stats.securityUpdates > 0 ? (
 							<span className="badge-danger flex items-center gap-1">
 								<Shield className="h-3 w-3" />
-								Security Update Available
+								{t("Security Update Available")}
 							</span>
 						) : (
-							<span className="badge-warning">Update Available</span>
+							<span className="badge-warning">{t("Update Available")}</span>
 						)
 					) : (
-						<span className="badge-success">Up to Date</span>
+						<span className="badge-success">{t("Up to Date")}</span>
 					)}
 				</div>
 				<button
@@ -309,7 +309,7 @@ const PackageDetail = () => {
 					<RefreshCw
 						className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
 					/>
-					Refresh
+					{t("Refresh")}
 				</button>
 			</div>
 
@@ -321,10 +321,10 @@ const PackageDetail = () => {
 						<Download className="h-5 w-5 text-primary-600 mr-2 flex-shrink-0" />
 						<div className="min-w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Latest Version
+								{t("Latest Version")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white truncate">
-								{pkg.latest_version || "Unknown"}
+								{pkg.latest_version || t("Unknown")}
 							</p>
 						</div>
 					</div>
@@ -336,10 +336,12 @@ const PackageDetail = () => {
 						<Calendar className="h-5 w-5 text-primary-600 mr-2 flex-shrink-0" />
 						<div className="min-w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Updated
+								{t("Updated", { context: "date" })}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-								{pkg.updated_at ? formatRelativeTime(pkg.updated_at) : "Never"}
+								{pkg.updated_at
+									? formatRelativeTime(pkg.updated_at)
+									: t("Never")}
 							</p>
 						</div>
 					</div>
@@ -351,7 +353,7 @@ const PackageDetail = () => {
 						<Server className="h-5 w-5 text-primary-600 mr-2 flex-shrink-0" />
 						<div className="min-w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Hosts with Package
+								{t("Hosts with Package")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{stats.totalInstalls || 0}
@@ -366,7 +368,7 @@ const PackageDetail = () => {
 						<Shield className="h-5 w-5 text-success-600 mr-2 flex-shrink-0" />
 						<div className="min-w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Up to Date
+								{t("Up to Date")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{(stats.totalInstalls || 0) - (stats.updatesNeeded || 0)}
@@ -380,7 +382,7 @@ const PackageDetail = () => {
 			{pkg.sourceRepos?.length > 0 && (
 				<div className="card p-4">
 					<h3 className="text-sm font-medium text-secondary-500 dark:text-secondary-400 mb-2">
-						Source Repositories
+						{t("Source Repositories")}
 					</h3>
 					<div className="flex flex-wrap gap-2">
 						{pkg.sourceRepos.map((repo) => (
@@ -401,23 +403,25 @@ const PackageDetail = () => {
 			{/* Description */}
 			<div className="card p-4">
 				<h4 className="text-sm font-medium text-secondary-600 dark:text-white mb-3 flex items-center gap-2">
-					Description
+					{t("Description")}
 					<div className="relative group">
 						<Info className="dark:text-white" />
 						<div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 hidden group-hover:block w-max max-w-xs px-2 py-1 bg-secondary-900 text-white text-xs rounded shadow-lg z-[100]">
-							The description was pulled directly from the host package manager.
+							{t(
+								"The description was pulled directly from the host package manager.",
+							)}
 						</div>
 					</div>
 				</h4>
 				<p className="text-sm text-secondary-600 dark:text-white">
-					{pkg.description || "No description available."}
+					{pkg.description || t("No description available.")}
 				</p>
 			</div>
 
 			{/* Hosts / Activity Tabs */}
 			<div className="card">
 				<div className="border-b border-secondary-200 dark:border-secondary-600">
-					<nav className="-mb-px flex" aria-label="Tabs">
+					<nav className="-mb-px flex" aria-label={t("Tabs")}>
 						<button
 							type="button"
 							onClick={() => setActiveTab("hosts")}
@@ -428,7 +432,7 @@ const PackageDetail = () => {
 							}`}
 						>
 							<Server className="h-4 w-4" />
-							Hosts
+							{t("Hosts")}
 						</button>
 						<button
 							type="button"
@@ -440,7 +444,7 @@ const PackageDetail = () => {
 							}`}
 						>
 							<History className="h-4 w-4" />
-							Activity
+							{t("Activity")}
 						</button>
 					</nav>
 				</div>
@@ -453,7 +457,7 @@ const PackageDetail = () => {
 								<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-secondary-400" />
 								<input
 									type="text"
-									placeholder="Search hosts..."
+									placeholder={t("Search hosts...")}
 									value={searchTerm}
 									onChange={(e) => setSearchTerm(e.target.value)}
 									className="w-full pl-10 pr-4 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white placeholder-secondary-500 dark:placeholder-secondary-400 text-sm sm:text-base"
@@ -470,7 +474,7 @@ const PackageDetail = () => {
 									}}
 									className="h-4 w-4 rounded border-secondary-300 dark:border-secondary-600 text-primary-600 focus:ring-primary-500"
 								/>
-								Only pending update
+								{t("Only pending update")}
 							</label>
 							{/* Patch selected button */}
 							{canManageHosts() && selectedHostIds.size > 0 && (
@@ -478,10 +482,15 @@ const PackageDetail = () => {
 									type="button"
 									onClick={() => setShowMultiHostModal(true)}
 									className="btn-primary inline-flex items-center gap-2 whitespace-nowrap"
-									title={`Patch ${selectedHostIds.size} selected host(s) with ${pkg.name}`}
+									title={t("Patch {{count}} selected host(s) with {{name}}", {
+										count: selectedHostIds.size,
+										name: pkg.name,
+									})}
 								>
 									<Wrench className="h-4 w-4" />
-									Patch selected ({selectedHostIds.size})
+									{t("Patch selected ({{count}})", {
+										count: selectedHostIds.size,
+									})}
 								</button>
 							)}
 						</div>
@@ -498,10 +507,10 @@ const PackageDetail = () => {
 											<AlertTriangle className="h-5 w-5 text-danger-400" />
 											<div className="ml-3">
 												<h3 className="text-sm font-medium text-danger-800">
-													Error loading hosts
+													{t("Error loading hosts")}
 												</h3>
 												<p className="text-sm text-danger-700 mt-1">
-													{hostsError.message || "Failed to load hosts"}
+													{hostsError.message || t("Failed to load hosts")}
 												</p>
 											</div>
 										</div>
@@ -512,10 +521,10 @@ const PackageDetail = () => {
 									<Server className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 									<p className="text-secondary-500 dark:text-white">
 										{debouncedSearch
-											? "No hosts match your search"
+											? t("No hosts match your search")
 											: onlyPending
-												? "All hosts are up to date for this package"
-												: "No hosts have this package installed"}
+												? t("All hosts are up to date for this package")
+												: t("No hosts have this package installed")}
 									</p>
 								</div>
 							) : (
@@ -549,8 +558,8 @@ const PackageDetail = () => {
 															className="flex items-center justify-center p-1 -ml-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700"
 															aria-label={
 																selectedHostIds.has(host.hostId)
-																	? "Deselect host"
-																	: "Select host"
+																	? t("Deselect host")
+																	: t("Select host")
 															}
 														>
 															{selectedHostIds.has(host.hostId) ? (
@@ -573,16 +582,16 @@ const PackageDetail = () => {
 													<div className="flex flex-col gap-2 flex-1">
 														<div className="flex items-center gap-2">
 															<span className="text-xs text-secondary-500 dark:text-white">
-																Version:
+																{t("Version:")}
 															</span>
 															<span className="text-sm text-secondary-900 dark:text-white font-mono">
-																{host.currentVersion || "Unknown"}
+																{host.currentVersion || t("Unknown")}
 															</span>
 														</div>
 														{host.sourceRepoName && (
 															<div className="flex items-center gap-2">
 																<span className="text-xs text-secondary-500 dark:text-white">
-																	Repo:
+																	{t("Repo:")}
 																</span>
 																<span className="badge-secondary text-xs">
 																	{formatRepoName(host.sourceRepoName)}
@@ -591,22 +600,22 @@ const PackageDetail = () => {
 														)}
 														<div className="flex items-center gap-2">
 															<span className="text-xs text-secondary-500 dark:text-white">
-																Status:
+																{t("Status:")}
 															</span>
 															{host.needsUpdate ? (
 																host.isSecurityUpdate ? (
 																	<span className="badge-danger flex items-center gap-1 text-xs">
 																		<Shield className="h-3 w-3" />
-																		Security Update
+																		{t("Security Update")}
 																	</span>
 																) : (
 																	<span className="badge-warning text-xs">
-																		Update Available
+																		{t("Update Available")}
 																	</span>
 																)
 															) : (
 																<span className="badge-success text-xs">
-																	Up to Date
+																	{t("Up to Date")}
 																</span>
 															)}
 														</div>
@@ -629,17 +638,19 @@ const PackageDetail = () => {
 															>
 																<Wrench className="h-3 w-3" />
 																{patchingHostId === host.hostId
-																	? "Queuing…"
-																	: "Patch"}
+																	? t("Queuing…")
+																	: t("Patch")}
 															</button>
 														)}
 														{host.needsReboot && (
 															<span
 																className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-																title={host.rebootReason || "Reboot required"}
+																title={
+																	host.rebootReason || t("Reboot required")
+																}
 															>
 																<RotateCcw className="h-3 w-3" />
-																Reboot Required
+																{t("Reboot Required", { context: "badge" })}
 															</span>
 														)}
 														{host.lastUpdate && (
@@ -667,15 +678,19 @@ const PackageDetail = () => {
 																className="flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
 																aria-label={
 																	allOnPageSelected
-																		? "Deselect all patchable hosts on this page"
-																		: "Select all patchable hosts on this page"
+																		? t(
+																				"Deselect all patchable hosts on this page",
+																			)
+																		: t(
+																				"Select all patchable hosts on this page",
+																			)
 																}
 																title={
 																	patchableOnPage.length === 0
-																		? "No patchable hosts on this page"
+																		? t("No patchable hosts on this page")
 																		: allOnPageSelected
-																			? "Deselect all on page"
-																			: "Select all on page"
+																			? t("Deselect all on page")
+																			: t("Select all on page")
 																}
 															>
 																{allOnPageSelected ? (
@@ -689,26 +704,26 @@ const PackageDetail = () => {
 														</th>
 													)}
 													<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-														Host
+														{t("Host")}
 													</th>
 													<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-														Current Version
+														{t("Current Version")}
 													</th>
 													<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-														Status
+														{t("Status")}
 													</th>
 													<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-														Source Repo
+														{t("Source Repo")}
 													</th>
 													<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-														Last Updated
+														{t("Last Updated")}
 													</th>
 													<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-														Reboot Required
+														{t("Reboot Required")}
 													</th>
 													{canManageHosts() && (
 														<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-															Actions
+															{t("Actions")}
 														</th>
 													)}
 												</tr>
@@ -732,8 +747,8 @@ const PackageDetail = () => {
 																		className="flex items-center justify-center"
 																		aria-label={
 																			selectedHostIds.has(host.hostId)
-																				? "Deselect host"
-																				: "Select host"
+																				? t("Deselect host")
+																				: t("Select host")
 																		}
 																	>
 																		{selectedHostIds.has(host.hostId) ? (
@@ -756,23 +771,23 @@ const PackageDetail = () => {
 															</div>
 														</td>
 														<td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900 dark:text-white">
-															{host.currentVersion || "Unknown"}
+															{host.currentVersion || t("Unknown")}
 														</td>
 														<td className="px-6 py-4 whitespace-nowrap">
 															{host.needsUpdate ? (
 																host.isSecurityUpdate ? (
 																	<span className="badge-danger flex items-center gap-1 w-fit">
 																		<Shield className="h-3 w-3" />
-																		Security Update
+																		{t("Security Update")}
 																	</span>
 																) : (
 																	<span className="badge-warning w-fit">
-																		Update Available
+																		{t("Update Available")}
 																	</span>
 																)
 															) : (
 																<span className="badge-success w-fit">
-																	Up to Date
+																	{t("Up to Date")}
 																</span>
 															)}
 														</td>
@@ -790,20 +805,22 @@ const PackageDetail = () => {
 														<td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-500 dark:text-white">
 															{host.lastUpdate
 																? formatRelativeTime(host.lastUpdate)
-																: "Never"}
+																: t("Never")}
 														</td>
 														<td className="px-6 py-4 whitespace-nowrap">
 															{host.needsReboot ? (
 																<span
 																	className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-																	title={host.rebootReason || "Reboot required"}
+																	title={
+																		host.rebootReason || t("Reboot required")
+																	}
 																>
 																	<RotateCcw className="h-3 w-3" />
-																	Required
+																	{t("Required")}
 																</span>
 															) : (
 																<span className="text-sm text-secondary-500 dark:text-white">
-																	No
+																	{t("No")}
 																</span>
 															)}
 														</td>
@@ -828,8 +845,8 @@ const PackageDetail = () => {
 																	>
 																		<Wrench className="h-3 w-3" />
 																		{patchingHostId === host.hostId
-																			? "Queuing…"
-																			: "Patch"}
+																			? t("Queuing…")
+																			: t("Patch")}
 																	</button>
 																) : (
 																	<span className="text-sm text-secondary-500 dark:text-white">
@@ -849,7 +866,7 @@ const PackageDetail = () => {
 										<div className="px-4 sm:px-6 py-3 bg-white dark:bg-secondary-800 border-t border-secondary-200 dark:border-secondary-600 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-0">
 											<div className="flex items-center gap-2">
 												<span className="text-xs sm:text-sm text-secondary-700 dark:text-white">
-													Rows per page:
+													{t("Rows per page:")}
 												</span>
 												<select
 													value={pageSize}
@@ -871,10 +888,13 @@ const PackageDetail = () => {
 													disabled={currentPage === 1}
 													className="px-3 py-1 text-xs sm:text-sm border border-secondary-300 dark:border-secondary-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-secondary-50 dark:hover:bg-secondary-700"
 												>
-													Previous
+													{t("Previous")}
 												</button>
 												<span className="text-xs sm:text-sm text-secondary-700 dark:text-white">
-													Page {currentPage} of {totalPages}
+													{t("Page {{page}} of {{totalPages}}", {
+														page: currentPage,
+														totalPages,
+													})}
 												</span>
 												<button
 													type="button"
@@ -882,7 +902,7 @@ const PackageDetail = () => {
 													disabled={currentPage === totalPages}
 													className="px-3 py-1 text-xs sm:text-sm border border-secondary-300 dark:border-secondary-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-secondary-50 dark:hover:bg-secondary-700"
 												>
-													Next
+													{t("Next")}
 												</button>
 											</div>
 										</div>
@@ -903,10 +923,10 @@ const PackageDetail = () => {
 							<div className="text-center py-12">
 								<History className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 								<p className="text-secondary-500 dark:text-white">
-									No upgrade activity for this package yet
+									{t("No upgrade activity for this package yet")}
 								</p>
 								<p className="text-sm text-secondary-400 dark:text-secondary-300 mt-1">
-									Completed patch runs will appear here
+									{t("Completed patch runs will appear here")}
 								</p>
 							</div>
 						) : (
@@ -917,7 +937,7 @@ const PackageDetail = () => {
 										className="flex flex-wrap items-center gap-2 py-2 border-b border-secondary-200 dark:border-secondary-600 last:border-0"
 									>
 										<span className="text-sm text-secondary-600 dark:text-secondary-400">
-											Upgraded on host:
+											{t("Upgraded on host:")}
 										</span>
 										<Link
 											to={`/hosts/${a.host_id}`}
@@ -937,7 +957,7 @@ const PackageDetail = () => {
 											to={`/patching/runs/${a.run_id}`}
 											className="text-sm text-primary-600 dark:text-primary-400 hover:underline ml-auto"
 										>
-											View run
+											{t("View run")}
 										</Link>
 									</div>
 								))}

@@ -1,0 +1,18 @@
+{
+	"{{count}} of {{total}} hosts need updates_one": "{{count}} of {{total}} hosts need updates",
+	"{{count}} of {{total}} hosts need updates_other": "{{count}} of {{total}} hosts need updates",
+	"Installed on {{count}} host_one": "Installed on {{count}} host",
+	"Installed on {{count}} host_other": "Installed on {{count}} hosts",
+	"Patch {{count}} selected package(s) on chosen hosts_one": "Patch {{count}} selected package(s) on chosen hosts",
+	"Patch {{count}} selected package(s) on chosen hosts_other": "Patch {{count}} selected package(s) on chosen hosts",
+	"Patch {{count}} selected package(s) on {{name}}_one": "Patch {{count}} selected package(s) on {{name}}",
+	"Patch {{count}} selected package(s) on {{name}}_other": "Patch {{count}} selected package(s) on {{name}}",
+	"Patch {{count}} selected package(s) on this host_one": "Patch {{count}} selected package(s) on this host",
+	"Patch {{count}} selected package(s) on this host_other": "Patch {{count}} selected package(s) on this host",
+	"{{count}} package selected_one": "{{count}} package selected",
+	"{{count}} package selected_other": "{{count}} packages selected",
+	"On: <value>{{value}}</value> host_one": "On: <value>{{value}}</value> host",
+	"On: <value>{{value}}</value> host_other": "On: <value>{{value}}</value> hosts",
+	"Patch {{count}} selected host(s) with {{name}}_one": "Patch {{count}} selected host(s) with {{name}}",
+	"Patch {{count}} selected host(s) with {{name}}_other": "Patch {{count}} selected host(s) with {{name}}"
+}
