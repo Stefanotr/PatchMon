@@ -16,6 +16,7 @@ name: Agent scripts
 
 on:
   push:
+    branches: [main, fork]
     paths:
       - 'agents/**'
       - 'server-source-code/internal/agents/**'
@@ -27,6 +28,10 @@ on:
       - 'server-source-code/internal/agents/**'
       - 'docker/server.Dockerfile'
       - '.github/workflows/agent-scripts.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   single-source:

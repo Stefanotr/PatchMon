@@ -9,6 +9,7 @@ on:
     - cron: "0 0 * * 1"
   workflow_dispatch:
   push:
+    branches: [main, fork]
     paths:
       - "package.json"
       - "package-lock.json"
@@ -19,10 +20,15 @@ on:
       - "package-lock.json"
       - "frontend/package.json"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   audit:
     name: Security audit
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule' || github.repository == 'PatchMon/PatchMon'
     permissions:
       contents: read
     steps:
@@ -54,6 +60,7 @@ jobs:
   outdated:
     name: Outdated packages
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule' || github.repository == 'PatchMon/PatchMon'
     permissions:
       contents: read
     steps:

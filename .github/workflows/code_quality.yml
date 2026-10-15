@@ -2,11 +2,16 @@ name: Code quality
 
 on:
   push:
+    branches: [main, fork]
     paths-ignore:
       - 'docker/**'
   pull_request:
     paths-ignore:
       - 'docker/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   biome:

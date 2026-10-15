@@ -12,7 +12,8 @@ concurrency:
 
 jobs:
   dispatch:
-    if: github.event.release.prerelease == false
+    # Upstream's website: nothing to rebuild from a fork.
+    if: github.repository == 'PatchMon/PatchMon' && github.event.release.prerelease == false
     runs-on: ubuntu-latest
     steps:
       - env:
