@@ -2,6 +2,8 @@ package packages
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -500,7 +502,7 @@ const (
 )
 
 func wingetScriptOutput(body string) string {
-	return "WINGET_PATH:" + testWinGetPath + "\r\n" + body + "WINGET_EXIT:0\r\n"
+	return "WINGET_BEGIN\r\n" + body + "WINGET_EXIT:0\r\n"
 }
 
 func appIDs(apps []WinGetUpgrade) []string {
@@ -676,9 +678,6 @@ func TestParseWinGetListOutput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if listing.Path != testWinGetPath {
-				t.Errorf("path = %q", listing.Path)
-			}
 			if got := appIDs(listing.Apps); !reflect.DeepEqual(got, nilIfEmpty(tt.want)) {
 				t.Errorf("apps = %v, want %v\n%s", got, tt.want, tt.body)
 			}
@@ -703,27 +702,24 @@ func TestParseWinGetListOutput(t *testing.T) {
 	})
 
 	t.Run("script markers", func(t *testing.T) {
-		if _, err := parseWinGetListOutput("WINGET_NOT_FOUND\n"); !errors.Is(err, ErrWinGetNotInstalled) {
-			t.Errorf("not found: err = %v", err)
-		}
-		empty := "WINGET_PATH:C:\\x\\winget.exe\nNo installed package found matching input criteria.\nWINGET_EXIT:-1978335212\n"
+		empty := "WINGET_BEGIN\nNo installed package found matching input criteria.\nWINGET_EXIT:-1978335212\n"
 		if l, err := parseWinGetListOutput(empty); err != nil || len(l.Apps) != 0 {
 			t.Errorf("no upgrades: listing = %+v, err = %v", l, err)
 		}
-		broken := "WINGET_PATH:C:\\x\\winget.exe\nFailed when searching source: winget\nWINGET_EXIT:-1978335217\n"
+		broken := "WINGET_BEGIN\nFailed when searching source: winget\nWINGET_EXIT:-1978335217\n"
 		if _, err := parseWinGetListOutput(broken); err == nil || !strings.Contains(err.Error(), "0x8A15000F") {
 			t.Errorf("source failure: err = %v", err)
 		}
-		if _, err := parseWinGetListOutput("WINGET_PATH:C:\\x\\evil.exe\nWINGET_EXIT:0\n"); err == nil {
-			t.Error("non-winget path accepted")
-		}
-		if _, err := parseWinGetListOutput("WINGET_PATH:C:\\x\\winget.exe\n" + wingetTable(wingetHeader, gitRow)); err == nil {
+		if _, err := parseWinGetListOutput("WINGET_BEGIN\n" + wingetTable(wingetHeader, gitRow)); err == nil {
 			t.Error("output cut before WINGET_EXIT accepted")
 		}
-		// Only the script's first WINGET_PATH counts, whatever winget prints.
-		spoof := "WINGET_PATH:" + testWinGetPath + "\nWINGET_PATH:C:\\Users\\Public\\winget.exe\n" + wingetTable(wingetHeader, gitRow) + "WINGET_EXIT:0\n"
-		if l, err := parseWinGetListOutput(spoof); err != nil || l.Path != testWinGetPath {
-			t.Errorf("path = %q, err = %v, want the first marker", l.Path, err)
+		if _, err := parseWinGetListOutput(wingetTable(wingetHeader, gitRow) + "WINGET_EXIT:0\n"); err == nil {
+			t.Error("output without WINGET_BEGIN accepted")
+		}
+		// Only the script's first WINGET_BEGIN counts, whatever winget prints.
+		again := "WINGET_BEGIN\n" + wingetTable(wingetHeader, gitRow) + "WINGET_BEGIN\n" + wingetTable(wingetHeader, zoomRow) + "WINGET_EXIT:0\n"
+		if l, err := parseWinGetListOutput(again); err != nil || len(l.Apps) != 2 || l.Apps[0].ID != "Git.Git" {
+			t.Errorf("listing = %+v, err = %v, want the table before the second marker kept", l, err)
 		}
 	})
 
@@ -759,16 +755,99 @@ func misfit(table string) string {
 }
 
 func TestValidWinGetPath(t *testing.T) {
-	for _, p := range []string{`C:\Program Files\WindowsApps\X\winget.exe`, `C:\Users\x\AppData\Local\Microsoft\WindowsApps\WinGet.exe`} {
+	for _, p := range []string{
+		testWinGetPath,
+		`D:\Programs\WindowsApps\microsoft.desktopappinstaller_1.26.1.0_arm64__8wekyb3d8bbwe\WinGet.exe`,
+	} {
 		if !validWinGetPath(p) {
 			t.Errorf("rejected %q", p)
 		}
 	}
-	for _, p := range []string{"", "winget.exe", `C:\x\winget.exe.bat`, `C:\x\notwinget.cmd`, `C:\a"b\winget.exe`, `\\?\x\winget.exe2`} {
+	for _, p := range []string{
+		"", "winget.exe", `C:\x\winget.exe.bat`, `C:\x\notwinget.cmd`, `C:\a"b\winget.exe`, `\\?\x\winget.exe2`,
+		// The per-user alias and anything outside an App Installer package.
+		`C:\Users\x\AppData\Local\Microsoft\WindowsApps\winget.exe`,
+		`C:\Program Files\WindowsApps\X\winget.exe`,
+		`C:\Tools\Microsoft.DesktopAppInstaller_1.25.340.0_x64__8wekyb3d8bbwe\winget.exe`,
+		`C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_1.25.340.0_x64__otherpublisher\winget.exe`,
+		`C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_1.25.340.0_x64__8wekyb3d8bbwe\..\..\..\Users\Public\WindowsApps\Microsoft.DesktopAppInstaller_1.25.340.0_x64__8wekyb3d8bbwe\winget.exe`,
+		`WindowsApps\Microsoft.DesktopAppInstaller_1.25.340.0_x64__8wekyb3d8bbwe\winget.exe`,
+	} {
 		if validWinGetPath(p) {
 			t.Errorf("accepted %q", p)
 		}
 	}
+}
+
+func TestFindWinGetIn(t *testing.T) {
+	mkPackage := func(t *testing.T, root, name string, exe bool) string {
+		t.Helper()
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if exe {
+			if err := os.WriteFile(filepath.Join(dir, "winget.exe"), []byte("MZ"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return filepath.Join(dir, "winget.exe")
+	}
+
+	t.Run("the newest package, compared as numbers", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "WindowsApps")
+		mkPackage(t, root, "Microsoft.DesktopAppInstaller_1.9.25200.0_x64__8wekyb3d8bbwe", true)
+		want := mkPackage(t, root, "Microsoft.DesktopAppInstaller_1.25.340.0_x64__8wekyb3d8bbwe", true)
+		mkPackage(t, root, "Microsoft.DesktopAppInstaller_1.25.39.0_x64__8wekyb3d8bbwe", true)
+		// Newer, but without winget.exe (bundle and resource packages).
+		mkPackage(t, root, "Microsoft.DesktopAppInstaller_1.26.0.0_neutral_~_8wekyb3d8bbwe", false)
+		mkPackage(t, root, "Microsoft.DesktopAppInstaller_1.26.0.0_neutral_split.scale-100_8wekyb3d8bbwe", false)
+		// Not App Installer, or not from Microsoft's Store publisher.
+		mkPackage(t, root, "Microsoft.DesktopAppInstaller_9.0.0.0_x64__0123456789abc", true)
+		mkPackage(t, root, "Microsoft.DesktopAppInstallerTools_9.0.0.0_x64__8wekyb3d8bbwe", true)
+		mkPackage(t, root, "Contoso.DesktopAppInstaller_9.0.0.0_x64__8wekyb3d8bbwe", true)
+		// winget.exe that is not a regular file.
+		if err := os.MkdirAll(filepath.Join(root, "Microsoft.DesktopAppInstaller_8.0.0.0_x64__8wekyb3d8bbwe", "winget.exe"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := findWinGetIn(root)
+		if err != nil || got != want {
+			t.Fatalf("findWinGetIn = %q, %v; want %q", got, err, want)
+		}
+		if !validWinGetPath(got) {
+			t.Errorf("the resolved path %q fails validWinGetPath", got)
+		}
+	})
+
+	t.Run("links are not followed", func(t *testing.T) {
+		root := t.TempDir()
+		elsewhere := mkPackage(t, t.TempDir(), "Microsoft.DesktopAppInstaller_7.0.0.0_x64__8wekyb3d8bbwe", true)
+		want := mkPackage(t, root, "Microsoft.DesktopAppInstaller_1.25.340.0_x64__8wekyb3d8bbwe", true)
+		linkedExe := filepath.Join(root, "Microsoft.DesktopAppInstaller_9.0.0.0_x64__8wekyb3d8bbwe")
+		if err := os.MkdirAll(linkedExe, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(elsewhere, filepath.Join(linkedExe, "winget.exe")); err != nil {
+			t.Skipf("cannot create symlinks here: %v", err)
+		}
+		if err := os.Symlink(filepath.Dir(elsewhere), filepath.Join(root, "Microsoft.DesktopAppInstaller_8.0.0.0_x64__8wekyb3d8bbwe")); err != nil {
+			t.Skipf("cannot create directory symlinks here: %v", err)
+		}
+		if got, err := findWinGetIn(root); err != nil || got != want {
+			t.Fatalf("findWinGetIn = %q, %v; want %q", got, err, want)
+		}
+	})
+
+	t.Run("not installed", func(t *testing.T) {
+		root := t.TempDir()
+		mkPackage(t, root, "Microsoft.DesktopAppInstaller_1.26.0.0_neutral_~_8wekyb3d8bbwe", false)
+		for _, dir := range []string{root, filepath.Join(root, "missing")} {
+			if _, err := findWinGetIn(dir); !errors.Is(err, ErrWinGetNotInstalled) {
+				t.Errorf("findWinGetIn(%s): err = %v, want ErrWinGetNotInstalled", dir, err)
+			}
+		}
+	})
 }
 
 func TestMarkerFilterDropsResultLines(t *testing.T) {

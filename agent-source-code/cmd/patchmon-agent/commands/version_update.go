@@ -25,6 +25,7 @@ import (
 	"patchmon-agent/internal/config"
 	"patchmon-agent/internal/logutil"
 	"patchmon-agent/internal/pkgversion"
+	"patchmon-agent/internal/winexec"
 
 	"github.com/spf13/cobra"
 )
@@ -436,7 +437,7 @@ try {
 	})).Info("Launching Windows update script (stop service → replace binary → start service)...")
 
 	progress.stage(updateStageRestarting, "")
-	cmd := exec.Command("powershell",
+	cmd := winexec.PowerShell(context.Background(),
 		"-NonInteractive", "-WindowStyle", "Hidden",
 		"-ExecutionPolicy", "Bypass",
 		"-File", psScriptPath)
@@ -837,11 +838,12 @@ func restartService(_ string, _ string) error {
 	// This branch is a safety net; the primary Windows update path goes through
 	// updateAgentWindows() before restartService is ever called.
 	if runtime.GOOS == "windows" {
+		// A failure before the restart script runs returns the error and
+		// keeps the agent running: exiting here would leave the service
+		// stopped, since nothing would start it again.
 		dir, dirErr := secureUpdateDir()
 		if dirErr != nil {
-			logger.WithError(dirErr).Error("Failed to prepare update directory for restart script")
-			os.Exit(0)
-			return nil
+			return fmt.Errorf("prepare the update directory for the restart script: %w", dirErr)
 		}
 		psScriptPath := filepath.Join(dir, fmt.Sprintf("patchmon-restart-%d.ps1", time.Now().UnixNano()))
 		psScript := fmt.Sprintf(`$ErrorActionPreference = 'SilentlyContinue'
@@ -852,20 +854,16 @@ Start-Service -Name '%s'
 Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 `, serviceName, serviceName)
 		if err := os.WriteFile(psScriptPath, []byte(psScript), 0600); err != nil {
-			logger.WithError(err).Error("Failed to write Windows restart script")
-			os.Exit(0)
-			return nil
+			return fmt.Errorf("write the Windows restart script: %w", err)
 		}
-		cmd := exec.Command("powershell",
+		cmd := winexec.PowerShell(context.Background(),
 			"-NonInteractive", "-WindowStyle", "Hidden",
 			"-ExecutionPolicy", "Bypass",
 			"-File", psScriptPath)
 		cmd.SysProcAttr = sysProcAttrForDetach()
 		if err := cmd.Start(); err != nil {
 			_ = os.Remove(psScriptPath)
-			logger.WithError(err).Error("Failed to start Windows restart script")
-			os.Exit(0)
-			return nil
+			return fmt.Errorf("start the Windows restart script: %w", err)
 		}
 		logger.Info("Windows restart script launched, exiting...")
 		time.Sleep(500 * time.Millisecond)

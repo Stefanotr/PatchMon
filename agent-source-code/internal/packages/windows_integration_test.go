@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -208,7 +209,12 @@ func TestPatcherListWinGetUpgradesLive(t *testing.T) {
 		t.Fatalf("winget listing exceeded its deadline: %v", ctx.Err())
 	}
 	if errors.Is(err, ErrWinGetNotInstalled) {
-		t.Skip("winget is not installed on this runner")
+		t.Skipf("winget is not installed on this runner: %v", err)
+	}
+	// The agent runs as SYSTEM, which can list Program Files\WindowsApps;
+	// another account may not be allowed to.
+	if errors.Is(err, fs.ErrPermission) {
+		t.Skipf("this account cannot look for winget.exe where the agent does: %v", err)
 	}
 	if err != nil {
 		assertNoPowerShellParseError(t, err.Error())
@@ -216,6 +222,9 @@ func TestPatcherListWinGetUpgradesLive(t *testing.T) {
 	}
 	if listing.Unreadable > 0 {
 		t.Errorf("%d line(s) of the live winget listing could not be read", listing.Unreadable)
+	}
+	if !validWinGetPath(listing.Path) {
+		t.Errorf("winget.exe resolved to %q, outside an App Installer package", listing.Path)
 	}
 	t.Logf("winget at %s: %d upgradable app(s)", listing.Path, len(listing.Apps))
 }

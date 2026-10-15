@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,14 +19,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ErrWinGetNotInstalled means the host has no winget.exe the agent can reach.
-// Windows Server before 2025 ships without it, so for a patch_all run it only
-// means there are no applications to upgrade.
+// ErrWinGetNotInstalled means the host has no winget.exe the agent runs: the
+// one in the App Installer package under Program Files (findWinGet). Windows
+// Server before 2025 ships without it, so for a patch_all run it only means
+// there are no applications to upgrade.
 var ErrWinGetNotInstalled = errors.New("WinGet is not installed on this host")
 
-// powershellExe is the PowerShell the scripts run under. Tests point it at
-// pwsh to exercise the scripts on any OS.
-var powershellExe = "powershell"
+// powershellCommand starts the PowerShell the scripts run under: Windows
+// PowerShell by absolute path. Tests point it at another PowerShell to
+// exercise the scripts on any OS.
+var powershellCommand = winexec.PowerShell
 
 // processWaitDelay bounds how long a step waits for its pipes once the process
 // is gone: installers launched by winget can inherit and hold them.
@@ -195,34 +196,14 @@ try {
 }
 `
 
-// wingetListScript resolves winget.exe the way the collector does (it is a
-// per-user UWP app and not on the SYSTEM PATH) and lists upgradable apps. When
-// several App Installer versions are staged, the newest one is used.
+// wingetListScript lists upgradable apps with the winget.exe in
+// PATCHMON_WINGET (wingetPathEnv), which findWinGet resolved. The markers
+// around winget's output tell it apart from anything PowerShell prints.
 const wingetListScript = `
 $ErrorActionPreference = 'SilentlyContinue'
 $env:TERM = 'dumb'
-$wingetPath = $null
-$candidate = Get-Command winget.exe -ErrorAction SilentlyContinue
-if ($candidate) {
-  $wingetPath = $candidate.Source
-} else {
-  $patterns = @(
-    "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe",
-    "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*\winget.exe"
-  )
-  foreach ($pattern in $patterns) {
-    $found = Get-Item $pattern -ErrorAction SilentlyContinue |
-      Sort-Object -Descending { try { [version](($_.Directory.Name -split '_')[1]) } catch { [version]'0.0' } } |
-      Select-Object -First 1
-    if ($found) { $wingetPath = $found.FullName; break }
-  }
-}
-if (-not $wingetPath) {
-  Write-Output 'WINGET_NOT_FOUND'
-  exit 0
-}
-Write-Output ('WINGET_PATH:' + $wingetPath)
-$out = & $wingetPath list --upgrade-available --accept-source-agreements --disable-interactivity 2>&1
+Write-Output 'WINGET_BEGIN'
+$out = & $env:PATCHMON_WINGET list --upgrade-available --accept-source-agreements --disable-interactivity 2>&1
 $code = $LASTEXITCODE
 if ($out) { $out | Out-String }
 Write-Output ('WINGET_EXIT:' + $code)
@@ -230,7 +211,7 @@ Write-Output ('WINGET_EXIT:' + $code)
 
 func (p *WindowsPatcher) powershell(ctx context.Context, script string, env []string, out io.Writer) ([]byte, error) {
 	var captured bytes.Buffer
-	cmd := exec.CommandContext(ctx, powershellExe, "-NoProfile", "-NonInteractive", "-Command", winexec.Script(script))
+	cmd := powershellCommand(ctx, "-NoProfile", "-NonInteractive", "-Command", winexec.Script(script))
 	cmd.Env = append(os.Environ(), env...)
 	cmd.WaitDelay = processWaitDelay
 	var filter *markerFilter
@@ -268,17 +249,27 @@ func (p *WindowsPatcher) ScanWUA(ctx context.Context) (WUAScan, error) {
 }
 
 // ListWinGetUpgrades returns the apps winget.exe can upgrade, and which
-// winget.exe it asked. It returns ErrWinGetNotInstalled when there is none.
+// winget.exe it asked. It returns an error wrapping ErrWinGetNotInstalled
+// when there is none.
 func (p *WindowsPatcher) ListWinGetUpgrades(ctx context.Context) (WinGetListing, error) {
-	out, err := p.powershell(ctx, wingetListScript, nil, nil)
+	path, err := findWinGet()
 	if err != nil {
 		return WinGetListing{}, err
 	}
-	return parseWinGetListOutput(string(out))
+	out, err := p.powershell(ctx, wingetListScript, []string{wingetPathEnv + "=" + path}, nil)
+	if err != nil {
+		return WinGetListing{}, err
+	}
+	listing, err := parseWinGetListOutput(string(out))
+	if err != nil {
+		return WinGetListing{}, err
+	}
+	listing.Path = path
+	return listing, nil
 }
 
 // parseWinGetListOutput reads the output of wingetListScript. The script
-// prints WINGET_PATH before running winget and WINGET_EXIT after it, so the
+// prints WINGET_BEGIN before running winget and WINGET_EXIT after it, so the
 // first of the one and the last of the other are its own, and only the lines
 // between them, which winget printed, are parsed as tables.
 func parseWinGetListOutput(out string) (WinGetListing, error) {
@@ -287,49 +278,30 @@ func parseWinGetListOutput(out string) (WinGetListing, error) {
 	out = strings.ReplaceAll(out, "\r", "\n")
 	lines := strings.Split(out, "\n")
 
-	var path string
-	pathAt, exitAt := -1, -1
+	beginAt, exitAt := -1, -1
 	exitCode := int64(-1)
 	for i, raw := range lines {
 		line := strings.TrimSpace(raw)
 		switch {
-		case pathAt < 0 && line == "WINGET_NOT_FOUND":
-			return WinGetListing{}, ErrWinGetNotInstalled
-		case pathAt < 0 && strings.HasPrefix(line, "WINGET_PATH:"):
-			path, pathAt = strings.TrimPrefix(line, "WINGET_PATH:"), i
-		case pathAt >= 0 && strings.HasPrefix(line, "WINGET_EXIT:"):
+		case beginAt < 0 && line == "WINGET_BEGIN":
+			beginAt = i
+		case beginAt >= 0 && strings.HasPrefix(line, "WINGET_EXIT:"):
 			if v, err := strconv.ParseInt(strings.TrimPrefix(line, "WINGET_EXIT:"), 10, 64); err == nil {
 				exitCode, exitAt = v, i
 			}
 		}
 	}
-	if !validWinGetPath(path) {
-		return WinGetListing{}, fmt.Errorf("unexpected winget.exe path %q", path)
-	}
 	if exitAt < 0 {
 		return WinGetListing{}, fmt.Errorf("winget list did not finish%s", tailHint([]byte(out)))
 	}
-	body := lines[pathAt+1 : exitAt]
+	body := lines[beginAt+1 : exitAt]
 	apps, unreadable := parseWinGetUpgradeTables(body)
 	// LASTEXITCODE is a signed 32-bit value in PowerShell.
 	code := uint32(exitCode)
 	if len(apps) == 0 && exitCode != 0 && code != wingetNoPackagesFound {
 		return WinGetListing{}, fmt.Errorf("winget list exited with 0x%08X%s", code, tailHint([]byte(strings.Join(body, "\n"))))
 	}
-	return WinGetListing{Path: path, Apps: apps, Unreadable: unreadable}, nil
-}
-
-// validWinGetPath accepts only an absolute path to a file named winget.exe.
-// Both separators are accepted so the check is testable off Windows.
-func validWinGetPath(p string) bool {
-	if p == "" || strings.ContainsAny(p, "\"\x00") {
-		return false
-	}
-	base := p[strings.LastIndexAny(p, `\/`)+1:]
-	if !strings.EqualFold(base, "winget.exe") {
-		return false
-	}
-	return filepath.IsAbs(p) || (len(p) > 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/'))
+	return WinGetListing{Apps: apps, Unreadable: unreadable}, nil
 }
 
 // InstallWUA downloads and installs one update, streaming progress to out.

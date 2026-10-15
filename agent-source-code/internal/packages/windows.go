@@ -2,6 +2,7 @@ package packages
 
 import (
 	"encoding/json"
+	"os"
 	"regexp"
 	"runtime"
 	"strings"
@@ -231,7 +232,7 @@ foreach ($path in $paths) {
 if ($result.Count -gt 5000) { $result = $result[0..4999] }
 $result | ConvertTo-Json -Compress -Depth 3
 `
-	cmd, cancel := boundedCommand(networkCollectorTimeout, "powershell", "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
+	cmd, cancel := boundedPowerShell(networkCollectorTimeout, psScript)
 	defer cancel()
 	output, err := cmd.Output()
 	if err != nil {
@@ -300,44 +301,23 @@ func buildAppDescription(publisher, installDate, size string) string {
 
 // getPackagesFromWinget runs winget list and parses the text-table output.
 // Uses PowerShell wrapper for UTF-8 encoding to avoid U+FFFD mojibake.
-// Resolves the actual winget.exe path to work in SYSTEM/Session 0 context
-// where winget may not be on PATH (it's a per-user UWP app).
+// winget.exe is the App Installer copy findWinGet resolves, never one found
+// through PATH (the agent runs as SYSTEM).
 func (m *WindowsManager) getPackagesFromWinget() []models.Package {
-	// Resolve winget.exe — it's installed as a UWP app (App Installer) and not always on SYSTEM PATH.
-	// Try PATH first, then known WindowsApps locations.
+	wingetPath, err := findWinGet()
+	if err != nil {
+		m.logger.WithError(err).Debug("WinGet not available")
+		return nil
+	}
 	psScript := `
 $ErrorActionPreference = "SilentlyContinue"
 $env:TERM = 'dumb'
-
-# Resolve winget.exe path — handle SYSTEM/Session 0 where it's not on PATH
-$wingetPath = $null
-$candidate = Get-Command winget.exe -ErrorAction SilentlyContinue
-if ($candidate) {
-    $wingetPath = $candidate.Source
-} else {
-    # UWP package location (works for SYSTEM when App Installer is installed machine-wide)
-    $candidates = @(
-        "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe",
-        "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*\winget.exe",
-        "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*\winget.exe"
-    )
-    foreach ($pattern in $candidates) {
-        $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) {
-            $wingetPath = $found.FullName
-            break
-        }
-    }
-}
-if (-not $wingetPath) {
-    Write-Output "WINGET_NOT_FOUND"
-    exit 0
-}
-$out = & $wingetPath list --accept-source-agreements --disable-interactivity 2>&1
+$out = & $env:PATCHMON_WINGET list --accept-source-agreements --disable-interactivity 2>&1
 if ($out) { $out | Out-String }
 `
-	cmd, cancel := boundedCommand(networkCollectorTimeout, "powershell", "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
+	cmd, cancel := boundedPowerShell(networkCollectorTimeout, psScript)
 	defer cancel()
+	cmd.Env = append(os.Environ(), wingetPathEnv+"="+wingetPath)
 	output, err := cmd.Output()
 	if err != nil {
 		m.logger.WithError(err).Debug("winget list failed")
@@ -345,10 +325,6 @@ if ($out) { $out | Out-String }
 	}
 
 	outputStr := string(output)
-	if strings.Contains(outputStr, "WINGET_NOT_FOUND") {
-		m.logger.Debug("WinGet not available (not found on PATH or in WindowsApps)")
-		return nil
-	}
 
 	entries := m.parseWingetTable(outputStr)
 	if len(entries) == 0 {
@@ -539,35 +515,20 @@ func (m *WindowsManager) parseWingetTable(output string) []wingetEntry {
 
 // getWingetUpgradeAvailable runs winget list --upgrade-available and returns Id -> AvailableVersion map
 func (m *WindowsManager) getWingetUpgradeAvailable() map[string]string {
+	wingetPath, err := findWinGet()
+	if err != nil {
+		m.logger.WithError(err).Debug("WinGet not available")
+		return nil
+	}
 	psScript := `
 $ErrorActionPreference = "SilentlyContinue"
 $env:TERM = 'dumb'
-
-# Resolve winget.exe path (same logic as main list)
-$wingetPath = $null
-$candidate = Get-Command winget.exe -ErrorAction SilentlyContinue
-if ($candidate) {
-    $wingetPath = $candidate.Source
-} else {
-    $candidates = @(
-        "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe",
-        "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*\winget.exe",
-        "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*\winget.exe"
-    )
-    foreach ($pattern in $candidates) {
-        $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) {
-            $wingetPath = $found.FullName
-            break
-        }
-    }
-}
-if (-not $wingetPath) { exit 0 }
-$out = & $wingetPath list --upgrade-available --accept-source-agreements --disable-interactivity 2>&1
+$out = & $env:PATCHMON_WINGET list --upgrade-available --accept-source-agreements --disable-interactivity 2>&1
 if ($out) { $out | Out-String }
 `
-	cmd, cancel := boundedCommand(networkCollectorTimeout, "powershell", "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
+	cmd, cancel := boundedPowerShell(networkCollectorTimeout, psScript)
 	defer cancel()
+	cmd.Env = append(os.Environ(), wingetPathEnv+"="+wingetPath)
 	output, err := cmd.Output()
 	if err != nil {
 		m.logger.WithError(err).Debug("winget list --upgrade-available failed")
@@ -622,7 +583,7 @@ $server = (Get-ItemProperty -Path $wuKey -Name WUServer -ErrorAction SilentlyCon
 $useWU = (Get-ItemProperty -Path "$wuKey\AU" -Name UseWUServer -ErrorAction SilentlyContinue).UseWUServer
 if ($server -and $useWU -eq 1) { "WSUS_ACTIVE" } else { "WSUS_INACTIVE" }
 `
-	cmd, cancel := boundedCommand(networkCollectorTimeout, "powershell", "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
+	cmd, cancel := boundedPowerShell(networkCollectorTimeout, psScript)
 	defer cancel()
 	output, err := cmd.Output()
 	if err != nil {
@@ -754,7 +715,7 @@ if ($comFailed) {
 
 $result | ConvertTo-Json -Compress -Depth 4
 `
-	cmd, cancel := boundedCommand(networkCollectorTimeout, "powershell", "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
+	cmd, cancel := boundedPowerShell(networkCollectorTimeout, psScript)
 	defer cancel()
 	output, err := cmd.Output()
 	if err != nil {

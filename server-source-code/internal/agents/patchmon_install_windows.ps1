@@ -174,9 +174,47 @@ Write-Host ""
 Write-Host "Creating installation directory..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path $InstallPath | Out-Null
 
-# Create config directory
+# Create config directory. It holds the API credentials, so only SYSTEM and
+# Administrators may open it, whoever created it first: a folder created under
+# ProgramData lets every local user read the files in it, and the folder's
+# owner could widen any permission set on it. A link (junction, symbolic link)
+# at that path is removed, not followed, so the credentials never land where
+# it points.
 Write-Host "Creating configuration directory..." -ForegroundColor Yellow
+$existingConfigDir = Get-Item -LiteralPath $ConfigPath -Force -ErrorAction SilentlyContinue
+if ($existingConfigDir -and ($existingConfigDir.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    Write-Host "Removing the link found at $ConfigPath..." -ForegroundColor Yellow
+    $existingConfigDir.Delete()
+}
 New-Item -ItemType Directory -Force -Path $ConfigPath | Out-Null
+$icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
+& $icacls $ConfigPath /setowner '*S-1-5-32-544' /T /C /Q | Out-Null
+& $icacls $ConfigPath /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' /Q | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to restrict $ConfigPath to SYSTEM and Administrators."
+    exit 1
+}
+# /grant:r replaces the entries of SYSTEM and Administrators only: remove any
+# other entry, allow or deny, that whoever created the folder may have added.
+# SIDs, not names, so the check holds on every display language.
+$trustedSids = @('S-1-5-18', 'S-1-5-32-544')
+$sidType = [System.Security.Principal.SecurityIdentifier]
+foreach ($rule in (Get-Acl -LiteralPath $ConfigPath).GetAccessRules($true, $true, $sidType)) {
+    $sid = $rule.IdentityReference.Value
+    if ($trustedSids -notcontains $sid) {
+        & $icacls $ConfigPath /remove "*$sid" /Q | Out-Null
+    }
+}
+$untrusted = @((Get-Acl -LiteralPath $ConfigPath).GetAccessRules($true, $true, $sidType) |
+    Where-Object { $trustedSids -notcontains $_.IdentityReference.Value })
+if ($untrusted.Count -gt 0) {
+    Write-Error "$ConfigPath still grants access to $($untrusted[0].IdentityReference.Value). Remove that entry (or the folder, after checking its content) and run the installation again."
+    exit 1
+}
+if (Get-ChildItem -LiteralPath $ConfigPath -Force) {
+    # Files from an earlier install inherit the new permissions.
+    & $icacls (Join-Path $ConfigPath '*') /reset /T /C /Q | Out-Null
+}
 
 # Download the binary from the server
 Write-Host "Downloading PatchMon agent..." -ForegroundColor Yellow

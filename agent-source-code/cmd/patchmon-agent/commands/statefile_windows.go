@@ -18,7 +18,8 @@ import (
 // LocalSystem, so a state file is trusted only when it is a regular file (not
 // a symlink or other reparse point) owned by LocalSystem or Administrators,
 // and it is created with a DACL granting access to those two alone. A user
-// can delete or plant a file at worst; neither is read as the agent's.
+// can delete or plant a file at worst; neither is read as the agent's. The
+// update directory is checked with the same helper (updatedir_windows.go).
 
 // stateFileSDDL is a protected DACL: full access for LocalSystem and
 // Administrators, nothing inherited from the directory.
@@ -39,29 +40,52 @@ func stateFilePath(name string) string {
 // openTrustedStateFile opens a state file for reading if it can be trusted.
 // A missing file is reported as fs.ErrNotExist.
 func openTrustedStateFile(path string) (*os.File, error) {
-	before, err := os.Lstat(path)
+	h, err := openTrusted(path, false)
 	if err != nil {
 		return nil, err
 	}
-	if !before.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a regular file", path)
-	}
-	f, err := os.Open(path)
+	return os.NewFile(uintptr(h), path), nil
+}
+
+// openTrusted opens path for reading without following it when it is a
+// reparse point, and checks what it opened: a regular file (dir false) or a
+// directory (dir true), not a reparse point (symbolic link, junction, ...),
+// owned by LocalSystem or Administrators. The checks are made on the open
+// handle, so they hold for the object the caller then reads through it. A
+// missing path is reported as fs.ErrNotExist.
+func openTrusted(path string, dir bool) (windows.Handle, error) {
+	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return nil, err
+		return windows.InvalidHandle, err
 	}
-	after, err := f.Stat()
-	if err == nil && !os.SameFile(before, after) {
-		err = errors.New("it was replaced while being opened")
-	}
-	if err == nil {
-		err = checkTrustedOwner(windows.Handle(f.Fd()))
-	}
+	// FILE_FLAG_BACKUP_SEMANTICS is what lets CreateFile open a directory.
+	h, err := windows.CreateFile(name, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil,
+		windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	if err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return windows.InvalidHandle, &fs.PathError{Op: "open", Path: path, Err: err}
 	}
-	return f, nil
+	if err := checkTrustedObject(h, dir); err != nil {
+		_ = windows.CloseHandle(h)
+		return windows.InvalidHandle, fmt.Errorf("%s: %w", path, err)
+	}
+	return h, nil
+}
+
+func checkTrustedObject(h windows.Handle, dir bool) error {
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
+		return err
+	}
+	isDir := info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0
+	switch {
+	case info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0:
+		return errors.New("it is a reparse point (symbolic link, junction or similar)")
+	case dir && !isDir:
+		return errors.New("it is not a directory")
+	case !dir && isDir:
+		return errors.New("it is not a regular file")
+	}
+	return checkTrustedOwner(h)
 }
 
 func checkTrustedOwner(h windows.Handle) error {
