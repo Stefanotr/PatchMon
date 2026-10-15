@@ -17,6 +17,8 @@ jobs:
   changelog:
     name: Publish the feedback portal changelog
     runs-on: ubuntu-latest
+    # Upstream's feedback portal: nothing to publish from a fork.
+    if: github.repository == 'PatchMon/PatchMon'
     steps:
       - name: Checkout code
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd

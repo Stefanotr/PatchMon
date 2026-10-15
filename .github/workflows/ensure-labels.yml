@@ -15,6 +15,8 @@ on:
 jobs:
   ensure-labels:
     runs-on: ubuntu-latest
+    # Upstream's issue-routing labels.
+    if: github.repository == 'PatchMon/PatchMon'
     permissions:
       contents: read
       issues: write

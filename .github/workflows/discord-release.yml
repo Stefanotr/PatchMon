@@ -11,7 +11,8 @@ jobs:
   announce:
     name: Post the release to Discord
     runs-on: ubuntu-latest
-    if: ${{ !github.event.release.prerelease }}
+    # Upstream's Discord: nothing to post from a fork.
+    if: ${{ github.repository == 'PatchMon/PatchMon' && !github.event.release.prerelease }}
     steps:
       - name: Send the webhook
         env:

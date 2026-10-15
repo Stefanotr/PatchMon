@@ -21,7 +21,8 @@ jobs:
   bump:
     name: Point the vcheck records at the release
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.release.prerelease }}
+    # Upstream's version-check DNS records: a fork must never touch them.
+    if: ${{ github.repository == 'PatchMon/PatchMon' && (github.event_name == 'workflow_dispatch' || !github.event.release.prerelease) }}
     environment:
       name: ${{ github.event_name == 'release' && 'vcheck-dns-soak' || 'vcheck-dns' }}
     steps:

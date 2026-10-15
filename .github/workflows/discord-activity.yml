@@ -12,7 +12,9 @@ jobs:
   issue-opened:
     name: Post the new issue to Discord
     runs-on: ubuntu-latest
+    # Upstream's Discord: nothing to post from a fork.
     if: >-
+      github.repository == 'PatchMon/PatchMon' &&
       github.event_name == 'issues' &&
       github.event.issue.user.login != 'renovate[bot]' &&
       github.event.issue.user.login != 'dependabot[bot]'
@@ -75,6 +77,7 @@ jobs:
     name: Post the merged PR to Discord
     runs-on: ubuntu-latest
     if: >-
+      github.repository == 'PatchMon/PatchMon' &&
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'main' &&
