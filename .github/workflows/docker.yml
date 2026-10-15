@@ -646,9 +646,11 @@ jobs:
         with:
           subject-path: 'dist/patchmon-*'
 
-      # A fork release says which PatchMon code it is built on, and whether
-      # that includes commits PatchMon has not released yet: the message of
-      # its annotated tag, written by tools/fork-release.sh.
+      # A fork release lists what changed since the previous one and says
+      # which PatchMon code it is built on, and whether that includes commits
+      # PatchMon has not released yet: the message of its annotated tag,
+      # written by tools/fork-release.sh, without the signature of a signed
+      # tag.
       - name: Release notes from the tag message (fork releases)
         if: contains(github.ref_name, '-fork.')
         env:
@@ -660,7 +662,8 @@ jobs:
             exit 1
           fi
           git fetch --no-tags --depth=1 origin "+refs/tags/${TAG}:refs/tags/${TAG}"
-          git tag -l "$TAG" --format='%(contents)' > release-body.md
+          git tag -l "$TAG" --format='%(contents)' |
+            sed '/^-----BEGIN [A-Z ]*SIGNATURE-----$/,$d' > release-body.md
           cat release-body.md
 
       - name: Upload binaries, checksums and SBOM to release

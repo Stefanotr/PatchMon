@@ -127,6 +127,8 @@ gh pr create --base fork --fill    # les tests et la qualité de code tournent s
 
 Fusionne la PR dans `fork`, puis publie une release.
 
+Le titre de la PR devient une ligne des notes de la release : écris-le pour celui qui lira ces notes, au format `type(zone): ce qui change`. `feat(...)` va dans *New*, `fix(...)` dans *Fixes*, le reste dans *Other changes*. Par exemple, `feat(activity): show the agent update live` donne `- Activity: show the agent update live (#9)` sous *New*. Un titre mal écrit se corrige sur la PR avant la fusion : c'est le titre au moment du merge qui compte.
+
 ## Publier une release du fork
 
 ```bash
@@ -142,10 +144,27 @@ $gitBash = Join-Path (Split-Path (Split-Path (Get-Command git).Source)) 'bin\bas
 & $gitBash tools/fork-release.sh --push
 ```
 
-Le script calcule le tag suivant, le crée sur `HEAD` et le pousse. Il refuse un commit déjà publié, et un fork qui contient du code PatchMon non publié sans `--unreleased-base` (voir « La base réelle »). La CI construit alors :
+Dans `cmd`, appelle-le par son chemin : `"%LOCALAPPDATA%\Programs\Git\bin\bash.exe"` pour une installation de Git pour l'utilisateur, `"%ProgramFiles%\Git\bin\bash.exe"` pour une installation pour toute la machine.
+
+```bat
+"%LOCALAPPDATA%\Programs\Git\bin\bash.exe" tools/fork-release.sh --push
+```
+
+Le script calcule le tag suivant, le crée sur `HEAD` et le pousse. Il refuse un commit déjà publié, et un fork qui contient du code PatchMon non publié sans `--unreleased-base` (voir « La base réelle »). `--dry-run` affiche le tag et ses notes sans rien créer : lance-le d'abord pour relire les notes.
+
+Le message du tag, ce sont les notes de la release :
+
+1. les PR fusionnées dans `fork` depuis la release précédente, par leur titre, rangées en *New*, *Fixes* et *Other changes*, avec les commits poussés directement sur `fork` ;
+2. la base PatchMon, et son avertissement si elle contient du code non publié.
+
+La page de connexion affiche les trois premières lignes : les nouveautés passent donc en premier.
+
+La CI construit alors :
 
 - l'image `ghcr.io/stefanotr/patchmon-server:<version>` et le tag flottant `:fork`, avec les agents de toutes les plateformes ;
-- la release GitHub avec les binaires, les sommes de contrôle et l'attestation de provenance. Ses notes reprennent le message du tag, base réelle comprise.
+- la release GitHub avec les binaires, les sommes de contrôle et l'attestation de provenance. Ses notes reprennent le message du tag.
+
+Pour corriger les notes d'une release déjà publiée, modifie la release, pas le tag (le ruleset `tags` le protège) : `gh release edit v2.1.4-fork.N --notes-file notes.md`.
 
 La release GitHub n'est créée qu'à la fin du build, environ six minutes après le push du tag : suis-le avec `gh run watch`. Les serveurs la voient ensuite au plus tard un quart d'heure après, et tout de suite avec le bouton *Check for updates* (*Settings > Server Version*).
 
