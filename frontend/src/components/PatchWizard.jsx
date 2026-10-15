@@ -40,7 +40,11 @@ import { extraDependencies } from "../utils/patchRun";
 import RestartOptions from "./RestartOptions";
 import ModalPortal from "./ui/ModalPortal";
 
-const DRY_RUN_PACKAGE_LIMIT = 5;
+// Packages a dry run validates at once: the package_names cap of a run in
+// server-source-code/internal/handler/patching.go. A dry run is one package
+// manager simulation per host (one inventory and plan on Windows), so it
+// costs about the same for 100 packages as for 1.
+const DRY_RUN_PACKAGE_LIMIT = 100;
 // Dry runs triggered at once, then dry runs polled at once (one request every
 // two seconds each). The hosts all run their dry runs in parallel either way.
 const VALIDATION_CONCURRENCY = 5;
