@@ -459,6 +459,11 @@ const (
 	wingetRebootInitiated      uint32 = 0x8A15010B
 	wingetInUseByOtherApp      uint32 = 0x8A150111
 	wingetSourceAgreementsNeed uint32 = 0x8A150046
+	// APPINSTALLER_CLI_ERROR_UPDATE_INSTALL_TECHNOLOGY_MISMATCH: the newer
+	// version uses another installer technology (typically Microsoft Edge on
+	// Windows Server, installed with the OS and kept current by its own
+	// updater). winget refuses before downloading anything.
+	wingetInstallTechMismatch uint32 = 0x8A15008E
 )
 
 type wingetOutcome struct {
@@ -468,6 +473,8 @@ type wingetOutcome struct {
 }
 
 const msgUserScope = "Not found for the system account: the app is probably installed for a single user, which the agent cannot upgrade"
+
+const msgInstallTechMismatch = "Not upgraded in place: the new version uses another installer technology; uninstall the app and install the new version, or leave it to its own updater"
 
 func classifyWingetUpgradeExit(code uint32, dryRun bool, output, id string) wingetOutcome {
 	if dryRun {
@@ -483,6 +490,8 @@ func classifyWingetUpgradeExit(code uint32, dryRun bool, output, id string) wing
 			return wingetOutcome{Status: itemNotApplicable, Message: msgUserScope}
 		case wingetPinned:
 			return wingetOutcome{Status: itemSkipped, Message: msgPinned}
+		case wingetInstallTechMismatch:
+			return wingetOutcome{Status: itemSkipped, Message: msgInstallTechMismatch}
 		}
 		return wingetOutcome{Status: itemFailed, Message: wingetCodeMessage(code)}
 	}
@@ -497,6 +506,9 @@ func classifyWingetUpgradeExit(code uint32, dryRun bool, output, id string) wing
 		return wingetOutcome{Status: itemNotApplicable, Message: msgUserScope}
 	case wingetPinned:
 		return wingetOutcome{Status: itemSkipped, Message: msgPinned}
+	case wingetInstallTechMismatch:
+		// Like a pin: nothing was changed, and every run would fail on it.
+		return wingetOutcome{Status: itemSkipped, Message: msgInstallTechMismatch}
 	case wingetPackageInUse, wingetFileInUse, wingetInUseByOtherApp:
 		return wingetOutcome{Status: itemFailed, Message: "Application is in use: close the app and retry"}
 	case wingetInstallInProgress:
@@ -607,8 +619,9 @@ func itemName(it models.PatchRunItem) string {
 }
 
 var skipReasons = map[string]string{
-	msgStoreApp:        "Microsoft Store app",
-	msgStillInstalling: "not started, Windows Update was still installing",
+	msgStoreApp:            "Microsoft Store app",
+	msgStillInstalling:     "not started, Windows Update was still installing",
+	msgInstallTechMismatch: "other installer technology, not upgraded in place",
 }
 
 func skippedLabel(it models.PatchRunItem) string {
