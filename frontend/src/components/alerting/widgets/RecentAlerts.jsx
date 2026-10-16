@@ -124,7 +124,7 @@ const RecentAlerts = ({ alerts }) => {
 														}`}
 													/>
 													<span className="text-xs text-secondary-600 dark:text-secondary-300">
-														{t(status.label)}
+														{t(status.label, { context: "alert" })}
 													</span>
 												</div>
 											</td>

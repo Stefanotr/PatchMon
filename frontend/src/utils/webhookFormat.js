@@ -1,3 +1,5 @@
+import { tk } from "../i18n";
+
 /**
  * Mirrors the webhook payload-format detection in
  * server-source-code/internal/queue/notification_worker.go
@@ -31,19 +33,19 @@ export const WEBHOOK_FORMATS = {
 const LABELS = {
 	[WEBHOOK_FORMATS.DISCORD]: {
 		label: "Discord",
-		detail: "Rich embed with severity colour",
+		detail: tk("Rich embed with severity colour"),
 	},
 	[WEBHOOK_FORMATS.SLACK]: {
 		label: "Slack",
-		detail: "Slack incoming-webhook message",
+		detail: tk("Slack incoming-webhook message"),
 	},
 	[WEBHOOK_FORMATS.SLACK_COMPATIBLE]: {
-		label: "Mattermost or Rocket.Chat",
-		detail: "Slack-compatible message",
+		label: tk("Mattermost or Rocket.Chat"),
+		detail: tk("Slack-compatible message"),
 	},
 	[WEBHOOK_FORMATS.GENERIC]: {
-		label: "Generic JSON",
-		detail: "Structured PatchMon fields, plus a top-level text",
+		label: tk("Generic JSON"),
+		detail: tk("Structured PatchMon fields, plus a top-level text"),
 	},
 };
 

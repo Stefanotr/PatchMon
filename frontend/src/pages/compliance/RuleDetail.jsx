@@ -17,8 +17,11 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
+import { tk } from "../../i18n";
 import { complianceAPI } from "../../utils/complianceApi";
+import { SEVERITY_LABELS } from "../../utils/complianceStatus";
 
 const SEVERITY_COLORS = {
 	critical:
@@ -33,37 +36,37 @@ const SEVERITY_COLORS = {
 
 const STATUS_CONFIG = {
 	fail: {
-		label: "Fail",
+		label: tk("Fail"),
 		icon: XCircle,
 		color: "text-red-600 dark:text-red-400",
 		bg: "bg-red-100 dark:bg-red-900/30",
 	},
 	warn: {
-		label: "Warning",
+		label: tk("Warning"),
 		icon: AlertTriangle,
 		color: "text-yellow-600 dark:text-yellow-400",
 		bg: "bg-yellow-100 dark:bg-yellow-900/30",
 	},
 	pass: {
-		label: "Pass",
+		label: tk("Pass"),
 		icon: CheckCircle,
 		color: "text-green-600 dark:text-green-400",
 		bg: "bg-green-100 dark:bg-green-900/30",
 	},
 	error: {
-		label: "Error",
+		label: tk("Error"),
 		icon: AlertTriangle,
 		color: "text-red-600 dark:text-red-400",
 		bg: "bg-red-100 dark:bg-red-900/30",
 	},
 	skip: {
-		label: "Skipped",
+		label: tk("Skipped"),
 		icon: Shield,
 		color: "text-secondary-500 dark:text-white",
 		bg: "bg-secondary-100 dark:bg-secondary-700/50",
 	},
 	notapplicable: {
-		label: "N/A",
+		label: tk("N/A"),
 		icon: Shield,
 		color: "text-secondary-500 dark:text-white",
 		bg: "bg-secondary-100 dark:bg-secondary-700/50",
@@ -90,33 +93,54 @@ function fallback_copy(text, on_success) {
 function get_what_fix_does(remediation, title) {
 	if (!remediation?.trim()) return null;
 	const r = remediation.trim();
-	const t = (title || "").toLowerCase();
+	const lowerTitle = (title || "").toLowerCase();
 	if (r.includes("sysctl") || r.includes("/proc/sys"))
-		return "This fix will modify kernel parameters to enable the required security setting. Changes are applied immediately and persist across reboots.";
+		return tk(
+			"This fix will modify kernel parameters to enable the required security setting. Changes are applied immediately and persist across reboots.",
+		);
 	if (r.includes("chmod") || r.includes("chown"))
-		return "This fix will update file permissions or ownership to meet the required security standard. This restricts unauthorized access to sensitive files.";
+		return tk(
+			"This fix will update file permissions or ownership to meet the required security standard. This restricts unauthorized access to sensitive files.",
+		);
 	if (r.includes("apt") || r.includes("yum") || r.includes("dnf"))
-		return "This fix will install, update, or remove packages as needed to meet the security requirement.";
+		return tk(
+			"This fix will install, update, or remove packages as needed to meet the security requirement.",
+		);
 	if (r.includes("systemctl") || r.includes("service"))
-		return "This fix will enable, disable, or configure a system service to meet the security requirement.";
+		return tk(
+			"This fix will enable, disable, or configure a system service to meet the security requirement.",
+		);
 	if (r.includes("/etc/ssh"))
-		return "This fix will update SSH daemon configuration to harden remote access security.";
+		return tk(
+			"This fix will update SSH daemon configuration to harden remote access security.",
+		);
 	if (r.includes("audit") || r.includes("auditd"))
-		return "This fix will configure audit logging to track security-relevant system events.";
+		return tk(
+			"This fix will configure audit logging to track security-relevant system events.",
+		);
 	if (r.includes("pam") || r.includes("/etc/pam"))
-		return "This fix will configure authentication modules to enforce stronger access controls.";
-	if (t.includes("password"))
-		return "This fix will update password policy settings to require stronger passwords or enforce better credential management.";
+		return tk(
+			"This fix will configure authentication modules to enforce stronger access controls.",
+		);
+	if (lowerTitle.includes("password"))
+		return tk(
+			"This fix will update password policy settings to require stronger passwords or enforce better credential management.",
+		);
 	if (
-		t.includes("firewall") ||
+		lowerTitle.includes("firewall") ||
 		r.includes("iptables") ||
 		r.includes("nftables")
 	)
-		return "This fix will configure firewall rules to restrict network access and improve security.";
-	return "This fix will apply the recommended configuration change to bring your system into compliance with the security benchmark.";
+		return tk(
+			"This fix will configure firewall rules to restrict network access and improve security.",
+		);
+	return tk(
+		"This fix will apply the recommended configuration change to bring your system into compliance with the security benchmark.",
+	);
 }
 
 export default function RuleDetail() {
+	const { t } = useTranslation();
 	const { id: ruleId } = useParams();
 	const [remediation_copied, set_remediation_copied] = useState(false);
 	const { data, isLoading, isError, error, refetch } = useQuery({
@@ -138,14 +162,14 @@ export default function RuleDetail() {
 			<div className="card p-8 text-center">
 				<ShieldAlert className="h-12 w-12 text-amber-500 mx-auto mb-3" />
 				<p className="text-secondary-600 dark:text-white">
-					{error?.message || "Rule not found"}
+					{error?.message || t("Rule not found")}
 				</p>
 				<Link
 					to="/compliance"
 					className="inline-flex items-center gap-2 mt-4 text-primary-600 dark:text-primary-400 hover:underline"
 				>
 					<ArrowLeft className="h-4 w-4" />
-					Back to Compliance
+					{t("Back to Compliance")}
 				</Link>
 			</div>
 		);
@@ -187,7 +211,7 @@ export default function RuleDetail() {
 				className="inline-flex items-center gap-2 text-sm text-secondary-600 dark:text-white hover:text-primary-600 dark:hover:text-primary-400"
 			>
 				<ArrowLeft className="h-4 w-4" />
-				Back to Compliance
+				{t("Back to Compliance")}
 			</Link>
 
 			{/* Header */}
@@ -204,7 +228,7 @@ export default function RuleDetail() {
 						)}
 						{rule.section && (
 							<span className="text-xs text-secondary-500 dark:text-white">
-								Section {rule.section}
+								{t("Section {{section}}", { section: rule.section })}
 							</span>
 						)}
 						<span
@@ -213,8 +237,10 @@ export default function RuleDetail() {
 								SEVERITY_COLORS.unknown
 							}`}
 						>
-							{(rule.severity || "unknown").charAt(0).toUpperCase() +
-								(rule.severity || "unknown").slice(1)}
+							{SEVERITY_LABELS[rule.severity || "unknown"]
+								? t(SEVERITY_LABELS[rule.severity || "unknown"])
+								: rule.severity.charAt(0).toUpperCase() +
+									rule.severity.slice(1)}
 						</span>
 						<span
 							className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -233,7 +259,7 @@ export default function RuleDetail() {
 					type="button"
 					onClick={() => refetch()}
 					className="p-2 rounded-lg border border-secondary-200 dark:border-secondary-600 text-secondary-600 dark:text-white hover:bg-secondary-50 dark:hover:bg-secondary-700"
-					title="Refresh"
+					title={t("Refresh")}
 				>
 					<RefreshCw className="h-4 w-4" />
 				</button>
@@ -246,7 +272,7 @@ export default function RuleDetail() {
 						<Users className="h-5 w-5 text-primary-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Affected Hosts
+								{t("Affected Hosts")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{affected_hosts.length}
@@ -259,7 +285,7 @@ export default function RuleDetail() {
 						<ShieldCheck className="h-5 w-5 text-green-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Passing
+								{t("Passing")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{counts.pass || 0}
@@ -272,7 +298,7 @@ export default function RuleDetail() {
 						<ShieldX className="h-5 w-5 text-red-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Failing
+								{t("Failing")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{counts.fail || 0}
@@ -285,7 +311,7 @@ export default function RuleDetail() {
 						<AlertTriangle className="h-5 w-5 text-yellow-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Warnings
+								{t("Warnings")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{counts.warn || 0}
@@ -304,7 +330,7 @@ export default function RuleDetail() {
 						<div className="flex items-center gap-2 mb-3">
 							<BookOpen className="h-4 w-4 text-primary-400" />
 							<h2 className="text-sm font-semibold text-secondary-900 dark:text-white">
-								Description
+								{t("Description")}
 							</h2>
 						</div>
 						<p className="text-sm text-secondary-600 dark:text-white whitespace-pre-wrap leading-relaxed">
@@ -317,11 +343,11 @@ export default function RuleDetail() {
 						<div className="flex items-center gap-2 mb-3">
 							<Info className="h-4 w-4 text-blue-400" />
 							<h2 className="text-sm font-semibold text-secondary-900 dark:text-white">
-								Why this failed
+								{t("Why this failed")}
 							</h2>
 						</div>
 						<p className="text-sm text-secondary-600 dark:text-white whitespace-pre-wrap leading-relaxed">
-							{rule.rationale || "No rationale provided."}
+							{rule.rationale || t("No rationale provided.")}
 						</p>
 					</div>
 				</div>
@@ -336,11 +362,11 @@ export default function RuleDetail() {
 								<div className="flex items-center gap-2 mb-2">
 									<Wrench className="h-4 w-4 text-amber-500 dark:text-amber-400" />
 									<h2 className="text-sm font-semibold text-secondary-900 dark:text-white">
-										What the fix does
+										{t("What the fix does")}
 									</h2>
 								</div>
 								<p className="text-sm text-secondary-700 dark:text-white leading-relaxed">
-									{what_fix}
+									{t(what_fix)}
 								</p>
 							</div>
 						) : null;
@@ -351,7 +377,7 @@ export default function RuleDetail() {
 							<div className="flex items-center gap-2">
 								<Wrench className="h-4 w-4 text-amber-400" />
 								<h2 className="text-sm font-semibold text-secondary-900 dark:text-white">
-									Remediation
+									{t("Remediation")}
 								</h2>
 							</div>
 							{rule.remediation && (
@@ -363,12 +389,12 @@ export default function RuleDetail() {
 									{remediation_copied ? (
 										<>
 											<Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-											Copied
+											{t("Copied")}
 										</>
 									) : (
 										<>
 											<Copy className="h-3.5 w-3.5" />
-											Copy
+											{t("Copy")}
 										</>
 									)}
 								</button>
@@ -380,7 +406,7 @@ export default function RuleDetail() {
 							</pre>
 						) : (
 							<p className="text-sm text-secondary-500 dark:text-white">
-								No remediation steps available.
+								{t("No remediation steps available.")}
 							</p>
 						)}
 					</div>
@@ -390,11 +416,13 @@ export default function RuleDetail() {
 			{/* Affected Hosts table - same design as Hosts page */}
 			<div className="card p-4 md:p-6 overflow-hidden">
 				<h2 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-					Hosts this rule affects ({affected_hosts.length})
+					{t("Hosts this rule affects ({{count}})", {
+						count: affected_hosts.length,
+					})}
 				</h2>
 				{affected_hosts.length === 0 ? (
 					<div className="py-8 text-center text-secondary-500 dark:text-white text-sm">
-						No hosts have been scanned with this rule yet
+						{t("No hosts have been scanned with this rule yet")}
 					</div>
 				) : (
 					<div className="overflow-x-auto">
@@ -402,13 +430,13 @@ export default function RuleDetail() {
 							<thead className="bg-secondary-50 dark:bg-secondary-700">
 								<tr>
 									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-										Host
+										{t("Host")}
 									</th>
 									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap w-24">
-										Status
+										{t("Status")}
 									</th>
 									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white whitespace-nowrap">
-										Why (this host)
+										{t("Why (this host)")}
 									</th>
 								</tr>
 							</thead>
@@ -420,7 +448,12 @@ export default function RuleDetail() {
 									const why_text =
 										host.finding ||
 										(host.actual
-											? `Current: ${host.actual}${host.expected ? ` -> Required: ${host.expected}` : ""}`
+											? host.expected
+												? t("Current: {{actual}} -> Required: {{expected}}", {
+														actual: host.actual,
+														expected: host.expected,
+													})
+												: t("Current: {{actual}}", { actual: host.actual })
 											: null);
 									return (
 										<tr
@@ -432,7 +465,7 @@ export default function RuleDetail() {
 													to={`/compliance/hosts/${host.host_id}`}
 													className="text-secondary-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline font-medium"
 												>
-													{host.friendly_name || host.hostname || "Host"}
+													{host.friendly_name || host.hostname || t("Host")}
 												</Link>
 												{host.hostname &&
 													host.friendly_name &&
@@ -447,7 +480,7 @@ export default function RuleDetail() {
 													className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${config.bg} ${config.color}`}
 												>
 													<StatusIcon className="h-3.5 w-3.5" />
-													{config.label}
+													{t(config.label)}
 												</span>
 											</td>
 											<td className="px-4 py-2 text-secondary-600 dark:text-white max-w-md">

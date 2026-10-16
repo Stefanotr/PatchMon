@@ -22,12 +22,14 @@ import {
 	X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { SiDiscord, SiNtfy } from "react-icons/si";
 import { Link } from "react-router-dom";
 import ModalPortal from "../../components/ui/ModalPortal";
 import { useAuth } from "../../contexts/AuthContext";
 import { useConfirm } from "../../contexts/ConfirmContext";
 import { useToast } from "../../contexts/ToastContext";
+import i18n, { tk } from "../../i18n";
 import {
 	adminHostsAPI,
 	formatRelativeTime,
@@ -43,88 +45,144 @@ import {
 /* ───────────────────── Constants ───────────────────── */
 
 const EVENT_TYPES = [
-	{ value: "*", label: "All events" },
-	{ value: "host_down", label: "Host Agent Down" },
-	{ value: "host_recovered", label: "Host Agent Recovered" },
-	{ value: "host_enrolled", label: "Host enrolled" },
-	{ value: "host_deleted", label: "Host deleted" },
-	{ value: "server_update", label: "Server update" },
-	{ value: "agent_update", label: "Agent update" },
-	{ value: "patch_run_started", label: "Patch run started" },
-	{ value: "patch_run_completed", label: "Patch run completed" },
-	{ value: "patch_run_failed", label: "Patch run failed" },
-	{ value: "patch_run_approved", label: "Patch run approved" },
-	{ value: "patch_run_cancelled", label: "Patch run cancelled" },
-	{ value: "patch_reboot_required", label: "Reboot required" },
-	{ value: "compliance_scan_completed", label: "Compliance scan completed" },
-	{ value: "compliance_scan_failed", label: "Compliance scan failed" },
-	{ value: "container_stopped", label: "Container stopped" },
-	{ value: "container_started", label: "Container started" },
+	{ value: "*", label: tk("All events") },
+	{ value: "host_down", label: tk("Host Agent Down") },
+	{ value: "host_recovered", label: tk("Host Agent Recovered") },
+	{ value: "host_enrolled", label: tk("Host enrolled") },
+	{ value: "host_deleted", label: tk("Host deleted") },
+	{ value: "server_update", label: tk("Server update") },
+	{ value: "agent_update", label: tk("Agent update") },
+	{ value: "patch_run_started", label: tk("Patch run started") },
+	{ value: "patch_run_completed", label: tk("Patch run completed") },
+	{ value: "patch_run_failed", label: tk("Patch run failed") },
+	{ value: "patch_run_approved", label: tk("Patch run approved") },
+	{ value: "patch_run_cancelled", label: tk("Patch run cancelled") },
+	{ value: "patch_reboot_required", label: tk("Reboot required") },
+	{
+		value: "compliance_scan_completed",
+		label: tk("Compliance scan completed"),
+	},
+	{ value: "compliance_scan_failed", label: tk("Compliance scan failed") },
+	{ value: "container_stopped", label: tk("Container stopped") },
+	{ value: "container_started", label: tk("Container started") },
 	{
 		value: "container_image_update_available",
-		label: "Container image update available",
+		label: tk("Container image update available"),
 	},
-	{ value: "ssh_session_started", label: "SSH session started" },
-	{ value: "rdp_session_started", label: "RDP session started" },
+	{ value: "ssh_session_started", label: tk("SSH session started") },
+	{ value: "rdp_session_started", label: tk("RDP session started") },
 	{
 		value: "host_security_updates_exceeded",
-		label: "Security updates threshold exceeded",
+		label: tk("Security updates threshold exceeded"),
 	},
 	{
 		value: "host_pending_updates_exceeded",
-		label: "Pending updates threshold exceeded",
+		label: tk("Pending updates threshold exceeded"),
 	},
-	{ value: "user_login", label: "User login" },
-	{ value: "user_login_failed", label: "Failed login attempt" },
-	{ value: "account_locked", label: "Account locked" },
+	{ value: "user_login", label: tk("User login") },
+	{ value: "user_login_failed", label: tk("Failed login attempt") },
+	{ value: "account_locked", label: tk("Account locked") },
 	{
 		value: "sso_fallback_login",
-		label: "Password login during SSO outage",
+		label: tk("Password login during SSO outage"),
 	},
 	{
 		value: "sso_fallback_refused",
-		label: "Password login refused during SSO outage",
+		label: tk("Password login refused during SSO outage"),
 	},
-	{ value: "user_created", label: "User created" },
-	{ value: "user_role_changed", label: "User role changed" },
-	{ value: "user_tfa_disabled", label: "2FA disabled" },
+	{ value: "user_created", label: tk("User created") },
+	{ value: "user_role_changed", label: tk("User role changed") },
+	{ value: "user_tfa_disabled", label: tk("2FA disabled") },
 ];
+
+// Event types as the rules table lists them: the identifier, spaces for
+// underscores. Unknown types fall back to that form, untranslated.
+const EVENT_TYPE_LIST_LABELS = {
+	host_down: tk("host down"),
+	host_recovered: tk("host recovered"),
+	host_enrolled: tk("host enrolled"),
+	host_deleted: tk("host deleted"),
+	server_update: tk("server update"),
+	agent_update: tk("agent update"),
+	patch_run_started: tk("patch run started"),
+	patch_run_completed: tk("patch run completed"),
+	patch_run_failed: tk("patch run failed"),
+	patch_run_approved: tk("patch run approved"),
+	patch_run_cancelled: tk("patch run cancelled"),
+	patch_reboot_required: tk("patch reboot required"),
+	compliance_scan_completed: tk("compliance scan completed"),
+	compliance_scan_failed: tk("compliance scan failed"),
+	container_stopped: tk("container stopped"),
+	container_started: tk("container started"),
+	container_image_update_available: tk("container image update available"),
+	ssh_session_started: tk("ssh session started"),
+	rdp_session_started: tk("rdp session started"),
+	host_security_updates_exceeded: tk("host security updates exceeded"),
+	host_pending_updates_exceeded: tk("host pending updates exceeded"),
+	user_login: tk("user login"),
+	user_login_failed: tk("user login failed"),
+	account_locked: tk("account locked"),
+	sso_fallback_login: tk("sso fallback login"),
+	sso_fallback_refused: tk("sso fallback refused"),
+	user_created: tk("user created"),
+	user_role_changed: tk("user role changed"),
+	user_tfa_disabled: tk("user tfa disabled"),
+};
 
 const SEVERITIES = [
-	{ value: "informational", label: "Informational" },
-	{ value: "warning", label: "Warning" },
-	{ value: "error", label: "Error" },
-	{ value: "critical", label: "Critical" },
+	{ value: "informational", label: tk("Informational") },
+	{ value: "warning", label: tk("Warning") },
+	{ value: "error", label: tk("Error") },
+	{ value: "critical", label: tk("Critical") },
 ];
+
+// Severity badge text in the rules table (the API value, lowercase).
+const SEVERITY_BADGE_LABELS = {
+	informational: tk("informational"),
+	warning: tk("warning"),
+	error: tk("error"),
+	critical: tk("critical"),
+};
+
+// Delivery statuses the server logs.
+const DELIVERY_STATUS_LABELS = {
+	sent: tk("sent"),
+	failed: tk("failed"),
+};
 
 const REPORT_SECTIONS = [
-	{ id: "executive_summary", label: "Executive summary" },
-	{ id: "compliance_summary", label: "Compliance summary" },
-	{ id: "recent_patch_runs", label: "Recent patch runs" },
-	{ id: "hosts_offline", label: "Hosts / status" },
-	{ id: "open_alerts", label: "Open alerts" },
-	{ id: "hosts_by_updates", label: "Hosts by outstanding updates" },
-	{ id: "top_security_packages", label: "Top outdated security packages" },
+	{ id: "executive_summary", label: tk("Executive summary") },
+	{ id: "compliance_summary", label: tk("Compliance summary") },
+	{ id: "recent_patch_runs", label: tk("Recent patch runs") },
+	{ id: "hosts_offline", label: tk("Hosts / status") },
+	{ id: "open_alerts", label: tk("Open alerts") },
+	{ id: "hosts_by_updates", label: tk("Hosts by outstanding updates") },
+	{
+		id: "top_security_packages",
+		label: tk("Top outdated security packages"),
+	},
 ];
 
+// Channel labels are product names and stay as they are. The internal
+// channel is never offered in the picker, so its texts are not shown.
 const CHANNEL_TYPES = [
 	{
 		value: "webhook",
 		label: "Webhook",
-		description: "Generic, Discord, Slack, Mattermost or Rocket.Chat",
+		description: tk("Generic, Discord, Slack, Mattermost or Rocket.Chat"),
 		icon: Globe,
 		brandIcons: { discord: SiDiscord, slack: Slack },
 	},
 	{
 		value: "email",
 		label: "Email",
-		description: "SMTP delivery",
+		description: tk("SMTP delivery"),
 		icon: Mail,
 	},
 	{
 		value: "ntfy",
 		label: "ntfy",
-		description: "Push notifications via ntfy.sh",
+		description: tk("Push notifications via ntfy.sh"),
 		icon: SiNtfy,
 	},
 	{
@@ -136,41 +194,48 @@ const CHANNEL_TYPES = [
 ];
 
 const FREQUENCY_OPTIONS = [
-	{ value: "daily", label: "Daily" },
-	{ value: "weekdays", label: "Weekdays (Mon-Fri)" },
-	{ value: "weekly", label: "Weekly" },
-	{ value: "monthly", label: "Monthly" },
+	{ value: "daily", label: tk("Daily") },
+	{ value: "weekdays", label: tk("Weekdays (Mon-Fri)") },
+	{ value: "weekly", label: tk("Weekly") },
+	{ value: "monthly", label: tk("Monthly") },
 ];
 
 const MONTH_DAY_PRESETS = [
-	{ value: "1", label: "1st" },
-	{ value: "15", label: "15th" },
-	{ value: "L", label: "Last day" },
+	{ value: "1", label: tk("1st") },
+	{ value: "15", label: tk("15th") },
+	{ value: "L", label: tk("Last day") },
 ];
 
 const DAY_LABELS = [
-	{ value: "1", short: "Mon" },
-	{ value: "2", short: "Tue" },
-	{ value: "3", short: "Wed" },
-	{ value: "4", short: "Thu" },
-	{ value: "5", short: "Fri" },
-	{ value: "6", short: "Sat" },
-	{ value: "0", short: "Sun" },
+	{ value: "1", short: tk("Mon") },
+	{ value: "2", short: tk("Tue") },
+	{ value: "3", short: tk("Wed") },
+	{ value: "4", short: tk("Thu") },
+	{ value: "5", short: tk("Fri") },
+	{ value: "6", short: tk("Sat") },
+	{ value: "0", short: tk("Sun") },
 ];
 
 const TLS_MODES = [
-	{ value: "starttls", label: "STARTTLS (recommended)" },
-	{ value: "tls", label: "Implicit TLS / SSL" },
-	{ value: "none", label: "None (insecure)" },
-	{ value: "auto", label: "Auto" },
+	{ value: "starttls", label: tk("STARTTLS (recommended)") },
+	{ value: "tls", label: tk("Implicit TLS / SSL") },
+	{ value: "none", label: tk("None (insecure)") },
+	{ value: "auto", label: tk("Auto") },
 ];
 
 const TLS_MODE_HELP = {
-	starttls:
+	starttls: tk(
 		"Connect in plaintext on the submission port, then upgrade to TLS via the STARTTLS command. Typical port: 587.",
-	tls: "Open a TLS connection from the start (sometimes called SMTPS). Typical port: 465.",
-	none: "Send mail in plaintext. Credentials are only sent if you enable the unencrypted credentials option below. Use only for local relays you trust.",
-	auto: "Try STARTTLS first, then fall back to implicit TLS on the same host and port. Mail is never sent in plaintext in this mode; if neither works, sending fails.",
+	),
+	tls: tk(
+		"Open a TLS connection from the start (sometimes called SMTPS). Typical port: 465.",
+	),
+	none: tk(
+		"Send mail in plaintext. Credentials are only sent if you enable the unencrypted credentials option below. Use only for local relays you trust.",
+	),
+	auto: tk(
+		"Try STARTTLS first, then fall back to implicit TLS on the same host and port. Mail is never sent in plaintext in this mode; if neither works, sending fails.",
+	),
 };
 
 const TLS_MODE_DEFAULT_PORTS = {
@@ -226,35 +291,33 @@ const describeSchedule = (expr) => {
 			? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 			: null;
 	if (!time) return expr;
-	if (dom === "*" && dow === "*") return `Daily at ${time}`;
-	if (dom === "*" && dow === "1-5") return `Weekdays at ${time}`;
+	if (dom === "*" && dow === "*") return i18n.t("Daily at {{time}}", { time });
+	if (dom === "*" && dow === "1-5")
+		return i18n.t("Weekdays at {{time}}", { time });
 	if (dom !== "*" && dow === "*") {
-		if (dom === "L") return `Last day of month at ${time}`;
-		const ordinal =
-			dom === "1" || dom === "21" || dom === "31"
-				? "st"
-				: dom === "2" || dom === "22"
-					? "nd"
-					: dom === "3" || dom === "23"
-						? "rd"
-						: "th";
-		return `${dom}${ordinal} of month at ${time}`;
+		if (dom === "L") return i18n.t("Last day of month at {{time}}", { time });
+		// One sentence per English ordinal suffix; the 1st has its own.
+		const sentence =
+			dom === "1"
+				? tk("1st of month at {{time}}")
+				: dom === "21" || dom === "31"
+					? tk("{{day}}st of month at {{time}}")
+					: dom === "2" || dom === "22"
+						? tk("{{day}}nd of month at {{time}}")
+						: dom === "3" || dom === "23"
+							? tk("{{day}}rd of month at {{time}}")
+							: tk("{{day}}th of month at {{time}}");
+		return i18n.t(sentence, { day: dom, time });
 	}
 	if (dom === "*" && dow && dow !== "*") {
-		const dayNames = {
-			0: "Sun",
-			1: "Mon",
-			2: "Tue",
-			3: "Wed",
-			4: "Thu",
-			5: "Fri",
-			6: "Sat",
-		};
+		const dayNames = Object.fromEntries(
+			DAY_LABELS.map((d) => [d.value, d.short]),
+		);
 		const days = dow
 			.split(",")
-			.map((d) => dayNames[d] || d)
+			.map((d) => (dayNames[d] ? i18n.t(dayNames[d]) : d))
 			.join(", ");
-		return `${days} at ${time}`;
+		return i18n.t("{{days}} at {{time}}", { days, time });
 	}
 	return expr;
 };
@@ -272,30 +335,34 @@ const SELECT = `${INPUT} appearance-none`;
 
 const statusBadge = (status) => {
 	const ok = status === "sent";
+	const label = DELIVERY_STATUS_LABELS[status];
 	return (
 		<span
 			className={`px-2 py-0.5 text-xs font-medium rounded-md ${ok ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"}`}
 		>
-			{status}
+			{label ? i18n.t(label) : status}
 		</span>
 	);
 };
 
 /* Shows which payload PatchMon will send to the webhook URL as it is typed. */
 const WebhookFormatHint = ({ url }) => {
+	const { t } = useTranslation();
 	const format = useMemo(() => detectWebhookFormat(url), [url]);
 	const meta = webhookFormatLabel(format);
 
 	if (!meta) {
 		return (
 			<p className="mt-1 text-xs text-secondary-500">
-				Discord, Slack, Mattermost and Rocket.Chat URLs are auto-detected for
-				rich formatting
+				{t(
+					"Discord, Slack, Mattermost and Rocket.Chat URLs are auto-detected for rich formatting",
+				)}
 			</p>
 		);
 	}
 
 	const isGeneric = format === WEBHOOK_FORMATS.GENERIC;
+	// meta comes from utils/webhookFormat (frontend constants, not server text).
 	return (
 		<p className="mt-1 flex items-start gap-1.5 text-xs text-secondary-500">
 			{isGeneric ? (
@@ -304,8 +371,11 @@ const WebhookFormatHint = ({ url }) => {
 				<CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-px text-success-600 dark:text-success-400" />
 			)}
 			<span>
-				Detected <span className="font-medium">{meta.label}</span>.{" "}
-				{meta.detail}.
+				<Trans
+					i18nKey="Detected <strong>{{format}}</strong>. {{detail}}."
+					values={{ format: t(meta.label), detail: t(meta.detail) }}
+					components={{ strong: <span className="font-medium" /> }}
+				/>
 			</span>
 		</p>
 	);
@@ -337,6 +407,7 @@ const DestinationModal = ({
 	);
 	const [isTestingSMTP, setIsTestingSMTP] = useState(false);
 	const toast = useToast();
+	const { t } = useTranslation();
 
 	if (!isOpen) return null;
 
@@ -350,28 +421,30 @@ const DestinationModal = ({
 
 	const handleSave = () => {
 		if (!displayName.trim()) {
-			toast.warning("Display name is required");
+			toast.warning(t("Display name is required"));
 			return;
 		}
 		if (channelType === "webhook" && !config.url) {
-			toast.warning("Webhook URL is required");
+			toast.warning(t("Webhook URL is required"));
 			return;
 		}
 		if (
 			channelType === "email" &&
 			(!config.smtp_host || !config.from || !config.to)
 		) {
-			toast.warning("SMTP host, from, and to are required");
+			toast.warning(t("SMTP host, from, and to are required"));
 			return;
 		}
 		if (channelType === "email" && insecureAuthBlocked) {
 			toast.warning(
-				"Tick the unencrypted credentials option, clear the credentials, or pick STARTTLS / Implicit TLS before saving",
+				t(
+					"Tick the unencrypted credentials option, clear the credentials, or pick STARTTLS / Implicit TLS before saving",
+				),
 			);
 			return;
 		}
 		if (channelType === "ntfy" && !config.topic) {
-			toast.warning("Topic is required");
+			toast.warning(t("Topic is required"));
 			return;
 		}
 		let outConfig = config;
@@ -421,7 +494,7 @@ const DestinationModal = ({
 
 	const handleSendTestEmail = async () => {
 		if (!editingDest?.id) {
-			toast.warning("Save the destination first to send a test email");
+			toast.warning(t("Save the destination first to send a test email"));
 			return;
 		}
 		setIsTestingSMTP(true);
@@ -429,18 +502,26 @@ const DestinationModal = ({
 			const resp = await notificationsAPI.testSMTP(editingDest.id);
 			const data = resp?.data || {};
 			if (data.ok) {
-				toast.success("Test email sent successfully");
+				toast.success(t("Test email sent successfully"));
 			} else {
-				const stage = data.stage ? `${data.stage} failed` : "Test failed";
-				const message = data.message ? `: ${data.message}` : "";
-				toast.error(`${stage}${message}`);
+				// stage and message come from the server: placeholders only.
+				const { stage, message } = data;
+				toast.error(
+					stage
+						? message
+							? t("{{stage}} failed: {{message}}", { stage, message })
+							: t("{{stage}} failed", { stage })
+						: message
+							? t("Test failed: {{message}}", { message })
+							: t("Test failed"),
+				);
 			}
 		} catch (err) {
 			const apiMsg =
 				err?.response?.data?.message ||
 				err?.response?.data?.error ||
 				err?.message ||
-				"Failed to send test email";
+				t("Failed to send test email");
 			toast.error(apiMsg);
 		} finally {
 			setIsTestingSMTP(false);
@@ -454,7 +535,7 @@ const DestinationModal = ({
 					<div className="space-y-4">
 						<div>
 							<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-								Webhook URL <span className="text-danger-500">*</span>
+								{t("Webhook URL")} <span className="text-danger-500">*</span>
 							</label>
 							<input
 								className={INPUT}
@@ -466,12 +547,12 @@ const DestinationModal = ({
 						</div>
 						<div>
 							<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-								Signing secret
+								{t("Signing secret")}
 							</label>
 							<input
 								className={INPUT}
 								type="password"
-								placeholder="Optional HMAC signing secret"
+								placeholder={t("Optional HMAC signing secret")}
 								value={config.signing_secret || ""}
 								onChange={(e) => updateConfig("signing_secret", e.target.value)}
 							/>
@@ -484,7 +565,7 @@ const DestinationModal = ({
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									SMTP host <span className="text-danger-500">*</span>
+									{t("SMTP host")} <span className="text-danger-500">*</span>
 								</label>
 								<input
 									className={INPUT}
@@ -495,7 +576,7 @@ const DestinationModal = ({
 							</div>
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									SMTP port
+									{t("SMTP port")}
 								</label>
 								<input
 									className={INPUT}
@@ -511,7 +592,7 @@ const DestinationModal = ({
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									Username
+									{t("Username")}
 								</label>
 								<input
 									className={INPUT}
@@ -521,7 +602,7 @@ const DestinationModal = ({
 							</div>
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									Password
+									{t("Password")}
 								</label>
 								<input
 									className={INPUT}
@@ -534,7 +615,7 @@ const DestinationModal = ({
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									From <span className="text-danger-500">*</span>
+									{t("From")} <span className="text-danger-500">*</span>
 								</label>
 								<input
 									className={INPUT}
@@ -545,7 +626,7 @@ const DestinationModal = ({
 							</div>
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									To <span className="text-danger-500">*</span>
+									{t("To")} <span className="text-danger-500">*</span>
 								</label>
 								<input
 									className={INPUT}
@@ -557,7 +638,7 @@ const DestinationModal = ({
 						</div>
 						<div>
 							<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-								TLS mode
+								{t("TLS mode")}
 							</label>
 							<select
 								className={`${SELECT} min-h-[44px]`}
@@ -566,21 +647,20 @@ const DestinationModal = ({
 							>
 								{TLS_MODES.map((m) => (
 									<option key={m.value} value={m.value}>
-										{m.label}
+										{t(m.label)}
 									</option>
 								))}
 							</select>
 							<p className="mt-1 text-xs text-secondary-500">
-								{TLS_MODE_HELP[tlsMode]}
+								{TLS_MODE_HELP[tlsMode] && t(TLS_MODE_HELP[tlsMode])}
 							</p>
 						</div>
 						{insecureAuthApplies && (
 							<div className="bg-danger-50 dark:bg-danger-900/30 border border-danger-200 dark:border-danger-700 rounded-md p-3">
 								<p className="text-sm text-danger-700 dark:text-danger-300">
-									This connection is not encrypted, so the username and password
-									are sent in cleartext. Anyone on the network path between
-									PatchMon and this relay can read them. Only do this on a
-									trusted local network.
+									{t(
+										"This connection is not encrypted, so the username and password are sent in cleartext. Anyone on the network path between PatchMon and this relay can read them. Only do this on a trusted local network.",
+									)}
 								</p>
 								<button
 									type="button"
@@ -593,13 +673,13 @@ const DestinationModal = ({
 									) : (
 										<Square className="h-5 w-5 flex-shrink-0 text-danger-500 dark:text-danger-400" />
 									)}
-									Send credentials over an unencrypted connection
+									{t("Send credentials over an unencrypted connection")}
 								</button>
 								{insecureAuthBlocked && (
 									<p className="mt-2 text-sm text-danger-700 dark:text-danger-300">
-										Until this is ticked, PatchMon will not authenticate over an
-										unencrypted connection and sending will fail. Alternatively,
-										clear the credentials or choose STARTTLS / Implicit TLS.
+										{t(
+											"Until this is ticked, PatchMon will not authenticate over an unencrypted connection and sending will fail. Alternatively, clear the credentials or choose STARTTLS / Implicit TLS.",
+										)}
 									</p>
 								)}
 							</div>
@@ -612,7 +692,7 @@ const DestinationModal = ({
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									Server URL
+									{t("Server URL")}
 								</label>
 								<input
 									className={INPUT}
@@ -621,12 +701,12 @@ const DestinationModal = ({
 									onChange={(e) => updateConfig("server_url", e.target.value)}
 								/>
 								<p className="mt-1 text-xs text-secondary-500">
-									Leave empty for ntfy.sh
+									{t("Leave empty for ntfy.sh")}
 								</p>
 							</div>
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									Topic <span className="text-danger-500">*</span>
+									{t("Topic")} <span className="text-danger-500">*</span>
 								</label>
 								<input
 									className={INPUT}
@@ -638,12 +718,12 @@ const DestinationModal = ({
 						</div>
 						<div>
 							<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-								Access token
+								{t("Access token")}
 							</label>
 							<input
 								className={INPUT}
 								type="password"
-								placeholder="Optional"
+								placeholder={t("Optional")}
 								value={config.token || ""}
 								onChange={(e) => updateConfig("token", e.target.value)}
 							/>
@@ -651,18 +731,18 @@ const DestinationModal = ({
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									Username
+									{t("Username")}
 								</label>
 								<input
 									className={INPUT}
-									placeholder="Optional basic auth"
+									placeholder={t("Optional basic auth")}
 									value={config.username || ""}
 									onChange={(e) => updateConfig("username", e.target.value)}
 								/>
 							</div>
 							<div>
 								<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-									Password
+									{t("Password")}
 								</label>
 								<input
 									className={INPUT}
@@ -691,10 +771,10 @@ const DestinationModal = ({
 				<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600 flex items-center justify-between">
 					<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
 						{editingDest
-							? "Edit destination"
+							? t("Edit destination")
 							: step === 1
-								? "Choose channel"
-								: "Configure destination"}
+								? t("Choose channel")
+								: t("Configure destination")}
 					</h3>
 					<button
 						type="button"
@@ -727,7 +807,7 @@ const DestinationModal = ({
 												{ct.label}
 											</span>
 											<span className="text-xs text-secondary-500 mt-1 text-center">
-												{ct.description}
+												{t(ct.description)}
 											</span>
 										</button>
 									);
@@ -741,11 +821,12 @@ const DestinationModal = ({
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
 									<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-										Display name <span className="text-danger-500">*</span>
+										{t("Display name")}{" "}
+										<span className="text-danger-500">*</span>
 									</label>
 									<input
 										className={INPUT}
-										placeholder="e.g. Ops Discord"
+										placeholder={t("e.g. Ops Discord")}
 										value={displayName}
 										onChange={(e) => setDisplayName(e.target.value)}
 									/>
@@ -761,7 +842,7 @@ const DestinationModal = ({
 												className={`inline-block h-3 w-3 transform rounded-md bg-white transition-transform ${enabled ? "translate-x-5" : "translate-x-1"}`}
 											/>
 										</div>
-										Enabled
+										{t("Enabled")}
 									</label>
 								</div>
 							</div>
@@ -777,14 +858,14 @@ const DestinationModal = ({
 							className="btn-outline flex items-center gap-1"
 							onClick={() => setStep(1)}
 						>
-							<ChevronLeft className="h-4 w-4" /> Back
+							<ChevronLeft className="h-4 w-4" /> {t("Back")}
 						</button>
 					) : (
 						<div />
 					)}
 					<div className="flex flex-wrap gap-2">
 						<button type="button" className="btn-outline" onClick={onClose}>
-							Cancel
+							{t("Cancel")}
 						</button>
 						{step === 2 && channelType === "email" && (
 							<button
@@ -799,8 +880,10 @@ const DestinationModal = ({
 								onClick={handleSendTestEmail}
 								title={
 									!editingDest?.id
-										? "Save the destination first to send a test email"
-										: "Sends using the last saved configuration. Save first to test unsaved changes."
+										? t("Save the destination first to send a test email")
+										: t(
+												"Sends using the last saved configuration. Save first to test unsaved changes.",
+											)
 								}
 							>
 								{isTestingSMTP ? (
@@ -808,7 +891,7 @@ const DestinationModal = ({
 								) : (
 									<Send className="h-4 w-4" />
 								)}
-								{isTestingSMTP ? "Sending..." : "Send test email"}
+								{isTestingSMTP ? t("Sending...") : t("Send test email")}
 							</button>
 						)}
 						{step === 1 && (
@@ -818,7 +901,7 @@ const DestinationModal = ({
 								disabled={!channelType}
 								onClick={() => setStep(2)}
 							>
-								Next <ChevronRight className="h-4 w-4 inline ml-1" />
+								{t("Next")} <ChevronRight className="h-4 w-4 inline ml-1" />
 							</button>
 						)}
 						{step === 2 && (
@@ -833,7 +916,7 @@ const DestinationModal = ({
 								) : (
 									<Check className="h-4 w-4" />
 								)}
-								{editingDest ? "Save" : "Create"}
+								{editingDest ? t("Save") : t("Create")}
 							</button>
 						)}
 					</div>
@@ -870,12 +953,13 @@ const RouteModal = ({
 		enabled: editingRoute?.enabled !== false,
 	});
 	const toast = useToast();
+	const { t } = useTranslation();
 
 	if (!isOpen) return null;
 
 	const handleSave = () => {
 		if (!form.destination_id) {
-			toast.warning("Choose a destination");
+			toast.warning(t("Choose a destination"));
 			return;
 		}
 		onSave({
@@ -938,7 +1022,7 @@ const RouteModal = ({
 			>
 				<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600 flex items-center justify-between sticky top-0 bg-white dark:bg-secondary-800 z-10">
 					<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
-						{editingRoute ? "Edit route" : "Add route"}
+						{editingRoute ? t("Edit route") : t("Add route")}
 					</h3>
 					<button
 						type="button"
@@ -951,14 +1035,14 @@ const RouteModal = ({
 				<div className="px-6 py-5 space-y-5">
 					<div>
 						<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-							Destination <span className="text-danger-500">*</span>
+							{t("Destination")} <span className="text-danger-500">*</span>
 						</label>
 						<select
 							className={SELECT}
 							value={form.destination_id}
 							onChange={(e) => upd("destination_id", e.target.value)}
 						>
-							<option value="">Select destination...</option>
+							<option value="">{t("Select destination...")}</option>
 							{destinations.map((d) => (
 								<option key={d.id} value={d.id}>
 									{d.display_name} ({d.channel_type})
@@ -969,7 +1053,7 @@ const RouteModal = ({
 
 					<div>
 						<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-							Events
+							{t("Events")}
 						</label>
 						<div className="space-y-1.5">
 							<label className="flex items-center gap-2 text-sm text-secondary-700 dark:text-white font-medium">
@@ -978,7 +1062,7 @@ const RouteModal = ({
 									checked={allEvents}
 									onChange={() => toggleEvent("*")}
 								/>
-								All events
+								{t("All events")}
 							</label>
 							<div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
 								{EVENT_TYPES.filter((e) => e.value !== "*").map((o) => (
@@ -991,7 +1075,7 @@ const RouteModal = ({
 											checked={allEvents || form.event_types.includes(o.value)}
 											onChange={() => toggleEvent(o.value)}
 										/>
-										{o.label}
+										{t(o.label)}
 									</label>
 								))}
 							</div>
@@ -1000,7 +1084,7 @@ const RouteModal = ({
 
 					<div>
 						<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-							Minimum severity
+							{t("Minimum severity")}
 						</label>
 						<select
 							className={SELECT}
@@ -1009,7 +1093,7 @@ const RouteModal = ({
 						>
 							{SEVERITIES.map((o) => (
 								<option key={o.value} value={o.value}>
-									{o.label}
+									{t(o.label)}
 								</option>
 							))}
 						</select>
@@ -1018,9 +1102,9 @@ const RouteModal = ({
 					{hostGroups.length > 0 && (
 						<div>
 							<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-								Host groups{" "}
+								{t("Host groups")}{" "}
 								<span className="text-xs font-normal text-secondary-500">
-									(optional, leave empty for all)
+									{t("(optional, leave empty for all)")}
 								</span>
 							</label>
 							<div className="space-y-1.5 max-h-40 overflow-y-auto">
@@ -1044,9 +1128,9 @@ const RouteModal = ({
 					{hosts.length > 0 && (
 						<div>
 							<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-								Individual hosts{" "}
+								{t("Individual hosts")}{" "}
 								<span className="text-xs font-normal text-secondary-500">
-									(optional, leave empty for all)
+									{t("(optional, leave empty for all)")}
 								</span>
 							</label>
 							<div className="space-y-1.5 max-h-40 overflow-y-auto">
@@ -1073,12 +1157,12 @@ const RouteModal = ({
 							checked={form.enabled}
 							onChange={(e) => upd("enabled", e.target.checked)}
 						/>
-						Enabled
+						{t("Enabled")}
 					</label>
 				</div>
 				<div className="px-6 py-4 border-t border-secondary-200 dark:border-secondary-600 flex justify-end gap-2 sticky bottom-0 bg-white dark:bg-secondary-800">
 					<button type="button" className="btn-outline" onClick={onClose}>
-						Cancel
+						{t("Cancel")}
 					</button>
 					<button
 						type="button"
@@ -1091,7 +1175,7 @@ const RouteModal = ({
 						) : (
 							<Check className="h-4 w-4" />
 						)}
-						{editingRoute ? "Save" : "Add"}
+						{editingRoute ? t("Save") : t("Add")}
 					</button>
 				</div>
 			</div>
@@ -1163,6 +1247,7 @@ const ReportModal = ({
 		top_hosts: defRow.limits?.top_hosts ?? 20,
 	});
 	const toast = useToast();
+	const { t } = useTranslation();
 
 	if (!isOpen) return null;
 
@@ -1183,11 +1268,11 @@ const ReportModal = ({
 
 	const handleSave = () => {
 		if (!form.name.trim()) {
-			toast.warning("Report name is required");
+			toast.warning(t("Report name is required"));
 			return;
 		}
 		if (form.frequency === "weekly" && form.days.length === 0) {
-			toast.warning("Select at least one day");
+			toast.warning(t("Select at least one day"));
 			return;
 		}
 		const cronExpr = buildCron(
@@ -1221,7 +1306,7 @@ const ReportModal = ({
 			>
 				<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600 flex items-center justify-between sticky top-0 bg-white dark:bg-secondary-800 z-10">
 					<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
-						{editingReport ? "Edit report" : "New scheduled report"}
+						{editingReport ? t("Edit report") : t("New scheduled report")}
 					</h3>
 					<button
 						type="button"
@@ -1234,11 +1319,11 @@ const ReportModal = ({
 				<div className="px-6 py-5 space-y-5">
 					<div>
 						<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-							Report name <span className="text-danger-500">*</span>
+							{t("Report name")} <span className="text-danger-500">*</span>
 						</label>
 						<input
 							className={INPUT}
-							placeholder="Weekly ops report"
+							placeholder={t("Weekly ops report")}
 							value={form.name}
 							onChange={(e) => upd("name", e.target.value)}
 						/>
@@ -1246,7 +1331,7 @@ const ReportModal = ({
 
 					<div>
 						<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-							Schedule
+							{t("Schedule")}
 						</label>
 						<div className="flex flex-wrap gap-3 items-center">
 							<select
@@ -1256,11 +1341,11 @@ const ReportModal = ({
 							>
 								{FREQUENCY_OPTIONS.map((p) => (
 									<option key={p.value} value={p.value}>
-										{p.label}
+										{t(p.label)}
 									</option>
 								))}
 							</select>
-							<span className="text-sm text-secondary-500">at</span>
+							<span className="text-sm text-secondary-500">{t("at")}</span>
 							<input
 								type="time"
 								className={`${INPUT} w-auto`}
@@ -1281,7 +1366,7 @@ const ReportModal = ({
 										}`}
 										onClick={() => toggleDay(d.value)}
 									>
-										{d.short}
+										{t(d.short)}
 									</button>
 								))}
 							</div>
@@ -1300,17 +1385,17 @@ const ReportModal = ({
 											}`}
 											onClick={() => upd("monthDay", p.value)}
 										>
-											{p.label}
+											{t(p.label)}
 										</button>
 									))}
 									<span className="text-sm text-secondary-500 self-center px-1">
-										or
+										{t("or")}
 									</span>
 									<input
 										type="number"
 										min={1}
 										max={31}
-										placeholder="Day"
+										placeholder={t("Day")}
 										className={`${INPUT} w-20 text-center`}
 										value={
 											!["1", "15", "L"].includes(form.monthDay)
@@ -1332,13 +1417,13 @@ const ReportModal = ({
 							</div>
 						)}
 						<p className="mt-2 text-xs text-secondary-500 flex items-center gap-1">
-							<Clock className="h-3 w-3" /> Server timezone
+							<Clock className="h-3 w-3" /> {t("Server timezone")}
 						</p>
 					</div>
 
 					<div>
 						<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-							Sections
+							{t("Sections")}
 						</label>
 						<div className="grid grid-cols-2 gap-2">
 							{REPORT_SECTIONS.map((s) => (
@@ -1351,7 +1436,7 @@ const ReportModal = ({
 										checked={form.sections.includes(s.id)}
 										onChange={() => toggleArr("sections", s.id)}
 									/>
-									{s.label}
+									{t(s.label)}
 								</label>
 							))}
 						</div>
@@ -1359,11 +1444,11 @@ const ReportModal = ({
 
 					<div>
 						<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-							Deliver to
+							{t("Deliver to")}
 						</label>
 						{destinations.length === 0 ? (
 							<p className="text-xs text-secondary-500">
-								Add a destination first.
+								{t("Add a destination first.")}
 							</p>
 						) : (
 							<div className="space-y-1.5">
@@ -1388,7 +1473,7 @@ const ReportModal = ({
 					{hostGroups.length > 0 && (
 						<div>
 							<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-								Scope to host groups
+								{t("Scope to host groups")}
 							</label>
 							<div className="space-y-1.5">
 								{hostGroups.map((g) => (
@@ -1411,7 +1496,7 @@ const ReportModal = ({
 					<div className="grid grid-cols-2 gap-4">
 						<div>
 							<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-								Top rows per section
+								{t("Top rows per section")}
 							</label>
 							<input
 								className={INPUT}
@@ -1428,14 +1513,14 @@ const ReportModal = ({
 									checked={form.enabled}
 									onChange={(e) => upd("enabled", e.target.checked)}
 								/>
-								Enabled
+								{t("Enabled")}
 							</label>
 						</div>
 					</div>
 				</div>
 				<div className="px-6 py-4 border-t border-secondary-200 dark:border-secondary-600 flex justify-end gap-2 sticky bottom-0 bg-white dark:bg-secondary-800">
 					<button type="button" className="btn-outline" onClick={onClose}>
-						Cancel
+						{t("Cancel")}
 					</button>
 					<button
 						type="button"
@@ -1448,7 +1533,7 @@ const ReportModal = ({
 						) : (
 							<Check className="h-4 w-4" />
 						)}
-						{editingReport ? "Save" : "Create"}
+						{editingReport ? t("Save") : t("Create")}
 					</button>
 				</div>
 			</div>
@@ -1465,6 +1550,7 @@ export const NotificationPanel = ({ panel }) => {
 	const queryClient = useQueryClient();
 	const toast = useToast();
 	const confirm = useConfirm();
+	const { t } = useTranslation();
 	const { canManageNotifications, canViewNotificationLogs, hasPermission } =
 		useAuth();
 	const canManage = canManageNotifications();
@@ -1543,30 +1629,30 @@ export const NotificationPanel = ({ panel }) => {
 		mutationFn: (body) => notificationsAPI.createDestination(body),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Destination created");
+			toast.success(t("Destination created"));
 			setDestModal({ open: false, editing: null });
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to create"),
+			toast.error(err.response?.data?.error || t("Failed to create")),
 	});
 	const updateDest = useMutation({
 		mutationFn: ({ id, body }) => notificationsAPI.updateDestination(id, body),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Destination updated");
+			toast.success(t("Destination updated"));
 			setDestModal({ open: false, editing: null });
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to update"),
+			toast.error(err.response?.data?.error || t("Failed to update")),
 	});
 	const deleteDest = useMutation({
 		mutationFn: (id) => notificationsAPI.deleteDestination(id),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Destination deleted");
+			toast.success(t("Destination deleted"));
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to delete"),
+			toast.error(err.response?.data?.error || t("Failed to delete")),
 	});
 	const testNotify = useMutation({
 		mutationFn: (destination_id) => notificationsAPI.test({ destination_id }),
@@ -1576,75 +1662,76 @@ export const NotificationPanel = ({ panel }) => {
 		mutationFn: (body) => notificationsAPI.createRoute(body),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Route created");
+			toast.success(t("Route created"));
 			setRouteModal({ open: false, editing: null });
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to create"),
+			toast.error(err.response?.data?.error || t("Failed to create")),
 	});
 	const updateRoute = useMutation({
 		mutationFn: ({ id, body }) => notificationsAPI.updateRoute(id, body),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Route updated");
+			toast.success(t("Route updated"));
 			setRouteModal({ open: false, editing: null });
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to update"),
+			toast.error(err.response?.data?.error || t("Failed to update")),
 	});
 	const deleteRoute = useMutation({
 		mutationFn: (id) => notificationsAPI.deleteRoute(id),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Route deleted");
+			toast.success(t("Route deleted"));
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to delete"),
+			toast.error(err.response?.data?.error || t("Failed to delete")),
 	});
 
 	const createReport = useMutation({
 		mutationFn: (body) => notificationsAPI.createScheduledReport(body),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Report created");
+			toast.success(t("Report created"));
 			setReportModal({ open: false, editing: null });
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to create"),
+			toast.error(err.response?.data?.error || t("Failed to create")),
 	});
 	const updateReport = useMutation({
 		mutationFn: ({ id, body }) =>
 			notificationsAPI.updateScheduledReport(id, body),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Report updated");
+			toast.success(t("Report updated"));
 			setReportModal({ open: false, editing: null });
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to update"),
+			toast.error(err.response?.data?.error || t("Failed to update")),
 	});
 	const deleteReport = useMutation({
 		mutationFn: (id) => notificationsAPI.deleteScheduledReport(id),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Report deleted");
+			toast.success(t("Report deleted"));
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to delete"),
+			toast.error(err.response?.data?.error || t("Failed to delete")),
 	});
 	const runReportNow = useMutation({
 		mutationFn: (id) => notificationsAPI.runScheduledReportNow(id),
 		onSuccess: () => {
 			invalidate();
-			toast.success("Report scheduled for immediate delivery");
+			toast.success(t("Report scheduled for immediate delivery"));
 		},
-		onError: (err) => toast.error(err.response?.data?.error || "Failed to run"),
+		onError: (err) =>
+			toast.error(err.response?.data?.error || t("Failed to run")),
 	});
 
 	const sendTest = (id) => {
 		testNotify.mutate(id, {
 			onSuccess: () => {
-				toast.info("Test notification enqueued");
+				toast.info(t("Test notification enqueued"));
 				setTimeout(
 					() =>
 						queryClient.invalidateQueries({
@@ -1654,7 +1741,9 @@ export const NotificationPanel = ({ panel }) => {
 				);
 			},
 			onError: (err) =>
-				toast.error(err.response?.data?.error || err.message || "Test failed"),
+				toast.error(
+					err.response?.data?.error || err.message || t("Test failed"),
+				),
 		});
 	};
 
@@ -1704,7 +1793,8 @@ export const NotificationPanel = ({ panel }) => {
 		"px-4 py-2 text-sm text-secondary-900 dark:text-white whitespace-nowrap";
 	const TDW = "px-4 py-2 text-sm text-secondary-900 dark:text-white";
 	const W_STATUS = "w-24";
-	const W_ACTIONS = "w-36";
+	// Wide enough for the French labels ("Tester", "Modifier") and the bin.
+	const W_ACTIONS = "w-44";
 
 	// When used as a standalone page, render all sections. When panel prop is set, render only that section.
 	const showAll = !panel;
@@ -1720,11 +1810,12 @@ export const NotificationPanel = ({ panel }) => {
 				<div className="flex items-center justify-between">
 					<div>
 						<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
-							Notifications
+							{t("Notifications")}
 						</h1>
 						<p className="text-sm text-secondary-600 dark:text-white mt-1">
-							Manage destinations, routing rules, scheduled reports, and
-							delivery history
+							{t(
+								"Manage destinations, routing rules, scheduled reports, and delivery history",
+							)}
 						</p>
 					</div>
 					{canLog && (
@@ -1737,7 +1828,7 @@ export const NotificationPanel = ({ panel }) => {
 							}
 							className="btn-outline flex items-center gap-2"
 						>
-							<RefreshCw className="h-4 w-4" /> Refresh log
+							<RefreshCw className="h-4 w-4" /> {t("Refresh log")}
 						</button>
 					)}
 				</div>
@@ -1748,14 +1839,14 @@ export const NotificationPanel = ({ panel }) => {
 				<div className="card p-4 md:p-6 space-y-4">
 					<div className="flex items-center justify-between">
 						<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-							Destinations
+							{t("Destinations")}
 						</h2>
 						<button
 							type="button"
 							className="btn-primary flex items-center gap-2"
 							onClick={() => setDestModal({ open: true, editing: null })}
 						>
-							<Plus className="h-4 w-4" /> Add destination
+							<Plus className="h-4 w-4" /> {t("Add destination")}
 						</button>
 					</div>
 
@@ -1764,7 +1855,9 @@ export const NotificationPanel = ({ panel }) => {
 					{!destLoading && destinations.length === 0 && (
 						<div className="rounded-md p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-center">
 							<p className="text-sm text-blue-800 dark:text-blue-200">
-								No destinations yet. Add one to start receiving notifications.
+								{t(
+									"No destinations yet. Add one to start receiving notifications.",
+								)}
 							</p>
 						</div>
 					)}
@@ -1774,10 +1867,10 @@ export const NotificationPanel = ({ panel }) => {
 							<table className="min-w-full table-fixed divide-y divide-secondary-200 dark:divide-secondary-600">
 								<thead className="bg-secondary-50 dark:bg-secondary-700">
 									<tr>
-										<th className={`${TH} w-28`}>Channel</th>
-										<th className={TH}>Name</th>
-										<th className={`${TH} w-20`}>Enabled</th>
-										<th className={`${TH} ${W_ACTIONS}`}>Actions</th>
+										<th className={`${TH} w-28`}>{t("Channel")}</th>
+										<th className={TH}>{t("Name")}</th>
+										<th className={`${TH} w-20`}>{t("Enabled")}</th>
+										<th className={`${TH} ${W_ACTIONS}`}>{t("Actions")}</th>
 									</tr>
 								</thead>
 								<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
@@ -1793,7 +1886,7 @@ export const NotificationPanel = ({ panel }) => {
 														{channelIcon(d.channel_type)}
 														{isBuiltIn ? (
 															<span className="text-xs text-secondary-500">
-																Built-in
+																{t("Built-in")}
 															</span>
 														) : (
 															d.channel_type
@@ -1822,42 +1915,47 @@ export const NotificationPanel = ({ panel }) => {
 														/>
 													</button>
 												</td>
-												<td className={`${TD} flex items-center gap-2`}>
-													{!isBuiltIn && (
+												<td className={TD}>
+													<div className="flex items-center gap-2">
+														{!isBuiltIn && (
+															<button
+																type="button"
+																className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 text-xs"
+																onClick={() => sendTest(d.id)}
+																disabled={testNotify.isPending}
+															>
+																<Send className="h-3.5 w-3.5" /> {t("Test")}
+															</button>
+														)}
 														<button
 															type="button"
 															className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 text-xs"
-															onClick={() => sendTest(d.id)}
-															disabled={testNotify.isPending}
+															onClick={() => openEditDest(d)}
 														>
-															<Send className="h-3.5 w-3.5" /> Test
+															<Edit2 className="h-3.5 w-3.5" /> {t("Edit")}
 														</button>
-													)}
-													<button
-														type="button"
-														className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 text-xs"
-														onClick={() => openEditDest(d)}
-													>
-														<Edit2 className="h-3.5 w-3.5" /> Edit
-													</button>
-													{!isBuiltIn && (
-														<button
-															type="button"
-															className="text-red-600 hover:text-red-700 inline-flex items-center gap-1 text-xs"
-															onClick={async () => {
-																if (
-																	await confirm({
-																		title: "Delete destination",
-																		message: `Delete the destination "${d.display_name}"?`,
-																		confirmLabel: "Delete destination",
-																	})
-																)
-																	deleteDest.mutate(d.id);
-															}}
-														>
-															<Trash2 className="h-3.5 w-3.5" />
-														</button>
-													)}
+														{!isBuiltIn && (
+															<button
+																type="button"
+																className="text-red-600 hover:text-red-700 inline-flex items-center gap-1 text-xs"
+																onClick={async () => {
+																	if (
+																		await confirm({
+																			title: t("Delete destination"),
+																			message: t(
+																				'Delete the destination "{{name}}"?',
+																				{ name: d.display_name },
+																			),
+																			confirmLabel: t("Delete destination"),
+																		})
+																	)
+																		deleteDest.mutate(d.id);
+																}}
+															>
+																<Trash2 className="h-3.5 w-3.5" />
+															</button>
+														)}
+													</div>
 												</td>
 											</tr>
 										);
@@ -1874,7 +1972,7 @@ export const NotificationPanel = ({ panel }) => {
 				<div className="card p-4 md:p-6 space-y-4">
 					<div className="flex items-center justify-between">
 						<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-							Event Rules
+							{t("Event Rules")}
 						</h2>
 						<button
 							type="button"
@@ -1882,7 +1980,7 @@ export const NotificationPanel = ({ panel }) => {
 							onClick={() => setRouteModal({ open: true, editing: null })}
 							disabled={destinations.length === 0}
 						>
-							<Plus className="h-4 w-4" /> Add event rule
+							<Plus className="h-4 w-4" /> {t("Add event rule")}
 						</button>
 					</div>
 
@@ -1893,7 +1991,9 @@ export const NotificationPanel = ({ panel }) => {
 					{!routesLoading && routes.length === 0 && destinations.length > 0 && (
 						<div className="rounded-md p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-center">
 							<p className="text-sm text-blue-800 dark:text-blue-200">
-								No event rules yet. Event rules map events to destinations.
+								{t(
+									"No event rules yet. Event rules map events to destinations.",
+								)}
 							</p>
 						</div>
 					)}
@@ -1903,12 +2003,12 @@ export const NotificationPanel = ({ panel }) => {
 							<table className="min-w-full table-fixed divide-y divide-secondary-200 dark:divide-secondary-600">
 								<thead className="bg-secondary-50 dark:bg-secondary-700">
 									<tr>
-										<th className={TH}>Destination</th>
-										<th className={TH}>Events</th>
-										<th className={`${TH} w-32`}>Min severity</th>
-										<th className={TH}>Scope</th>
-										<th className={`${TH} ${W_STATUS}`}>Status</th>
-										<th className={`${TH} ${W_ACTIONS}`}>Actions</th>
+										<th className={TH}>{t("Destination")}</th>
+										<th className={TH}>{t("Events")}</th>
+										<th className={`${TH} w-32`}>{t("Min severity")}</th>
+										<th className={TH}>{t("Scope")}</th>
+										<th className={`${TH} ${W_STATUS}`}>{t("Status")}</th>
+										<th className={`${TH} ${W_ACTIONS}`}>{t("Actions")}</th>
 									</tr>
 								</thead>
 								<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
@@ -1923,12 +2023,16 @@ export const NotificationPanel = ({ panel }) => {
 											<td className={TDW}>
 												{Array.isArray(row.event_types) &&
 												row.event_types.includes("*")
-													? "All events"
+													? t("All events")
 													: Array.isArray(row.event_types)
 														? row.event_types
-																.map((e) => e.replace(/_/g, " "))
+																.map((e) =>
+																	EVENT_TYPE_LIST_LABELS[e]
+																		? t(EVENT_TYPE_LIST_LABELS[e])
+																		: e.replace(/_/g, " "),
+																)
 																.join(", ")
-														: "All events"}
+														: t("All events")}
 											</td>
 											<td className={TD}>
 												<span
@@ -1942,7 +2046,9 @@ export const NotificationPanel = ({ panel }) => {
 																	: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
 													}`}
 												>
-													{row.min_severity}
+													{SEVERITY_BADGE_LABELS[row.min_severity]
+														? t(SEVERITY_BADGE_LABELS[row.min_severity])
+														: row.min_severity}
 												</span>
 											</td>
 											<td className={TDW}>
@@ -1951,41 +2057,43 @@ export const NotificationPanel = ({ panel }) => {
 													? row.host_group_ids
 															.map((id) => hostGroupNameMap[id] || id)
 															.join(", ")
-													: "All"}
+													: t("All")}
 											</td>
 											<td className={TD}>
 												<span
 													className={`px-2 py-0.5 text-xs font-medium rounded-md ${row.enabled ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" : "bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-secondary-300"}`}
 												>
-													{row.enabled ? "Active" : "Disabled"}
+													{row.enabled ? t("Active") : t("Disabled")}
 												</span>
 											</td>
-											<td className={`${TD} flex items-center gap-2`}>
-												<button
-													type="button"
-													className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 text-xs"
-													onClick={() =>
-														setRouteModal({ open: true, editing: row })
-													}
-												>
-													<Edit2 className="h-3.5 w-3.5" /> Edit
-												</button>
-												<button
-													type="button"
-													className="text-red-600 hover:text-red-700 inline-flex items-center gap-1 text-xs"
-													onClick={async () => {
-														if (
-															await confirm({
-																title: "Delete route",
-																message: "Delete this event route?",
-																confirmLabel: "Delete route",
-															})
-														)
-															deleteRoute.mutate(row.id);
-													}}
-												>
-													<Trash2 className="h-3.5 w-3.5" />
-												</button>
+											<td className={TD}>
+												<div className="flex items-center gap-2">
+													<button
+														type="button"
+														className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 text-xs"
+														onClick={() =>
+															setRouteModal({ open: true, editing: row })
+														}
+													>
+														<Edit2 className="h-3.5 w-3.5" /> {t("Edit")}
+													</button>
+													<button
+														type="button"
+														className="text-red-600 hover:text-red-700 inline-flex items-center gap-1 text-xs"
+														onClick={async () => {
+															if (
+																await confirm({
+																	title: t("Delete route"),
+																	message: t("Delete this event route?"),
+																	confirmLabel: t("Delete route"),
+																})
+															)
+																deleteRoute.mutate(row.id);
+														}}
+													>
+														<Trash2 className="h-3.5 w-3.5" />
+													</button>
+												</div>
 											</td>
 										</tr>
 									))}
@@ -2001,7 +2109,7 @@ export const NotificationPanel = ({ panel }) => {
 				<div className="card p-4 md:p-6 space-y-4">
 					<div className="flex items-center justify-between">
 						<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-							Scheduled reports
+							{t("Scheduled reports")}
 						</h2>
 						<button
 							type="button"
@@ -2009,7 +2117,7 @@ export const NotificationPanel = ({ panel }) => {
 							onClick={() => setReportModal({ open: true, editing: null })}
 							disabled={destinations.length === 0}
 						>
-							<Plus className="h-4 w-4" /> New report
+							<Plus className="h-4 w-4" /> {t("New report")}
 						</button>
 					</div>
 
@@ -2020,7 +2128,7 @@ export const NotificationPanel = ({ panel }) => {
 					{!reportsLoading && scheduledReports.length === 0 && (
 						<div className="rounded-md p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-center">
 							<p className="text-sm text-blue-800 dark:text-blue-200">
-								No scheduled reports yet.
+								{t("No scheduled reports yet.")}
 							</p>
 						</div>
 					)}
@@ -2031,11 +2139,11 @@ export const NotificationPanel = ({ panel }) => {
 								<thead className="bg-secondary-50 dark:bg-secondary-700">
 									<tr>
 										<th className={`${TH} w-10`} />
-										<th className={TH}>Name</th>
-										<th className={TH}>Schedule</th>
-										<th className={TH}>Next run</th>
-										<th className={`${TH} ${W_STATUS}`}>Status</th>
-										<th className={`${TH} ${W_ACTIONS}`}>Actions</th>
+										<th className={TH}>{t("Name")}</th>
+										<th className={TH}>{t("Schedule")}</th>
+										<th className={TH}>{t("Next run")}</th>
+										<th className={`${TH} ${W_STATUS}`}>{t("Status")}</th>
+										<th className={`${TH} ${W_ACTIONS}`}>{t("Actions")}</th>
 									</tr>
 								</thead>
 								<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
@@ -2051,7 +2159,9 @@ export const NotificationPanel = ({ panel }) => {
 													onClick={() => runReportNow.mutate(r.id)}
 													disabled={runReportNow.isPending || !r.enabled}
 													title={
-														!r.enabled ? "Enable the report first" : "Run now"
+														!r.enabled
+															? t("Enable the report first")
+															: t("Run now")
 													}
 												>
 													<Play className="h-3.5 w-3.5" />
@@ -2073,35 +2183,40 @@ export const NotificationPanel = ({ panel }) => {
 												<span
 													className={`px-2 py-0.5 text-xs font-medium rounded-md ${r.enabled ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" : "bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-secondary-300"}`}
 												>
-													{r.enabled ? "Active" : "Disabled"}
+													{r.enabled ? t("Active") : t("Disabled")}
 												</span>
 											</td>
-											<td className={`${TD} flex items-center gap-2`}>
-												<button
-													type="button"
-													className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 text-xs"
-													onClick={() =>
-														setReportModal({ open: true, editing: r })
-													}
-												>
-													<Edit2 className="h-3.5 w-3.5" /> Edit
-												</button>
-												<button
-													type="button"
-													className="text-red-600 hover:text-red-700 inline-flex items-center gap-1 text-xs"
-													onClick={async () => {
-														if (
-															await confirm({
-																title: "Delete scheduled report",
-																message: `Delete the scheduled report "${r.name}"?`,
-																confirmLabel: "Delete report",
-															})
-														)
-															deleteReport.mutate(r.id);
-													}}
-												>
-													<Trash2 className="h-3.5 w-3.5" />
-												</button>
+											<td className={TD}>
+												<div className="flex items-center gap-2">
+													<button
+														type="button"
+														className="text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 text-xs"
+														onClick={() =>
+															setReportModal({ open: true, editing: r })
+														}
+													>
+														<Edit2 className="h-3.5 w-3.5" /> {t("Edit")}
+													</button>
+													<button
+														type="button"
+														className="text-red-600 hover:text-red-700 inline-flex items-center gap-1 text-xs"
+														onClick={async () => {
+															if (
+																await confirm({
+																	title: t("Delete scheduled report"),
+																	message: t(
+																		'Delete the scheduled report "{{name}}"?',
+																		{ name: r.name },
+																	),
+																	confirmLabel: t("Delete report"),
+																})
+															)
+																deleteReport.mutate(r.id);
+														}}
+													>
+														<Trash2 className="h-3.5 w-3.5" />
+													</button>
+												</div>
 											</td>
 										</tr>
 									))}
@@ -2117,14 +2232,14 @@ export const NotificationPanel = ({ panel }) => {
 				<div className="card p-4 md:p-6 space-y-4">
 					<div className="flex items-center justify-between">
 						<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-							Delivery log
+							{t("Delivery log")}
 						</h2>
 						{logLoading && <Loader2 className="h-5 w-5 animate-spin" />}
 					</div>
 
 					{!logLoading && deliveryLog.length === 0 ? (
 						<p className="text-sm text-secondary-500">
-							No delivery entries yet.
+							{t("No delivery entries yet.")}
 						</p>
 					) : (
 						<>
@@ -2132,12 +2247,12 @@ export const NotificationPanel = ({ panel }) => {
 								<table className="min-w-full table-fixed divide-y divide-secondary-200 dark:divide-secondary-600">
 									<thead className="bg-secondary-50 dark:bg-secondary-700">
 										<tr>
-											<th className={`${TH} w-28`}>Time</th>
-											<th className={`${TH} ${W_STATUS}`}>Status</th>
-											<th className={TH}>Event</th>
-											<th className={TH}>Destination</th>
-											<th className={TH}>Reference</th>
-											<th className={TH}>Error</th>
+											<th className={`${TH} w-28`}>{t("Time")}</th>
+											<th className={`${TH} ${W_STATUS}`}>{t("Status")}</th>
+											<th className={TH}>{t("Event")}</th>
+											<th className={TH}>{t("Destination")}</th>
+											<th className={TH}>{t("Reference")}</th>
+											<th className={TH}>{t("Error")}</th>
 										</tr>
 									</thead>
 									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
@@ -2200,10 +2315,12 @@ export const NotificationPanel = ({ panel }) => {
 							</div>
 							<div className="flex items-center justify-between pt-2">
 								<p className="text-xs text-secondary-500">
-									Page {logPage + 1}
 									{deliveryLog.length < logPageSize && logPage === 0
-										? ` · ${deliveryLog.length} entries`
-										: ""}
+										? t("Page {{page}} · {{count}} entries", {
+												page: logPage + 1,
+												count: deliveryLog.length,
+											})
+										: t("Page {{page}}", { page: logPage + 1 })}
 								</p>
 								<div className="flex gap-2">
 									<button
@@ -2231,7 +2348,7 @@ export const NotificationPanel = ({ panel }) => {
 
 			{showAll && !canManage && !canLog && (
 				<div className="card p-8 text-center text-secondary-600">
-					You don&apos;t have permission to view this page.
+					{t("You don't have permission to view this page.")}
 				</div>
 			)}
 

@@ -39,7 +39,7 @@
 | **Live agent activity** | The host's *Agent Activity* shows what the agent is doing now, refreshed every 2 seconds: an agent update step by step (download percentage, verification, installation, restart, back online on the new version), patch runs with their last output line, compliance scans and queued jobs, then their outcome. *Update Now* no longer reports an update as completed as soon as it is sent. |
 | **Fork-aware updates** | Builds are stamped with the fork's repository and commit. The server checks the fork's GitHub releases, for itself and for its agents, instead of upstream's version records; *Check for updates* sees a new release right away, and the UI links to the fork. |
 | **Upstream release watch** | A daily workflow opens an issue when PatchMon publishes an official version the fork does not contain yet. |
-| **French interface** | The UI follows the browser's language, or the one picked in *Profile* or on the sign-in page. French covers the navigation, sign-in, dashboard, hosts, host detail, patch wizard and restarts; the other screens stay in English for now. |
+| **French interface** | The UI follows the browser's language, or the one picked in *Profile* or on the sign-in page. French covers the navigation, sign-in, dashboard, hosts, host detail, packages, patching, the patch wizard and restarts, compliance and reporting (alerts, destinations, event rules, scheduled reports); the other screens stay in English for now. |
 
 Releases are named `vX.Y.Z-fork.N`, above the official version the fork is based on and below the next one, so servers and agents move up to each fork release. Each release publishes the server image `ghcr.io/stefanotr/patchmon-server:<version>`, also tagged `:fork`, with the agents for every platform.
 

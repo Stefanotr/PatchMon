@@ -4,7 +4,7 @@ import { Doughnut } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { useTheme } from "../../../contexts/ThemeContext";
-import { tk } from "../../../i18n";
+import { SEVERITY_LABELS } from "../../../utils/complianceStatus";
 import { getDoughnutOptions } from "./chartOptions";
 
 const SEVERITY_COLORS = {
@@ -13,14 +13,6 @@ const SEVERITY_COLORS = {
 	medium: "#3B82F6",
 	low: "#10B981",
 	unknown: "#6B7280",
-};
-
-const SEVERITY_LABELS = {
-	critical: tk("Critical"),
-	high: tk("High"),
-	medium: tk("Medium"),
-	low: tk("Low"),
-	unknown: tk("Unknown"),
 };
 
 const FailuresBySeverityDoughnut = ({ data, onTabChange }) => {

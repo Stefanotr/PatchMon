@@ -1,0 +1,12 @@
+{
+	"Page {{page}} · {{count}} entries_one": "Page {{page}} · {{count}} entries",
+	"Page {{page}} · {{count}} entries_other": "Page {{page}} · {{count}} entries",
+	"Delete {{count}} alert(s)?_one": "Delete {{count}} alert(s)?",
+	"Delete {{count}} alert(s)?_other": "Delete {{count}} alert(s)?",
+	"Cleanup completed: {{count}} alert(s) deleted_one": "Cleanup completed: {{count}} alert(s) deleted",
+	"Cleanup completed: {{count}} alert(s) deleted_other": "Cleanup completed: {{count}} alert(s) deleted",
+	"Delete {{count}} alerts_one": "Delete {{count}} alerts",
+	"Delete {{count}} alerts_other": "Delete {{count}} alerts",
+	"{{count}} alert(s) would be deleted:_one": "{{count}} alert(s) would be deleted:",
+	"{{count}} alert(s) would be deleted:_other": "{{count}} alert(s) would be deleted:"
+}

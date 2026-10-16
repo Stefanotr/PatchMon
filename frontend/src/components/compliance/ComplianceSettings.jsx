@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Clock, Info, Save, Shield } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useToast } from "../../contexts/ToastContext";
 import { settingsAPI } from "../../utils/api";
 import { complianceAPI } from "../../utils/complianceApi";
 
+// OS and CIS profile names are proper names: they stay untranslated.
 const SUPPORTED_PROFILES = [
 	{ os: "Ubuntu", profiles: "CIS Level 1 Server, CIS Level 2 Server" },
 	{ os: "Debian", profiles: "CIS Level 1 Server, CIS Level 2 Server" },
@@ -18,6 +20,7 @@ const SUPPORTED_PROFILES = [
 ];
 
 const ComplianceSettings = () => {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const toast = useToast();
 	const defaultComplianceModeId = useId();
@@ -58,11 +61,12 @@ const ComplianceSettings = () => {
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["settings"] });
 			setIsDirty(false);
-			toast.success("Compliance settings saved");
+			toast.success(t("Compliance settings saved"));
 		},
 		onError: (error) => {
 			toast.error(
-				error.response?.data?.error || "Failed to update compliance settings",
+				error.response?.data?.error ||
+					t("Failed to update compliance settings"),
 			);
 		},
 	});
@@ -80,9 +84,9 @@ const ComplianceSettings = () => {
 	};
 
 	const formatInterval = (mins) => {
-		if (mins < 1440) return `${Math.round(mins / 60)}h`;
-		if (mins < 10080) return `${Math.round(mins / 1440)}d`;
-		return "7d";
+		if (mins < 1440) return t("{{n}}h", { n: Math.round(mins / 60) });
+		if (mins < 10080) return t("{{n}}d", { n: Math.round(mins / 1440) });
+		return t("{{n}}d", { n: 7 });
 	};
 
 	return (
@@ -94,29 +98,30 @@ const ComplianceSettings = () => {
 					<div className="flex items-center gap-2 mb-1">
 						<Shield className="h-4 w-4 text-primary-600 dark:text-primary-400" />
 						<h3 className="text-sm font-semibold text-secondary-900 dark:text-white">
-							Default Compliance Mode
+							{t("Default Compliance Mode")}
 						</h3>
 					</div>
 					<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-3">
-						Applies to newly registered hosts. Per-host overrides available in
-						host detail.
+						{t(
+							"Applies to newly registered hosts. Per-host overrides available in host detail.",
+						)}
 					</p>
 					<div className="flex flex-col gap-2">
 						{[
 							{
 								value: "disabled",
-								label: "Disabled",
-								desc: "Scanning off for new hosts",
+								label: t("Disabled"),
+								desc: t("Scanning off for new hosts"),
 							},
 							{
 								value: "on-demand",
-								label: "On-Demand",
-								desc: "Manual trigger only",
+								label: t("On-Demand"),
+								desc: t("Manual trigger only"),
 							},
 							{
 								value: "enabled",
-								label: "Enabled",
-								desc: "Runs on schedule automatically",
+								label: t("Enabled"),
+								desc: t("Runs on schedule automatically"),
 							},
 						].map((opt) => (
 							<label
@@ -156,20 +161,22 @@ const ComplianceSettings = () => {
 					<div className="flex items-center gap-2 mb-1">
 						<Clock className="h-4 w-4 text-primary-600 dark:text-primary-400" />
 						<h3 className="text-sm font-semibold text-secondary-900 dark:text-white">
-							Scan Interval
+							{t("Scan Interval")}
 						</h3>
 					</div>
 					<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-3">
-						Frequency when mode is "Enabled". Pushed to all agents on save.
+						{t(
+							'Frequency when mode is "Enabled". Pushed to all agents on save.',
+						)}
 					</p>
 					<div className="flex flex-wrap items-center gap-2">
 						{[
-							{ label: "6h", value: 360 },
-							{ label: "12h", value: 720 },
-							{ label: "24h", value: 1440 },
-							{ label: "48h", value: 2880 },
-							{ label: "3d", value: 4320 },
-							{ label: "7d", value: 10080 },
+							{ label: t("{{n}}h", { n: 6 }), value: 360 },
+							{ label: t("{{n}}h", { n: 12 }), value: 720 },
+							{ label: t("{{n}}h", { n: 24 }), value: 1440 },
+							{ label: t("{{n}}h", { n: 48 }), value: 2880 },
+							{ label: t("{{n}}d", { n: 3 }), value: 4320 },
+							{ label: t("{{n}}d", { n: 7 }), value: 10080 },
 						].map((preset) => (
 							<button
 								key={preset.value}
@@ -206,7 +213,9 @@ const ComplianceSettings = () => {
 							className="w-20 rounded-md border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 px-2 py-1.5 text-xs text-secondary-900 dark:text-white focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
 						/>
 						<span className="text-xs text-secondary-400">
-							minutes (every {formatInterval(formData.complianceScanInterval)})
+							{t("minutes (every {{interval}})", {
+								interval: formatInterval(formData.complianceScanInterval),
+							})}
 						</span>
 					</div>
 				</div>
@@ -218,15 +227,15 @@ const ComplianceSettings = () => {
 					<div className="flex items-center gap-2">
 						<Info className="h-4 w-4 text-primary-600 dark:text-primary-400" />
 						<h3 className="text-sm font-semibold text-secondary-900 dark:text-white">
-							OpenSCAP Content
+							{t("OpenSCAP Content")}
 						</h3>
 						{(serverSSGInfo?.version || ssgFileCount > 0) && (
 							<span className="text-xs text-secondary-400 dark:text-secondary-500">
 								{serverSSGInfo.version
 									? `SSG ${serverSSGInfo.version}`
-									: "SSG version unknown"}
+									: t("SSG version unknown")}
 								{ssgFileCount > 0 &&
-									` · ${ssgFileCount} file${ssgFileCount !== 1 ? "s" : ""}`}
+									` · ${t("{{count}} file", { count: ssgFileCount })}`}
 							</span>
 						)}
 					</div>
@@ -235,7 +244,7 @@ const ComplianceSettings = () => {
 						onClick={() => setShowProfiles(!showProfiles)}
 						className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
 					>
-						{showProfiles ? "Hide details" : "Supported configurations"}
+						{showProfiles ? t("Hide details") : t("Supported configurations")}
 						<ChevronDown
 							className={`h-3.5 w-3.5 transition-transform ${showProfiles ? "rotate-180" : ""}`}
 						/>
@@ -244,7 +253,7 @@ const ComplianceSettings = () => {
 
 				{serverSSGInfo !== undefined && ssgFileCount === 0 && (
 					<p className="text-sm text-secondary-500 dark:text-secondary-400 mt-2">
-						No SSG content configured on server
+						{t("No SSG content configured on server")}
 					</p>
 				)}
 
@@ -254,10 +263,9 @@ const ComplianceSettings = () => {
 				{ssgFileCount > 0 && !serverSSGInfo.version && (
 					<div className="mt-2 p-3 bg-danger-50 dark:bg-danger-900 border border-danger-200 dark:border-danger-700 rounded-md">
 						<p className="text-sm text-danger-700 dark:text-danger-300">
-							SSG content is present but its release could not be determined, so
-							hosts cannot be updated from it. Add a .ssg-version file to the
-							content directory containing the release number, for example
-							0.1.81.
+							{t(
+								"SSG content is present but its release could not be determined, so hosts cannot be updated from it. Add a .ssg-version file to the content directory containing the release number, for example 0.1.81.",
+							)}
 						</p>
 					</div>
 				)}
@@ -268,7 +276,7 @@ const ComplianceSettings = () => {
 						{serverSSGInfo?.files?.length > 0 && (
 							<div className="mb-3">
 								<h4 className="text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider mb-2">
-									Content Files
+									{t("Content Files")}
 								</h4>
 								<div className="flex flex-wrap gap-1.5">
 									{serverSSGInfo.files.map((f) => (
@@ -285,17 +293,17 @@ const ComplianceSettings = () => {
 
 						{/* Supported OS + Profiles */}
 						<h4 className="text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider mb-2">
-							Supported OS & Profiles
+							{t("Supported OS & Profiles")}
 						</h4>
 						<div className="overflow-x-auto">
 							<table className="min-w-full text-xs">
 								<thead>
 									<tr className="border-b border-secondary-200 dark:border-secondary-700">
 										<th className="text-left py-1.5 pr-4 font-medium text-secondary-500 dark:text-white">
-											Operating System
+											{t("Operating System")}
 										</th>
 										<th className="text-left py-1.5 font-medium text-secondary-500 dark:text-white">
-											Profiles
+											{t("Profiles")}
 										</th>
 									</tr>
 								</thead>
@@ -332,12 +340,12 @@ const ComplianceSettings = () => {
 					{updateMutation.isPending ? (
 						<>
 							<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-							Saving...
+							{t("Saving...")}
 						</>
 					) : (
 						<>
 							<Save className="h-4 w-4 mr-2" />
-							Save Settings
+							{t("Save Settings")}
 						</>
 					)}
 				</button>

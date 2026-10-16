@@ -4,8 +4,10 @@ import {
 	ShieldQuestion,
 	ShieldX,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const ComplianceScore = ({ score, size = "md" }) => {
+	const { t } = useTranslation();
 	const getScoreColor = (score) => {
 		if (score === null || score === undefined)
 			return "text-secondary-400 dark:text-white";
@@ -41,7 +43,9 @@ const ComplianceScore = ({ score, size = "md" }) => {
 		>
 			<Icon className={`h-4 w-4 ${getScoreColor(score)}`} />
 			<span className={`font-semibold ${getScoreColor(score)}`}>
-				{score !== null && score !== undefined ? `${score.toFixed(0)}%` : "N/A"}
+				{score !== null && score !== undefined
+					? `${score.toFixed(0)}%`
+					: t("N/A")}
 			</span>
 		</div>
 	);

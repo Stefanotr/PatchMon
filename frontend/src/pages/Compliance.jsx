@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Doughnut } from "react-chartjs-2";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
 	Bar,
@@ -49,9 +50,13 @@ import ModalPortal from "../components/ui/ModalPortal";
 import { useTheme } from "../contexts/ThemeContext";
 import { useToast } from "../contexts/ToastContext";
 import { useTabParam } from "../hooks/useTabParam";
+import { dateFnsLocale, tk } from "../i18n";
 import { adminHostsAPI, settingsAPI } from "../utils/api";
 import { complianceAPI } from "../utils/complianceApi";
-import { hostComplianceStatus } from "../utils/complianceStatus";
+import {
+	hostComplianceStatus,
+	SEVERITY_LABELS,
+} from "../utils/complianceStatus";
 import {
 	deriveReportingStateByTime,
 	hasNeverReported,
@@ -59,12 +64,13 @@ import {
 
 // Custom tooltip component for consistent styling across all charts
 const CustomTooltip = ({ active, payload, label, type }) => {
+	const { t } = useTranslation();
 	if (!active || !payload || payload.length === 0) return null;
 
 	const getTitle = () => {
-		if (type === "hostStatus") return `${label} Hosts`;
-		if (type === "severity") return `${label} Severity`;
-		if (type === "scoreRange") return `Score: ${label}`;
+		if (type === "hostStatus") return t("{{label}} Hosts", { label });
+		if (type === "severity") return t("{{label}} Severity", { label });
+		if (type === "scoreRange") return t("Score: {{label}}", { label });
 		if (type === "profile") return label;
 		if (type === "scanAge") return `${label}`;
 		return label;
@@ -86,9 +92,9 @@ const CustomTooltip = ({ active, payload, label, type }) => {
 						name = "Docker Bench";
 						color = "#3b82f6";
 					} else if (name === "count") {
-						name = "Scans";
+						name = t("Scans");
 					} else if (name === "host_count") {
-						name = "Hosts";
+						name = t("Hosts");
 					}
 
 					return (
@@ -115,14 +121,15 @@ const CustomTooltip = ({ active, payload, label, type }) => {
 };
 
 const COMPLIANCE_TABS = [
-	{ id: "overview", label: "Overview", icon: BarChart3 },
-	{ id: "hosts", label: "Hosts", icon: Users },
-	{ id: "scan-results", label: "Scan Results", icon: ListChecks },
-	{ id: "history", label: "History", icon: History },
-	{ id: "settings", label: "Settings", icon: Settings },
+	{ id: "overview", label: tk("Overview"), icon: BarChart3 },
+	{ id: "hosts", label: tk("Hosts"), icon: Users },
+	{ id: "scan-results", label: tk("Scan Results"), icon: ListChecks },
+	{ id: "history", label: tk("History"), icon: History },
+	{ id: "settings", label: tk("Settings"), icon: Settings },
 ];
 
 const Compliance = () => {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const { isDark } = useTheme();
 	const toast = useToast();
@@ -254,7 +261,7 @@ const Compliance = () => {
 		}
 		if (finished) {
 			queryClient.invalidateQueries({ queryKey: ["compliance-dashboard"] });
-			if (completed) toast.success("Compliance scan completed");
+			if (completed) toast.success(t("Compliance scan completed"));
 		}
 		for (const hostId of cancelledHostIds.current) {
 			if (!activeHostIds.has(hostId)) cancelledHostIds.current.delete(hostId);
@@ -264,7 +271,7 @@ const Compliance = () => {
 		setPendingScans((prev) => prev.filter((p) => !activeHostIds.has(p.hostId)));
 
 		prevActiveScanIds.current = current;
-	}, [activeScansData, queryClient, toast]);
+	}, [activeScansData, queryClient, toast, t]);
 
 	// Check if pending scans have completed (scan records appear in dashboard)
 	useEffect(() => {
@@ -292,12 +299,19 @@ const Compliance = () => {
 				const completed = pendingScans.find(
 					(p) => p.hostId === completedPending[0],
 				);
-				toast.success(`Scan completed for ${completed?.hostName || "host"}`);
+				toast.success(
+					completed?.hostName
+						? t("Scan completed for {{name}}", { name: completed.hostName })
+						: t("Scan completed for host"),
+				);
 			} else {
-				toast.success(`${completedPending.length} scans completed`);
+				// Always 2 or more here, so no plural forms
+				toast.success(
+					t("{{count}} scans completed", { count: completedPending.length }),
+				);
 			}
 		}
-	}, [dashboard?.recent_scans, pendingScans, toast]);
+	}, [dashboard?.recent_scans, pendingScans, toast, t]);
 
 	// Clear stale pending scans after 60 seconds
 	useEffect(() => {
@@ -343,7 +357,9 @@ const Compliance = () => {
 			}
 
 			if (failed === 0) {
-				toast.success(`Started ${success} compliance scan(s)`);
+				toast.success(
+					t("Started {{count}} compliance scan(s)", { count: success }),
+				);
 				// Auto-close modal after 3 seconds if all succeeded
 				setTimeout(() => {
 					setShowBulkScanModal(false);
@@ -351,12 +367,17 @@ const Compliance = () => {
 					setSelectedHosts([]);
 				}, 3000);
 			} else {
-				toast.warning(`Started ${success} scan(s), ${failed} failed`);
+				toast.warning(
+					t("Started {{count}} scan(s), {{failed}} failed", {
+						count: success,
+						failed,
+					}),
+				);
 			}
 		},
 		onError: (error) => {
 			const errorMsg = error.response?.data?.error || error.message;
-			toast.error(`Bulk scan failed: ${errorMsg}`);
+			toast.error(t("Bulk scan failed: {{error}}", { error: errorMsg }));
 		},
 	});
 
@@ -372,18 +393,29 @@ const Compliance = () => {
 				{
 					id: `pending-${hostId}`,
 					hostId,
-					hostName: hostName || "Host",
+					hostName: hostName || t("Host"),
 					profileType: "all",
 					startedAt: new Date().toISOString(),
 					isPending: true,
 					connected: true,
 				},
 			]);
-			toast.success(`Scan started for ${hostName || "host"}`);
+			toast.success(
+				hostName
+					? t("Scan started for {{name}}", { name: hostName })
+					: t("Scan started for host"),
+			);
 		},
 		onError: (error, { hostName }) => {
 			const errorMsg = error.response?.data?.error || error.message;
-			toast.error(`Scan failed for ${hostName || "host"}: ${errorMsg}`);
+			toast.error(
+				hostName
+					? t("Scan failed for {{name}}: {{error}}", {
+							name: hostName,
+							error: errorMsg,
+						})
+					: t("Scan failed for host: {{error}}", { error: errorMsg }),
+			);
 		},
 	});
 
@@ -392,10 +424,21 @@ const Compliance = () => {
 		onSuccess: (response, { hostId, hostName }) => {
 			if (response?.data?.agentNotified === false) {
 				toast.warning(
-					`Scan cancelled for ${hostName || "host"}, but the agent could not be reached and may still finish it`,
+					hostName
+						? t(
+								"Scan cancelled for {{name}}, but the agent could not be reached and may still finish it",
+								{ name: hostName },
+							)
+						: t(
+								"Scan cancelled for host, but the agent could not be reached and may still finish it",
+							),
 				);
 			} else {
-				toast.success(`Scan cancelled for ${hostName || "host"}`);
+				toast.success(
+					hostName
+						? t("Scan cancelled for {{name}}", { name: hostName })
+						: t("Scan cancelled for host"),
+				);
 			}
 			const shownActive = [...prevActiveScanIds.current.values()].includes(
 				hostId,
@@ -411,7 +454,14 @@ const Compliance = () => {
 		onError: (error, { hostName }) => {
 			const errorMsg = error.response?.data?.error || error.message;
 			toast.error(
-				`Failed to cancel scan for ${hostName || "host"}: ${errorMsg}`,
+				hostName
+					? t("Failed to cancel scan for {{name}}: {{error}}", {
+							name: hostName,
+							error: errorMsg,
+						})
+					: t("Failed to cancel scan for host: {{error}}", {
+							error: errorMsg,
+						}),
 			);
 		},
 	});
@@ -427,7 +477,9 @@ const Compliance = () => {
 	if (error) {
 		return (
 			<div className="p-4 bg-red-900/50 border border-red-700 rounded-lg">
-				<p className="text-red-200">Failed to load compliance dashboard</p>
+				<p className="text-red-200">
+					{t("Failed to load compliance dashboard")}
+				</p>
 			</div>
 		);
 	}
@@ -534,7 +586,16 @@ const Compliance = () => {
 	const getFilterDisplayName = () => {
 		if (profileTypeFilter === "openscap") return "OpenSCAP";
 		if (profileTypeFilter === "docker-bench") return "Docker Bench";
-		return "All Scans";
+		return t("All Scans");
+	};
+
+	// scanner_status is an English value from the API; show a label for it
+	const scannerStatusLabel = (status) => {
+		if (status === "Scanned") return t("Scanned");
+		if (status === "Enabled") return t("Enabled");
+		if (status === "Never scanned")
+			return t("Never scanned", { context: "host" });
+		return status;
 	};
 
 	const clearProfileTypeFilter = () => {
@@ -590,10 +651,10 @@ const Compliance = () => {
 		<div className="space-y-6">
 			<div>
 				<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
-					Security Compliance
+					{t("Security Compliance")}
 				</h1>
 				<p className="text-sm text-secondary-600 dark:text-white mt-1">
-					Monitor and manage compliance across your hosts
+					{t("Monitor and manage compliance across your hosts")}
 				</p>
 			</div>
 
@@ -603,7 +664,7 @@ const Compliance = () => {
 						<Server className="h-5 w-5 text-primary-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Total hosts
+								{t("Total hosts")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{(summary?.total_hosts ?? 0) + (summary?.unscanned ?? 0) || 0}
@@ -616,7 +677,7 @@ const Compliance = () => {
 						<ShieldCheck className="h-5 w-5 text-green-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Compliant
+								{t("Compliant")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{summary?.hosts_compliant ?? 0}
@@ -629,7 +690,7 @@ const Compliance = () => {
 						<AlertTriangle className="h-5 w-5 text-yellow-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Warning
+								{t("Warning")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{summary?.hosts_warning ?? 0}
@@ -642,7 +703,7 @@ const Compliance = () => {
 						<ShieldAlert className="h-5 w-5 text-red-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Critical
+								{t("Critical")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{summary?.hosts_critical ?? 0}
@@ -668,14 +729,14 @@ const Compliance = () => {
 						<ShieldOff className="h-5 w-5 text-secondary-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Never scanned
+								{t("Never scanned")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{summary?.unscanned ?? 0}
 							</p>
 							{tableFilter === "never-scanned" && (
 								<p className="text-xs text-primary-600 dark:text-primary-400 mt-1">
-									Filtered in Hosts tab
+									{t("Filtered in Hosts tab")}
 								</p>
 							)}
 						</div>
@@ -687,7 +748,7 @@ const Compliance = () => {
 			<div className="border-b border-secondary-200 dark:border-secondary-600 overflow-x-auto scrollbar-hide">
 				<nav
 					className="-mb-px flex space-x-4 sm:space-x-8 px-4"
-					aria-label="Tabs"
+					aria-label={t("Tabs")}
 				>
 					{COMPLIANCE_TABS.map((tab) => {
 						const Icon = tab.icon;
@@ -703,7 +764,7 @@ const Compliance = () => {
 								} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
 							>
 								<Icon className="h-4 w-4 mr-2" />
-								{tab.label}
+								{t(tab.label)}
 							</button>
 						);
 					})}
@@ -717,14 +778,17 @@ const Compliance = () => {
 					<div className="card p-4 md:p-6">
 						{tableFilter === "never-scanned" && (
 							<p className="text-sm text-primary-600 dark:text-primary-400 mb-4">
-								Showing never-scanned hosts only. Click the Never scanned card
-								again to clear.
+								{t(
+									"Showing never-scanned hosts only. Click the Never scanned card again to clear.",
+								)}
 							</p>
 						)}
 						{profileTypeFilter !== "all" && (
 							<div className="flex flex-wrap items-center gap-2 mb-4">
 								<p className="text-sm text-primary-600 dark:text-primary-400">
-									Showing hosts with {getFilterDisplayName()} scanning enabled.
+									{t("Showing hosts with {{name}} scanning enabled.", {
+										name: getFilterDisplayName(),
+									})}
 								</p>
 								<button
 									type="button"
@@ -732,7 +796,7 @@ const Compliance = () => {
 									className="inline-flex items-center gap-1 min-h-[44px] px-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
 								>
 									<X className="h-3.5 w-3.5" />
-									Clear filter
+									{t("Clear filter")}
 								</button>
 							</div>
 						)}
@@ -741,37 +805,37 @@ const Compliance = () => {
 								<thead className="bg-secondary-50 dark:bg-secondary-700">
 									<tr>
 										<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white whitespace-nowrap w-16">
-											Run
+											{t("Run")}
 										</th>
 										<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white">
-											Host name
+											{t("Host name")}
 										</th>
 										<th
 											className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white w-12"
-											title="Compliance status"
+											title={t("Compliance status")}
 										>
-											Status
+											{t("Status")}
 										</th>
 										<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white">
-											Last activity
+											{t("Last activity")}
 										</th>
 										<th className="px-4 py-2 text-right text-xs font-medium text-secondary-500 dark:text-white">
-											Passed
+											{t("Passed")}
 										</th>
 										<th className="px-4 py-2 text-right text-xs font-medium text-secondary-500 dark:text-white">
-											Failed
+											{t("Failed")}
 										</th>
 										<th className="px-4 py-2 text-right text-xs font-medium text-secondary-500 dark:text-white">
-											Skipped
+											{t("Skipped")}
 										</th>
 										<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white">
-											Scanner status
+											{t("Scanner status")}
 										</th>
 										<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white">
-											Mode
+											{t("Mode")}
 										</th>
 										<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white">
-											Scanners
+											{t("Scanners")}
 										</th>
 									</tr>
 								</thead>
@@ -782,7 +846,7 @@ const Compliance = () => {
 												colSpan={10}
 												className="px-4 py-8 text-center text-secondary-500 dark:text-white"
 											>
-												No hosts
+												{t("No hosts")}
 											</td>
 										</tr>
 									) : (
@@ -817,15 +881,15 @@ const Compliance = () => {
 																		hostName:
 																			row.friendly_name ||
 																			row.hostname ||
-																			"Host",
+																			t("Host"),
 																	})
 																}
 																disabled={is_cancelling}
 																className="inline-flex items-center justify-center w-6 h-6 border border-transparent rounded text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
 																title={
 																	is_cancelling
-																		? "Cancelling..."
-																		: "Cancel running scan"
+																		? t("Cancelling...")
+																		: t("Cancel running scan")
 																}
 															>
 																{is_cancelling ? (
@@ -843,12 +907,12 @@ const Compliance = () => {
 																		hostName:
 																			row.friendly_name ||
 																			row.hostname ||
-																			"Host",
+																			t("Host"),
 																	})
 																}
 																disabled={triggerSingleScanMutation.isPending}
 																className="inline-flex items-center justify-center w-6 h-6 border border-transparent rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-																title="Run compliance scan"
+																title={t("Run compliance scan")}
 															>
 																<Play className="h-3 w-3" />
 															</button>
@@ -866,7 +930,7 @@ const Compliance = () => {
 														className="px-4 py-2 whitespace-nowrap"
 														title={
 															row.score != null
-																? `${{ compliant: "Compliant", warning: "Warning", critical: "Critical" }[hostComplianceStatus(row)]}${row.score_profile_name ? ` · ${row.score_profile_name}` : ""} (${Math.round(row.score)}%)`
+																? `${{ compliant: t("Compliant", { context: "host" }), warning: t("Warning"), critical: t("Critical") }[hostComplianceStatus(row)]}${row.score_profile_name ? ` · ${row.score_profile_name}` : ""} (${Math.round(row.score)}%)`
 																: undefined
 														}
 													>
@@ -874,23 +938,23 @@ const Compliance = () => {
 															hostComplianceStatus(row) === "compliant" ? (
 																<ShieldCheck
 																	className="h-5 w-5 text-green-600 dark:text-green-400"
-																	title="Compliant"
+																	title={t("Compliant", { context: "host" })}
 																/>
 															) : hostComplianceStatus(row) === "warning" ? (
 																<AlertTriangle
 																	className="h-5 w-5 text-yellow-600 dark:text-yellow-400"
-																	title="Warning"
+																	title={t("Warning")}
 																/>
 															) : (
 																<ShieldAlert
 																	className="h-5 w-5 text-red-600 dark:text-red-400"
-																	title="Critical"
+																	title={t("Critical")}
 																/>
 															)
 														) : (
 															<ShieldOff
 																className="h-5 w-5 text-secondary-400 dark:text-white"
-																title="Not scanned"
+																title={t("Not scanned")}
 															/>
 														)}
 													</td>
@@ -898,9 +962,19 @@ const Compliance = () => {
 														className="px-4 py-2 whitespace-nowrap text-secondary-700 dark:text-white"
 														title={
 															is_scanning
-																? `Scan running${active_scan?.startedAt ? ` · started ${formatDistanceToNow(new Date(active_scan.startedAt), { addSuffix: true })}` : ""}`
+																? active_scan?.startedAt
+																	? t("Scan running · started {{time}}", {
+																			time: formatDistanceToNow(
+																				new Date(active_scan.startedAt),
+																				{
+																					addSuffix: true,
+																					locale: dateFnsLocale(),
+																				},
+																			),
+																		})
+																	: t("Scan running")
 																: row.last_scan_date
-																	? `${row.last_activity_title || "Scan"} · ${formatDistanceToNow(new Date(row.last_scan_date), { addSuffix: true })}`
+																	? `${row.last_activity_title || t("Scan")} · ${formatDistanceToNow(new Date(row.last_scan_date), { addSuffix: true, locale: dateFnsLocale() })}`
 																	: undefined
 														}
 													>
@@ -909,18 +983,18 @@ const Compliance = () => {
 																<RefreshCw className="h-3 w-3 animate-spin" />
 																<span className="text-xs font-medium">
 																	{active_scan?.isPending
-																		? "Starting..."
+																		? t("Starting...")
 																		: active_scan?.profileType ===
 																				"docker-bench"
 																			? "Docker Bench"
 																			: active_scan?.profileType === "openscap"
 																				? "OpenSCAP"
-																				: "Scanning..."}
+																				: t("Scanning...")}
 																</span>
 															</span>
 														) : (
 															row.last_activity_title ||
-															(row.last_scan_date ? "Scan" : " -")
+															(row.last_scan_date ? t("Scan") : " -")
 														)}
 													</td>
 													<td className="px-4 py-2 text-right whitespace-nowrap">
@@ -929,7 +1003,7 @@ const Compliance = () => {
 																type="button"
 																onClick={() => openHostScanResults(row, "pass")}
 																className="text-green-600 dark:text-green-400 hover:underline font-medium tabular-nums"
-																title="View passing rules for this host"
+																title={t("View passing rules for this host")}
 															>
 																{row.passed}
 															</button>
@@ -943,7 +1017,7 @@ const Compliance = () => {
 																type="button"
 																onClick={() => openHostScanResults(row, "fail")}
 																className="text-red-600 dark:text-red-400 hover:underline font-medium tabular-nums"
-																title="View failing rules for this host"
+																title={t("View failing rules for this host")}
 															>
 																{row.failed}
 															</button>
@@ -959,7 +1033,9 @@ const Compliance = () => {
 																	openHostScanResults(row, "skipped")
 																}
 																className="text-secondary-600 dark:text-white hover:underline font-medium tabular-nums"
-																title="View skipped/N/A rules for this host"
+																title={t(
+																	"View skipped/N/A rules for this host",
+																)}
 															>
 																{row.skipped}
 															</button>
@@ -977,13 +1053,13 @@ const Compliance = () => {
 																		: "bg-secondary-100 text-secondary-700 dark:bg-secondary-700 dark:text-white"
 															}`}
 														>
-															{row.scanner_status}
+															{scannerStatusLabel(row.scanner_status)}
 														</span>
 													</td>
 													<td className="px-4 py-2 whitespace-nowrap">
 														{row.compliance_mode === "disabled" ? (
 															<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-white">
-																Disabled
+																{t("Disabled")}
 															</span>
 														) : (
 															<span
@@ -994,8 +1070,8 @@ const Compliance = () => {
 																}`}
 															>
 																{row.compliance_mode === "on-demand"
-																	? "On-demand"
-																	: "Scheduled"}
+																	? t("On-demand")
+																	: t("Scheduled")}
 															</span>
 														)}
 													</td>
@@ -1027,7 +1103,7 @@ const Compliance = () => {
 							{/* Modal Header */}
 							<div className="flex items-center justify-between p-4 border-b border-secondary-700">
 								<h2 className="text-lg font-semibold text-white">
-									Bulk Compliance Scan
+									{t("Bulk Compliance Scan")}
 								</h2>
 								<button
 									onClick={() => {
@@ -1045,12 +1121,12 @@ const Compliance = () => {
 								{/* Scan Options */}
 								<div className="space-y-3">
 									<h3 className="text-sm font-medium text-white">
-										Scan Options
+										{t("Scan Options")}
 									</h3>
 									<div className="flex flex-wrap gap-4">
 										<div className="flex-1 min-w-[200px]">
 											<label className="block text-xs text-white mb-1">
-												Profile Type
+												{t("Profile Type")}
 											</label>
 											<select
 												value={bulkScanOptions.profileType}
@@ -1062,9 +1138,11 @@ const Compliance = () => {
 												}
 												className="w-full px-3 py-2 bg-secondary-700 border border-secondary-600 rounded-lg text-white text-sm"
 											>
-												<option value="all">All Profiles</option>
-												<option value="openscap">OpenSCAP Only</option>
-												<option value="docker-bench">Docker Bench Only</option>
+												<option value="all">{t("All Profiles")}</option>
+												<option value="openscap">{t("OpenSCAP Only")}</option>
+												<option value="docker-bench">
+													{t("Docker Bench Only")}
+												</option>
 											</select>
 										</div>
 										<div className="flex items-center gap-2">
@@ -1084,7 +1162,7 @@ const Compliance = () => {
 												htmlFor="enableRemediation"
 												className="text-sm text-white"
 											>
-												Enable Remediation
+												{t("Enable Remediation")}
 											</label>
 										</div>
 									</div>
@@ -1094,15 +1172,18 @@ const Compliance = () => {
 								<div className="space-y-3">
 									<div className="flex items-center justify-between">
 										<h3 className="text-sm font-medium text-white">
-											Select Hosts ({selectedHosts.length} of {allHosts.length})
+											{t("Select Hosts ({{selected}} of {{total}})", {
+												selected: selectedHosts.length,
+												total: allHosts.length,
+											})}
 										</h3>
 										<button
 											onClick={handleSelectAll}
 											className="text-xs text-primary-400 hover:text-primary-300"
 										>
 											{selectedHosts.length === allHosts.length
-												? "Deselect All"
-												: "Select All"}
+												? t("Deselect All")
+												: t("Select All")}
 										</button>
 									</div>
 									<div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[200px] overflow-y-auto">
@@ -1117,21 +1198,21 @@ const Compliance = () => {
 												reportingState === "awaiting"
 													? {
 															className: "bg-secondary-400",
-															label: "Awaiting first report",
+															label: t("Awaiting first report"),
 														}
 													: reportingState === "reporting"
 														? {
 																className: "bg-success-500",
-																label: "Reporting",
+																label: t("Reporting", { context: "status" }),
 															}
 														: reportingState === "overdue"
 															? {
 																	className: "bg-warning-500",
-																	label: "Overdue",
+																	label: t("Overdue"),
 																}
 															: {
 																	className: "bg-danger-500",
-																	label: "Not reporting",
+																	label: t("Not reporting"),
 																};
 											return (
 												<label
@@ -1179,7 +1260,7 @@ const Compliance = () => {
 										</p>
 										{bulkScanResult.failed?.length > 0 && (
 											<div className="mt-2 text-xs text-yellow-400">
-												<p>Failed hosts:</p>
+												<p>{t("Failed hosts:")}</p>
 												<ul className="list-disc list-inside">
 													{bulkScanResult.failed.map((f) => (
 														<li key={`failed-${f.hostName}`}>
@@ -1202,7 +1283,7 @@ const Compliance = () => {
 									}}
 									className="px-4 py-2 text-white hover:text-white transition-colors"
 								>
-									Cancel
+									{t("Cancel")}
 								</button>
 								<button
 									onClick={handleBulkScan}
@@ -1214,13 +1295,14 @@ const Compliance = () => {
 									{bulkScanMutation.isPending ? (
 										<>
 											<RefreshCw className="h-4 w-4 animate-spin" />
-											Triggering...
+											{t("Triggering...")}
 										</>
 									) : (
 										<>
 											<Play className="h-4 w-4" />
-											Scan {selectedHosts.length} Host
-											{selectedHosts.length !== 1 ? "s" : ""}
+											{t("Scan {{count}} Host", {
+												count: selectedHosts.length,
+											})}
 										</>
 									)}
 								</button>
@@ -1266,7 +1348,9 @@ const Compliance = () => {
 							<div className="flex items-center gap-2 mb-3">
 								<RefreshCw className="h-5 w-5 text-blue-400 animate-spin" />
 								<h2 className="text-lg font-semibold text-blue-300">
-									Scans in Progress ({activeScans.length})
+									{t("Scans in Progress ({{count}})", {
+										count: activeScans.length,
+									})}
 								</h2>
 							</div>
 							<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1289,17 +1373,17 @@ const Compliance = () => {
 											{scan.isPending ? (
 												<Clock
 													className="h-4 w-4 text-yellow-400 animate-pulse"
-													title="Triggering..."
+													title={t("Triggering...")}
 												/>
 											) : scan.connected ? (
 												<Wifi
 													className="h-4 w-4 text-green-400"
-													title="Connected"
+													title={t("Connected")}
 												/>
 											) : (
 												<WifiOff
 													className="h-4 w-4 text-red-400"
-													title="Disconnected"
+													title={t("Disconnected")}
 												/>
 											)}
 										</div>
@@ -1314,17 +1398,19 @@ const Compliance = () => {
 												}`}
 											>
 												{scan.isPending
-													? "Triggering..."
+													? t("Triggering...")
 													: scan.profileType === "docker-bench"
 														? "Docker Bench"
 														: scan.profileType === "openscap"
 															? "OpenSCAP"
-															: scan.profileType || "Scanning..."}
+															: scan.profileType || t("Scanning...")}
 											</span>
 											<span className="text-xs">
-												Started{" "}
-												{formatDistanceToNow(new Date(scan.startedAt), {
-													addSuffix: true,
+												{t("Started {{time}}", {
+													time: formatDistanceToNow(new Date(scan.startedAt), {
+														addSuffix: true,
+														locale: dateFnsLocale(),
+													}),
 												})}
 											</span>
 										</div>
@@ -1345,7 +1431,7 @@ const Compliance = () => {
 										<Container className="h-5 w-5 text-blue-400" />
 									)}
 									<h2 className="text-lg font-semibold text-white">
-										{getFilterDisplayName()} Statistics
+										{t("{{name}} Statistics", { name: getFilterDisplayName() })}
 									</h2>
 								</div>
 								<div className="flex-1 h-px bg-secondary-700" />
@@ -1361,16 +1447,16 @@ const Compliance = () => {
 							>
 								<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
 									<div className="text-center">
-										<p className="text-xs text-white uppercase tracking-wide mb-1">
-											Hosts
+										<p className="text-xs text-white uppercase tracking-wide mb-1 min-h-[2.5em] flex items-end justify-center">
+											{t("Hosts")}
 										</p>
 										<p className="text-3xl font-bold text-white">
 											{filteredSummary.total_hosts || 0}
 										</p>
 									</div>
 									<div className="text-center">
-										<p className="text-xs text-white uppercase tracking-wide mb-1">
-											Avg Score
+										<p className="text-xs text-white uppercase tracking-wide mb-1 min-h-[2.5em] flex items-end justify-center">
+											{t("Avg Score")}
 										</p>
 										<p
 											className={`text-3xl font-bold ${
@@ -1386,7 +1472,7 @@ const Compliance = () => {
 									</div>
 									<div className="text-center">
 										<p className="text-xs text-green-400 uppercase tracking-wide mb-1">
-											Passed
+											{t("Passed")}
 										</p>
 										<p className="text-3xl font-bold text-green-400">
 											{filteredSummary.total_passed_rules?.toLocaleString() ||
@@ -1396,7 +1482,7 @@ const Compliance = () => {
 									{profileTypeFilter === "docker-bench" ? (
 										<div className="text-center">
 											<p className="text-xs text-yellow-400 uppercase tracking-wide mb-1">
-												Warnings
+												{t("Warnings")}
 											</p>
 											<p className="text-3xl font-bold text-yellow-400">
 												{filteredSummary.total_warnings?.toLocaleString() || 0}
@@ -1405,7 +1491,7 @@ const Compliance = () => {
 									) : (
 										<div className="text-center">
 											<p className="text-xs text-red-400 uppercase tracking-wide mb-1">
-												Failed
+												{t("Failed")}
 											</p>
 											<p className="text-3xl font-bold text-red-400">
 												{filteredSummary.total_failed_rules?.toLocaleString() ||
@@ -1414,16 +1500,16 @@ const Compliance = () => {
 										</div>
 									)}
 									<div className="text-center">
-										<p className="text-xs text-white uppercase tracking-wide mb-1">
-											Total Rules
+										<p className="text-xs text-white uppercase tracking-wide mb-1 min-h-[2.5em] flex items-end justify-center">
+											{t("Total Rules")}
 										</p>
 										<p className="text-3xl font-bold text-white">
 											{filteredSummary.total_rules?.toLocaleString() || 0}
 										</p>
 									</div>
 									<div className="text-center">
-										<p className="text-xs text-white uppercase tracking-wide mb-1">
-											Pass Rate
+										<p className="text-xs text-white uppercase tracking-wide mb-1 min-h-[2.5em] flex items-end justify-center">
+											{t("Pass Rate")}
 										</p>
 										<p className="text-3xl font-bold text-white">
 											{filteredSummary.total_rules > 0
@@ -1440,7 +1526,9 @@ const Compliance = () => {
 								{profileTypeFilter === "docker-bench" &&
 									filteredSummary.total_rules > 0 && (
 										<div className="mt-4 pt-4 border-t border-secondary-700 text-center">
-											<span className="text-sm text-white">Warning Rate: </span>
+											<span className="text-sm text-white">
+												{t("Warning Rate:")}{" "}
+											</span>
 											<span className="text-sm font-bold text-yellow-400">
 												{(
 													(filteredSummary.total_warnings /
@@ -1459,7 +1547,11 @@ const Compliance = () => {
 					{!filteredSummary && (
 						<div className="card p-8 text-center">
 							<p className="text-white">
-								No {getFilterDisplayName()} scan data available
+								{profileTypeFilter === "all"
+									? t("No scan data available")
+									: t("No {{name}} scan data available", {
+											name: getFilterDisplayName(),
+										})}
 							</p>
 						</div>
 					)}
@@ -1471,7 +1563,7 @@ const Compliance = () => {
 								<div className="flex items-center gap-2">
 									<PieChartIcon className="h-5 w-5 text-green-400" />
 									<h2 className="text-lg font-semibold text-white">
-										OpenSCAP Analysis
+										{t("OpenSCAP Analysis")}
 									</h2>
 								</div>
 								<div className="flex-1 h-px bg-green-700/50" />
@@ -1483,18 +1575,23 @@ const Compliance = () => {
 									<div className="card p-4 border border-green-700/50">
 										<h3 className="text-white font-medium mb-1 flex items-center gap-2">
 											<CheckCircle className="h-4 w-4 text-green-400" />
-											Rule Results
+											{t("Rule Results")}
 										</h3>
 										<p className="text-xs text-secondary-500 dark:text-white mb-3">
-											{(
-												openscapStats.total_passed + openscapStats.total_failed
-											).toLocaleString()}{" "}
-											rules evaluated
+											{(() => {
+												const evaluated =
+													openscapStats.total_passed +
+													openscapStats.total_failed;
+												return t("{{value}} rules evaluated", {
+													count: evaluated,
+													value: evaluated.toLocaleString(),
+												});
+											})()}
 										</p>
 										<div className="h-40">
 											<Doughnut
 												data={{
-													labels: ["Passed", "Failed"],
+													labels: [t("Passed"), t("Failed")],
 													datasets: [
 														{
 															data: [
@@ -1513,13 +1610,17 @@ const Compliance = () => {
 											<div className="flex items-center gap-2">
 												<div className="w-3 h-3 rounded-full bg-green-500" />
 												<span className="text-green-400">
-													Passed: {openscapStats.total_passed?.toLocaleString()}
+													{t("Passed: {{value}}", {
+														value: openscapStats.total_passed?.toLocaleString(),
+													})}
 												</span>
 											</div>
 											<div className="flex items-center gap-2">
 												<div className="w-3 h-3 rounded-full bg-red-500" />
 												<span className="text-red-400">
-													Failed: {openscapStats.total_failed?.toLocaleString()}
+													{t("Failed: {{value}}", {
+														value: openscapStats.total_failed?.toLocaleString(),
+													})}
 												</span>
 											</div>
 										</div>
@@ -1553,7 +1654,7 @@ const Compliance = () => {
 														?.count || 0;
 												if (count === 0) return null;
 												return {
-													name: sev.charAt(0).toUpperCase() + sev.slice(1),
+													name: t(SEVERITY_LABELS[sev]),
 													count,
 													color: severityColors[sev],
 												};
@@ -1564,10 +1665,13 @@ const Compliance = () => {
 											<div className="card p-4 border border-green-700/50">
 												<h3 className="text-white font-medium mb-1 flex items-center gap-2">
 													<AlertTriangle className="h-4 w-4 text-red-400" />
-													Failures by Severity
+													{t("Failures by Severity")}
 												</h3>
 												<p className="text-xs text-secondary-500 dark:text-white mb-3">
-													{totalFailures.toLocaleString()} total failures
+													{t("{{value}} total failures", {
+														count: totalFailures,
+														value: totalFailures.toLocaleString(),
+													})}
 												</p>
 												<div className="h-40">
 													<ResponsiveContainer width="100%" height="100%">
@@ -1644,10 +1748,12 @@ const Compliance = () => {
 											<div className="card p-4 border border-green-700/50">
 												<h3 className="text-white font-medium mb-1 flex items-center gap-2">
 													<BarChart3 className="h-4 w-4 text-green-400" />
-													Score Distribution
+													{t("Score Distribution")}
 												</h3>
 												<p className="text-xs text-secondary-500 dark:text-white mb-3">
-													{filteredScans.length} scans
+													{t("{{count}} scans", {
+														count: filteredScans.length,
+													})}
 												</p>
 												<div className="h-40">
 													<ResponsiveContainer width="100%" height="100%">
@@ -1687,22 +1793,22 @@ const Compliance = () => {
 									(() => {
 										const chartData = [
 											{
-												name: "Today",
+												name: t("Today"),
 												count: scan_age_distribution.today?.openscap || 0,
 												color: "#22c55e",
 											},
 											{
-												name: "This Week",
+												name: t("This Week"),
 												count: scan_age_distribution.this_week?.openscap || 0,
 												color: "#84cc16",
 											},
 											{
-												name: "This Month",
+												name: t("This Month"),
 												count: scan_age_distribution.this_month?.openscap || 0,
 												color: "#eab308",
 											},
 											{
-												name: "Older",
+												name: t("Older"),
 												count: scan_age_distribution.older?.openscap || 0,
 												color: "#ef4444",
 											},
@@ -1718,10 +1824,10 @@ const Compliance = () => {
 											<div className="card p-4 border border-green-700/50">
 												<h3 className="text-white font-medium mb-1 flex items-center gap-2">
 													<Clock className="h-4 w-4 text-green-400" />
-													Scan Freshness
+													{t("Scan Freshness")}
 												</h3>
 												<p className="text-xs text-secondary-500 dark:text-white mb-3">
-													{totalScans} OpenSCAP scans
+													{t("{{count}} OpenSCAP scans", { count: totalScans })}
 												</p>
 												<div className="h-40">
 													<ResponsiveContainer width="100%" height="100%">
@@ -1736,7 +1842,7 @@ const Compliance = () => {
 																dataKey="name"
 																stroke="#6b7280"
 																fontSize={11}
-																width={80}
+																width={96}
 															/>
 															<Tooltip
 																content={<CustomTooltip type="scanAge" />}
@@ -1766,7 +1872,7 @@ const Compliance = () => {
 								<div className="flex items-center gap-2">
 									<PieChartIcon className="h-5 w-5 text-blue-400" />
 									<h2 className="text-lg font-semibold text-white">
-										Docker Bench Analysis
+										{t("Docker Bench Analysis")}
 									</h2>
 								</div>
 								<div className="flex-1 h-px bg-blue-700/50" />
@@ -1778,19 +1884,23 @@ const Compliance = () => {
 									<div className="card p-4 border border-blue-700/50">
 										<h3 className="text-white font-medium mb-1 flex items-center gap-2">
 											<CheckCircle className="h-4 w-4 text-blue-400" />
-											Rule Results
+											{t("Rule Results")}
 										</h3>
 										<p className="text-xs text-secondary-500 dark:text-white mb-3">
-											{(
-												dockerBenchStats.total_passed +
-												dockerBenchStats.total_warnings
-											).toLocaleString()}{" "}
-											rules evaluated
+											{(() => {
+												const evaluated =
+													dockerBenchStats.total_passed +
+													dockerBenchStats.total_warnings;
+												return t("{{value}} rules evaluated", {
+													count: evaluated,
+													value: evaluated.toLocaleString(),
+												});
+											})()}
 										</p>
 										<div className="h-40">
 											<Doughnut
 												data={{
-													labels: ["Passed", "Warnings"],
+													labels: [t("Passed"), t("Warnings")],
 													datasets: [
 														{
 															data: [
@@ -1809,15 +1919,19 @@ const Compliance = () => {
 											<div className="flex items-center gap-2">
 												<div className="w-3 h-3 rounded-full bg-green-500" />
 												<span className="text-green-400">
-													Passed:{" "}
-													{dockerBenchStats.total_passed?.toLocaleString()}
+													{t("Passed: {{value}}", {
+														value:
+															dockerBenchStats.total_passed?.toLocaleString(),
+													})}
 												</span>
 											</div>
 											<div className="flex items-center gap-2">
 												<div className="w-3 h-3 rounded-full bg-yellow-500" />
 												<span className="text-yellow-400">
-													Warnings:{" "}
-													{dockerBenchStats.total_warnings?.toLocaleString()}
+													{t("Warnings: {{value}}", {
+														value:
+															dockerBenchStats.total_warnings?.toLocaleString(),
+													})}
 												</span>
 											</div>
 										</div>
@@ -1855,10 +1969,13 @@ const Compliance = () => {
 											<div className="card p-4 border border-blue-700/50">
 												<h3 className="text-white font-medium mb-1 flex items-center gap-2">
 													<Container className="h-4 w-4 text-yellow-400" />
-													Warnings by Section
+													{t("Warnings by Section")}
 												</h3>
 												<p className="text-xs text-secondary-500 dark:text-white mb-3">
-													{totalWarnings.toLocaleString()} total warnings
+													{t("{{value}} total warnings", {
+														count: totalWarnings,
+														value: totalWarnings.toLocaleString(),
+													})}
 												</p>
 												<div className="h-40">
 													<ResponsiveContainer width="100%" height="100%">
@@ -1897,7 +2014,7 @@ const Compliance = () => {
 																					}}
 																				/>
 																				<span className="text-gray-300">
-																					Warnings:
+																					{t("Warnings:")}
 																				</span>
 																				<span className="text-white font-medium">
 																					{data.count.toLocaleString()}
@@ -1964,10 +2081,12 @@ const Compliance = () => {
 											<div className="card p-4 border border-blue-700/50">
 												<h3 className="text-white font-medium mb-1 flex items-center gap-2">
 													<BarChart3 className="h-4 w-4 text-blue-400" />
-													Score Distribution
+													{t("Score Distribution")}
 												</h3>
 												<p className="text-xs text-secondary-500 dark:text-white mb-3">
-													{filteredScans.length} scans
+													{t("{{count}} scans", {
+														count: filteredScans.length,
+													})}
 												</p>
 												<div className="h-40">
 													<ResponsiveContainer width="100%" height="100%">
@@ -2007,27 +2126,27 @@ const Compliance = () => {
 									(() => {
 										const chartData = [
 											{
-												name: "Today",
+												name: t("Today"),
 												count:
 													scan_age_distribution.today?.["docker-bench"] || 0,
 												color: "#22c55e",
 											},
 											{
-												name: "This Week",
+												name: t("This Week"),
 												count:
 													scan_age_distribution.this_week?.["docker-bench"] ||
 													0,
 												color: "#84cc16",
 											},
 											{
-												name: "This Month",
+												name: t("This Month"),
 												count:
 													scan_age_distribution.this_month?.["docker-bench"] ||
 													0,
 												color: "#eab308",
 											},
 											{
-												name: "Older",
+												name: t("Older"),
 												count:
 													scan_age_distribution.older?.["docker-bench"] || 0,
 												color: "#ef4444",
@@ -2044,10 +2163,12 @@ const Compliance = () => {
 											<div className="card p-4 border border-blue-700/50">
 												<h3 className="text-white font-medium mb-1 flex items-center gap-2">
 													<Clock className="h-4 w-4 text-blue-400" />
-													Scan Freshness
+													{t("Scan Freshness")}
 												</h3>
 												<p className="text-xs text-secondary-500 dark:text-white mb-3">
-													{totalScans} Docker Bench scans
+													{t("{{count}} Docker Bench scans", {
+														count: totalScans,
+													})}
 												</p>
 												<div className="h-40">
 													<ResponsiveContainer width="100%" height="100%">
@@ -2062,7 +2183,7 @@ const Compliance = () => {
 																dataKey="name"
 																stroke="#6b7280"
 																fontSize={11}
-																width={80}
+																width={96}
 															/>
 															<Tooltip
 																content={<CustomTooltip type="scanAge" />}

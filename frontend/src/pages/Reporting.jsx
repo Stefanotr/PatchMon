@@ -27,6 +27,7 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useSearchParams } from "react-router-dom";
 import {
 	AlertResponderWorkload,
@@ -44,6 +45,8 @@ import { useAuth } from "../contexts/AuthContext";
 import { useConfirm } from "../contexts/ConfirmContext";
 import { useToast } from "../contexts/ToastContext";
 import { searchWithoutTab, useTabParam } from "../hooks/useTabParam";
+import i18n, { tk } from "../i18n";
+import { formatAlertType } from "../utils/alertLabels";
 import {
 	adminUsersAPI,
 	alertsAPI,
@@ -56,6 +59,63 @@ import { AlertSettings } from "./settings/AlertSettings";
 
 // System-only actions that should not appear in user-facing menus
 const SYSTEM_ONLY_ACTIONS = new Set(["created", "updated"]);
+
+// Severity badge labels. Keys are API values, shown as sent (lowercase).
+const SEVERITY_BADGE_LABELS = {
+	informational: tk("informational"),
+	warning: tk("warning"),
+	error: tk("error"),
+	critical: tk("critical"),
+};
+
+// Status badge labels of the alert state (current_state.action). Keys are API
+// values; render with context "alert" (feminine forms in French).
+const STATUS_LABELS = {
+	open: tk("Open"),
+	acknowledged: tk("Acknowledged"),
+	investigating: tk("Investigating"),
+	escalated: tk("Escalated"),
+	silenced: tk("Silenced"),
+	unsilenced: tk("Unsilenced"),
+	assigned: tk("Assigned"),
+	unassigned: tk("Unassigned"),
+	done: tk("Done"),
+	resolved: tk("Resolved"),
+	created: tk("Created"),
+	updated: tk("Updated"),
+};
+
+// History entry labels. Keys are API action names, shown as sent (lowercase).
+const HISTORY_LABELS = {
+	created: tk("created"),
+	acknowledged: tk("acknowledged"),
+	assigned: tk("assigned"),
+	unassigned: tk("unassigned"),
+	investigating: tk("investigating"),
+	escalated: tk("escalated"),
+	silenced: tk("silenced"),
+	unsilenced: tk("unsilenced"),
+	done: tk("done"),
+	resolved: tk("resolved"),
+	updated: tk("updated"),
+};
+
+// Display names of the seeded alert actions, translated as buttons (context
+// "action"). A name changed in the database shows as the server sends it.
+const ACTION_DISPLAY_NAMES = new Set([
+	tk("Acknowledged"),
+	tk("Assigned"),
+	tk("Unassigned"),
+	tk("Investigating"),
+	tk("Escalated"),
+	tk("Silenced"),
+	tk("Unsilenced"),
+	tk("Mark as Done"),
+	tk("Resolved"),
+]);
+
+// Alert type label, translated by utils/alertLabels.
+const alertTypeLabel = (type) => formatAlertType(String(type));
 
 // Approximate row metrics for the actions menu, used only to decide whether it
 // would rather open upwards. The rendered height is capped either way.
@@ -78,7 +138,7 @@ const userDisplayName = (user) =>
 	`${user.first_name || ""} ${user.last_name || ""}`.trim() ||
 	user.username ||
 	user.email ||
-	"Unknown user";
+	i18n.t("Unknown user");
 
 const VALID_TABS = new Set([
 	"overview",
@@ -103,6 +163,7 @@ const readStoredPageSize = () => {
 };
 
 const Reporting = () => {
+	const { t } = useTranslation();
 	const { user: _user, hasModule } = useAuth();
 	const alertLifecycleLocked = !hasModule("alerts_advanced");
 	const queryClient = useQueryClient();
@@ -172,14 +233,24 @@ const Reporting = () => {
 	}, [filterSearch]);
 
 	const tabs = [
-		{ id: "overview", name: "Overview", icon: LayoutDashboard },
-		{ id: "alerts", name: "Alerts", icon: AlertTriangle },
-		{ id: "alert-settings", name: "Alert Lifecycle", icon: Settings },
-		{ id: "destinations", name: "Destinations", icon: Bell },
-		{ id: "rules", name: "Event Rules", icon: GitBranch },
-		{ id: "reports", name: "Scheduled Reports", icon: Calendar },
-		{ id: "log", name: "Delivery Log", icon: BookOpen },
+		{ id: "overview", name: t("Overview"), icon: LayoutDashboard },
+		{ id: "alerts", name: t("Alerts"), icon: AlertTriangle },
+		{ id: "alert-settings", name: t("Alert Lifecycle"), icon: Settings },
+		{ id: "destinations", name: t("Destinations"), icon: Bell },
+		{ id: "rules", name: t("Event Rules"), icon: GitBranch },
+		{ id: "reports", name: t("Scheduled Reports"), icon: Calendar },
+		{ id: "log", name: t("Delivery Log"), icon: BookOpen },
 	];
+
+	// Label of an action button (seeded display names only, see above)
+	const actionLabel = (action) =>
+		ACTION_DISPLAY_NAMES.has(action.display_name)
+			? t(action.display_name, { context: "action" })
+			: action.display_name;
+
+	// Label of a history action name, as in the history list
+	const historyLabel = (action) =>
+		Object.hasOwn(HISTORY_LABELS, action) ? t(HISTORY_LABELS[action]) : action;
 
 	// Fetch ALL alerts (unfiltered) for the overview widgets, which aggregate
 	// across every alert. Only runs on the overview tab so the alerts table
@@ -379,11 +450,16 @@ const Reporting = () => {
 			queryClient.invalidateQueries({ queryKey: ["alert-stats"] });
 			setSelectedAlerts(new Set());
 			toast.success(
-				`${variables.alertIds.length} alert(s) updated: ${variables.action}`,
+				t("{{count}} alert(s) updated: {{action}}", {
+					count: variables.alertIds.length,
+					action: historyLabel(variables.action),
+				}),
 			);
 		},
 		onError: (err) => {
-			toast.error(err.response?.data?.error || "Failed to perform bulk action");
+			toast.error(
+				err.response?.data?.error || t("Failed to perform bulk action"),
+			);
 		},
 	});
 
@@ -446,7 +522,9 @@ const Reporting = () => {
 					colors[severityLower] || colors.informational
 				}`}
 			>
-				{severity}
+				{Object.hasOwn(SEVERITY_BADGE_LABELS, severity)
+					? t(SEVERITY_BADGE_LABELS[severity])
+					: severity}
 			</span>
 		);
 	};
@@ -470,7 +548,7 @@ const Reporting = () => {
 		if (!currentState?.action) {
 			return (
 				<span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
-					Open
+					{t("Open", { context: "alert" })}
 				</span>
 			);
 		}
@@ -491,8 +569,9 @@ const Reporting = () => {
 		const style =
 			statusStyles[action] ||
 			"bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-		const label =
-			action.charAt(0).toUpperCase() + action.slice(1).replace("_", " ");
+		const label = Object.hasOwn(STATUS_LABELS, action)
+			? t(STATUS_LABELS[action], { context: "alert" })
+			: action.charAt(0).toUpperCase() + action.slice(1).replace("_", " ");
 
 		return (
 			<span className={`px-2 py-1 text-xs font-medium rounded ${style}`}>
@@ -524,7 +603,7 @@ const Reporting = () => {
 					"bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
 				}`}
 			>
-				{type.replace("_", " ")}
+				{alertTypeLabel(type)}
 			</span>
 		);
 	};
@@ -726,18 +805,20 @@ const Reporting = () => {
 
 		const count = selectedAlerts.size;
 		const confirmed = await confirm({
-			title: "Delete alerts",
-			message: `Are you sure you want to delete ${count} alert${count === 1 ? "" : "s"}?`,
-			confirmLabel: `Delete ${count} alert${count === 1 ? "" : "s"}`,
+			title: t("Delete alerts"),
+			message: t("Are you sure you want to delete {{count}} alert?", {
+				count,
+			}),
+			confirmLabel: t("Delete {{count}} alert", { count }),
 		});
 		if (!confirmed) return;
 
 		try {
 			await deleteAlertsMutation.mutateAsync(Array.from(selectedAlerts));
-			toast.success(`${count} alert${count === 1 ? "" : "s"} deleted`);
+			toast.success(t("{{count}} alert deleted", { count }));
 		} catch (error) {
 			console.error("Failed to delete alerts:", error);
-			toast.error(error.response?.data?.error || "Failed to delete alerts");
+			toast.error(error.response?.data?.error || t("Failed to delete alerts"));
 		}
 	};
 
@@ -748,17 +829,17 @@ const Reporting = () => {
 					<AlertTriangle className="h-5 w-5 text-danger-400" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-danger-800">
-							Error loading alerts
+							{t("Error loading alerts")}
 						</h3>
 						<p className="text-sm text-danger-700 mt-1">
-							{alertsError.message || "Failed to load alerts"}
+							{alertsError.message || t("Failed to load alerts")}
 						</p>
 						<button
 							type="button"
 							onClick={handleRefresh}
 							className="mt-2 btn-danger text-xs"
 						>
-							Try again
+							{t("Try again")}
 						</button>
 					</div>
 				</div>
@@ -771,10 +852,10 @@ const Reporting = () => {
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
-						Reporting
+						{t("Reporting")}
 					</h1>
 					<p className="text-sm text-secondary-600 dark:text-white mt-1">
-						View and manage system alerts and notifications
+						{t("View and manage system alerts and notifications")}
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
@@ -783,7 +864,7 @@ const Reporting = () => {
 						onClick={handleRefresh}
 						disabled={isRefreshing}
 						className="btn-outline flex items-center justify-center p-2"
-						title="Refresh alerts"
+						title={t("Refresh alerts")}
 					>
 						<RefreshCw
 							className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
@@ -795,35 +876,35 @@ const Reporting = () => {
 			<div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
 				{[
 					{
-						label: "Informational",
+						label: t("Informational"),
 						icon: Info,
 						color: "text-blue-600",
 						value: stats.informational || 0,
 						filter: "informational",
 					},
 					{
-						label: "Warning",
+						label: t("Warning"),
 						icon: AlertTriangle,
 						color: "text-yellow-600",
 						value: stats.warning || 0,
 						filter: "warning",
 					},
 					{
-						label: "Error",
+						label: t("Error"),
 						icon: XCircle,
 						color: "text-orange-600",
 						value: stats.error || 0,
 						filter: "error",
 					},
 					{
-						label: "Critical",
+						label: t("Critical"),
 						icon: AlertTriangle,
 						color: "text-red-600",
 						value: stats.critical || 0,
 						filter: "critical",
 					},
 					{
-						label: "Total Active",
+						label: t("Total Active"),
 						icon: CheckCircle,
 						color: "text-secondary-600",
 						value:
@@ -865,7 +946,7 @@ const Reporting = () => {
 			<div className="border-b border-secondary-200 dark:border-secondary-600 overflow-x-auto scrollbar-hide">
 				<nav
 					className="-mb-px flex space-x-4 sm:space-x-8 px-4"
-					aria-label="Tabs"
+					aria-label={t("Tabs")}
 				>
 					{tabs.map((tab) => {
 						const isAlertLifecycleLocked =
@@ -875,7 +956,7 @@ const Reporting = () => {
 								type="button"
 								key={tab.id}
 								onClick={() => setActiveTab(tab.id)}
-								className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+								className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 whitespace-nowrap ${
 									activeTab === tab.id
 										? "border-blue-500 text-blue-600 dark:text-blue-400"
 										: "border-transparent text-secondary-500 hover:text-secondary-700 hover:border-secondary-300 dark:text-white dark:hover:text-primary-400"
@@ -916,7 +997,7 @@ const Reporting = () => {
 									<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-secondary-400" />
 									<input
 										type="text"
-										placeholder="Search alerts..."
+										placeholder={t("Search alerts...")}
 										value={searchTerm}
 										onChange={(e) => setSearchTerm(e.target.value)}
 										className="w-full pl-10 pr-4 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white"
@@ -931,11 +1012,11 @@ const Reporting = () => {
 									onChange={(e) => setSeverityFilter(e.target.value)}
 									className="px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white text-sm"
 								>
-									<option value="all">All Severities</option>
-									<option value="informational">Informational</option>
-									<option value="warning">Warning</option>
-									<option value="error">Error</option>
-									<option value="critical">Critical</option>
+									<option value="all">{t("All Severities")}</option>
+									<option value="informational">{t("Informational")}</option>
+									<option value="warning">{t("Warning")}</option>
+									<option value="error">{t("Error")}</option>
+									<option value="critical">{t("Critical")}</option>
 								</select>
 
 								<select
@@ -943,10 +1024,10 @@ const Reporting = () => {
 									onChange={(e) => setTypeFilter(e.target.value)}
 									className="px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white text-sm"
 								>
-									<option value="all">All Types</option>
+									<option value="all">{t("All Types")}</option>
 									{(alertTypes || []).map((type) => (
 										<option key={type} value={type}>
-											{String(type).replace("_", " ")}
+											{alertTypeLabel(type)}
 										</option>
 									))}
 								</select>
@@ -956,14 +1037,28 @@ const Reporting = () => {
 									onChange={(e) => setStatusFilter(e.target.value)}
 									className="px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white text-sm"
 								>
-									<option value="all">All Status</option>
-									<option value="open">Open</option>
-									<option value="acknowledged">Acknowledged</option>
-									<option value="investigating">Investigating</option>
-									<option value="escalated">Escalated</option>
-									<option value="silenced">Silenced</option>
-									<option value="done">Done</option>
-									<option value="resolved">Resolved</option>
+									<option value="all">{t("All Status")}</option>
+									<option value="open">
+										{t("Open", { context: "alert" })}
+									</option>
+									<option value="acknowledged">
+										{t("Acknowledged", { context: "alert" })}
+									</option>
+									<option value="investigating">
+										{t("Investigating", { context: "alert" })}
+									</option>
+									<option value="escalated">
+										{t("Escalated", { context: "alert" })}
+									</option>
+									<option value="silenced">
+										{t("Silenced", { context: "alert" })}
+									</option>
+									<option value="done">
+										{t("Done", { context: "alert" })}
+									</option>
+									<option value="resolved">
+										{t("Resolved", { context: "alert" })}
+									</option>
 								</select>
 
 								<select
@@ -971,12 +1066,12 @@ const Reporting = () => {
 									onChange={(e) => setAssignmentFilter(e.target.value)}
 									className="px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white text-sm"
 								>
-									<option value="all">All Assignments</option>
-									<option value="assignedToMe">Assigned to me</option>
-									<option value="assigned">Assigned</option>
-									<option value="unassigned">Unassigned</option>
+									<option value="all">{t("All Assignments")}</option>
+									<option value="assignedToMe">{t("Assigned to me")}</option>
+									<option value="assigned">{t("Assigned")}</option>
+									<option value="unassigned">{t("Unassigned")}</option>
 									{assignmentUsers.length > 0 && (
-										<optgroup label="Assigned to responder">
+										<optgroup label={t("Assigned to responder")}>
 											{assignmentUsers.map((u) => (
 												<option key={u.id} value={u.id}>
 													{userDisplayName(u)}
@@ -986,7 +1081,7 @@ const Reporting = () => {
 									)}
 									{responderFilterActive && !responderInUserList && (
 										<option value={assignmentFilter}>
-											{usersData ? "Unknown user" : "Loading users"}
+											{usersData ? t("Unknown user") : t("Loading users")}
 										</option>
 									)}
 								</select>
@@ -1000,7 +1095,9 @@ const Reporting = () => {
 						{selectedAlerts.size > 0 && (
 							<div className="px-4 py-2 bg-primary-50 dark:bg-primary-900 border-b border-secondary-200 dark:border-secondary-700 flex items-center justify-between gap-2 flex-wrap">
 								<div className="text-sm text-secondary-700 dark:text-white">
-									{selectedAlerts.size} alert(s) selected
+									{t("{{count}} alert(s) selected", {
+										count: selectedAlerts.size,
+									})}
 								</div>
 								<div className="flex items-center gap-2 flex-wrap">
 									{workflowActions.map((action) => (
@@ -1011,7 +1108,7 @@ const Reporting = () => {
 											disabled={bulkActionMutation.isPending}
 											className="px-3 py-1.5 text-sm font-medium text-secondary-700 dark:text-white bg-white dark:bg-secondary-700 border border-secondary-300 dark:border-secondary-600 hover:bg-secondary-50 dark:hover:bg-secondary-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
 										>
-											{action.display_name}
+											{actionLabel(action)}
 										</button>
 									))}
 									{resolutionActions.map((action) => (
@@ -1022,7 +1119,7 @@ const Reporting = () => {
 											disabled={bulkActionMutation.isPending}
 											className="px-3 py-1.5 text-sm font-medium text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 border border-green-300 dark:border-green-700 hover:bg-green-100 dark:hover:bg-green-900/50 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
 										>
-											{action.display_name}
+											{actionLabel(action)}
 										</button>
 									))}
 									<button
@@ -1032,7 +1129,7 @@ const Reporting = () => {
 										className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-danger-600 hover:bg-danger-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
 									>
 										<Trash2 className="h-4 w-4" />
-										Delete
+										{t("Delete")}
 									</button>
 								</div>
 							</div>
@@ -1041,19 +1138,19 @@ const Reporting = () => {
 							<div className="text-center py-8">
 								<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
 								<p className="mt-2 text-sm text-secondary-500">
-									Loading alerts...
+									{t("Loading alerts...")}
 								</p>
 							</div>
 						) : alerts.length === 0 ? (
 							<div className="text-center py-8">
 								<AlertTriangle className="h-12 w-12 mx-auto text-secondary-400" />
 								<h3 className="mt-2 text-sm font-medium text-secondary-900 dark:text-white">
-									No alerts found
+									{t("No alerts found")}
 								</h3>
 								<p className="mt-1 text-sm text-secondary-500">
 									{filtersActive
-										? "Try adjusting your search filters"
-										: "No active alerts"}
+										? t("Try adjusting your search filters")
+										: t("No active alerts")}
 								</p>
 							</div>
 						) : (
@@ -1086,7 +1183,7 @@ const Reporting = () => {
 												onClick={() => handleSort("severity")}
 											>
 												<div className="flex items-center gap-2">
-													Severity
+													{t("Severity")}
 													{getSortIcon("severity")}
 												</div>
 											</th>
@@ -1096,7 +1193,7 @@ const Reporting = () => {
 												onClick={() => handleSort("type")}
 											>
 												<div className="flex items-center gap-2">
-													Type
+													{t("Type")}
 													{getSortIcon("type")}
 												</div>
 											</th>
@@ -1104,25 +1201,25 @@ const Reporting = () => {
 												scope="col"
 												className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 											>
-												Title
+												{t("Title")}
 											</th>
 											<th
 												scope="col"
-												className="hidden md:table-cell px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
+												className="hidden 2xl:table-cell px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 											>
-												Message
-											</th>
-											<th
-												scope="col"
-												className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
-											>
-												Assigned To
+												{t("Message")}
 											</th>
 											<th
 												scope="col"
 												className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 											>
-												Status
+												{t("Assigned To")}
+											</th>
+											<th
+												scope="col"
+												className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
+											>
+												{t("Status")}
 											</th>
 											<th
 												scope="col"
@@ -1130,7 +1227,7 @@ const Reporting = () => {
 												onClick={() => handleSort("created_at")}
 											>
 												<div className="flex items-center gap-2">
-													Created
+													{t("Created", { context: "alert" })}
 													{getSortIcon("created_at")}
 												</div>
 											</th>
@@ -1138,7 +1235,7 @@ const Reporting = () => {
 												scope="col"
 												className="px-4 py-2 text-right text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 											>
-												Actions
+												{t("Actions")}
 											</th>
 										</tr>
 									</thead>
@@ -1179,15 +1276,21 @@ const Reporting = () => {
 													className="px-4 py-2 cursor-pointer"
 													onClick={() => handleRowClick(alert)}
 												>
-													<div className="text-sm font-medium text-secondary-900 dark:text-white">
+													<div
+														className="text-sm font-medium text-secondary-900 dark:text-white min-w-[12rem] max-w-[20rem] line-clamp-2"
+														title={alert.title}
+													>
 														{alert.title}
 													</div>
 												</td>
 												<td
-													className="hidden md:table-cell px-4 py-2 cursor-pointer"
+													className="hidden 2xl:table-cell px-4 py-2 cursor-pointer"
 													onClick={() => handleRowClick(alert)}
 												>
-													<div className="text-sm text-secondary-500 dark:text-white max-w-md truncate">
+													<div
+														className="text-sm text-secondary-500 dark:text-white max-w-md truncate"
+														title={alert.message}
+													>
 														{alert.message}
 													</div>
 												</td>
@@ -1208,7 +1311,9 @@ const Reporting = () => {
 															unassignAlertMutation.isPending
 														}
 													>
-														<option value="">Unassigned</option>
+														<option value="">
+															{t("Unassigned", { context: "alert" })}
+														</option>
 														{usersData?.map((u) => (
 															<option key={u.id} value={u.id}>
 																{u.username || u.email}
@@ -1277,7 +1382,7 @@ const Reporting = () => {
 								<div className="flex items-center gap-4">
 									<div className="flex items-center gap-2">
 										<span className="text-sm text-secondary-700 dark:text-white">
-											Rows per page:
+											{t("Rows per page:")}
 										</span>
 										<select
 											value={pageSize}
@@ -1294,7 +1399,11 @@ const Reporting = () => {
 										</select>
 									</div>
 									<span className="text-sm text-secondary-700 dark:text-white">
-										{startIndex + 1}-{endIndex} of {totalAlerts}
+										{t("{{start}}-{{end}} of {{total}}", {
+											start: startIndex + 1,
+											end: endIndex,
+											total: totalAlerts,
+										})}
 									</span>
 								</div>
 								<div className="flex items-center gap-2">
@@ -1303,19 +1412,22 @@ const Reporting = () => {
 										onClick={() => goToPage(currentPage - 1)}
 										disabled={currentPage === 1}
 										className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed"
-										aria-label="Previous page"
+										aria-label={t("Previous page")}
 									>
 										<ChevronLeft className="h-4 w-4" />
 									</button>
 									<span className="text-sm text-secondary-700 dark:text-white">
-										Page {currentPage} of {totalPages}
+										{t("Page {{page}} of {{pages}}", {
+											page: currentPage,
+											pages: totalPages,
+										})}
 									</span>
 									<button
 										type="button"
 										onClick={() => goToPage(currentPage + 1)}
 										disabled={currentPage >= totalPages}
 										className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed"
-										aria-label="Next page"
+										aria-label={t("Next page")}
 									>
 										<ChevronRight className="h-4 w-4" />
 									</button>
@@ -1348,7 +1460,7 @@ const Reporting = () => {
 									{workflowActions.length > 0 && (
 										<>
 											<div className="px-4 py-1 text-xs font-semibold text-secondary-400 dark:text-secondary-300 uppercase tracking-wider">
-												Workflow
+												{t("Workflow")}
 											</div>
 											{workflowActions.map((action) => (
 												<button
@@ -1362,7 +1474,7 @@ const Reporting = () => {
 													className="w-full text-left px-4 py-2 text-sm text-secondary-700 dark:text-white hover:bg-secondary-100 dark:hover:bg-secondary-700"
 													disabled={performActionMutation.isPending}
 												>
-													{action.display_name}
+													{actionLabel(action)}
 												</button>
 											))}
 										</>
@@ -1374,7 +1486,7 @@ const Reporting = () => {
 									{resolutionActions.length > 0 && (
 										<>
 											<div className="px-4 py-1 text-xs font-semibold text-secondary-400 dark:text-secondary-300 uppercase tracking-wider">
-												Resolve
+												{t("Resolve")}
 											</div>
 											{resolutionActions.map((action) => (
 												<button
@@ -1388,7 +1500,7 @@ const Reporting = () => {
 													className="w-full text-left px-4 py-2 text-sm text-secondary-700 dark:text-white hover:bg-secondary-100 dark:hover:bg-secondary-700"
 													disabled={performActionMutation.isPending}
 												>
-													{action.display_name}
+													{actionLabel(action)}
 												</button>
 											))}
 										</>
@@ -1433,13 +1545,13 @@ const Reporting = () => {
 								setSelectedAlert(null);
 							}}
 							className="fixed inset-0 cursor-default"
-							aria-label="Close modal"
+							aria-label={t("Close modal")}
 						/>
 						<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-3xl w-full mx-4 relative z-10 max-h-[90vh] overflow-y-auto">
 							<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600 sticky top-0 bg-white dark:bg-secondary-800">
 								<div className="flex items-center justify-between">
 									<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-										Alert Details
+										{t("Alert Details")}
 									</h3>
 									<button
 										type="button"
@@ -1458,7 +1570,7 @@ const Reporting = () => {
 								<div className="grid grid-cols-2 gap-4">
 									<div>
 										<label className="text-xs font-medium text-secondary-500 dark:text-white">
-											Severity
+											{t("Severity")}
 										</label>
 										<div className="mt-1">
 											{getSeverityBadge(selectedAlert.severity)}
@@ -1466,7 +1578,7 @@ const Reporting = () => {
 									</div>
 									<div>
 										<label className="text-xs font-medium text-secondary-500 dark:text-white">
-											Type
+											{t("Type")}
 										</label>
 										<div className="mt-1">
 											{getTypeBadge(selectedAlert.type)}
@@ -1474,13 +1586,13 @@ const Reporting = () => {
 									</div>
 									<div>
 										<label className="text-xs font-medium text-secondary-500 dark:text-white">
-											Status
+											{t("Status")}
 										</label>
 										<div className="mt-1">{getStatusBadge(selectedAlert)}</div>
 									</div>
 									<div>
 										<label className="text-xs font-medium text-secondary-500 dark:text-white">
-											Created
+											{t("Created", { context: "alert" })}
 										</label>
 										<div className="mt-1 text-sm text-secondary-900 dark:text-white">
 											{formatDate(selectedAlert.created_at)}
@@ -1488,7 +1600,7 @@ const Reporting = () => {
 									</div>
 									<div>
 										<label className="text-xs font-medium text-secondary-500 dark:text-white">
-											Assigned To
+											{t("Assigned To")}
 										</label>
 										<select
 											value={selectedAlert.assigned_to_user_id || ""}
@@ -1502,7 +1614,9 @@ const Reporting = () => {
 												unassignAlertMutation.isPending
 											}
 										>
-											<option value="">Unassigned</option>
+											<option value="">
+												{t("Unassigned", { context: "alert" })}
+											</option>
 											{usersData?.map((u) => (
 												<option key={u.id} value={u.id}>
 													{u.username || u.email}
@@ -1515,7 +1629,7 @@ const Reporting = () => {
 								{/* Title */}
 								<div>
 									<label className="text-xs font-medium text-secondary-500 dark:text-white">
-										Title
+										{t("Title")}
 									</label>
 									<div className="mt-1 text-sm font-medium text-secondary-900 dark:text-white">
 										{selectedAlert.title}
@@ -1525,7 +1639,7 @@ const Reporting = () => {
 								{/* Message */}
 								<div>
 									<label className="text-xs font-medium text-secondary-500 dark:text-white">
-										Message
+										{t("Message")}
 									</label>
 									<div className="mt-1 text-sm text-secondary-700 dark:text-white whitespace-pre-wrap">
 										{selectedAlert.message}
@@ -1537,7 +1651,7 @@ const Reporting = () => {
 									Object.keys(selectedAlert.metadata).length > 0 && (
 										<div>
 											<label className="text-xs font-medium text-secondary-500 dark:text-white">
-												Metadata
+												{t("Metadata")}
 											</label>
 											<div className="mt-1 text-sm text-secondary-700 dark:text-white bg-secondary-50 dark:bg-secondary-900 p-3 rounded-md">
 												<pre className="whitespace-pre-wrap">
@@ -1550,7 +1664,7 @@ const Reporting = () => {
 								{/* Actions */}
 								<div>
 									<label className="text-xs font-medium text-secondary-500 dark:text-white mb-2 block">
-										Actions
+										{t("Actions")}
 									</label>
 									<div className="flex flex-wrap gap-2">
 										{workflowActions.map((action) => (
@@ -1565,7 +1679,7 @@ const Reporting = () => {
 												className="btn-outline text-xs px-3 py-1"
 												disabled={performActionMutation.isPending}
 											>
-												{action.display_name}
+												{actionLabel(action)}
 											</button>
 										))}
 										{resolutionActions.map((action) => (
@@ -1580,7 +1694,7 @@ const Reporting = () => {
 												className="btn-outline text-xs px-3 py-1 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900"
 												disabled={performActionMutation.isPending}
 											>
-												{action.display_name}
+												{actionLabel(action)}
 											</button>
 										))}
 									</div>
@@ -1589,7 +1703,7 @@ const Reporting = () => {
 								{/* History */}
 								<div>
 									<label className="text-xs font-medium text-secondary-500 dark:text-white mb-2 block">
-										History
+										{t("History")}
 									</label>
 									<div className="space-y-2 max-h-64 overflow-y-auto">
 										{alertHistory && alertHistory.length > 0 ? (
@@ -1600,13 +1714,15 @@ const Reporting = () => {
 												>
 													<div className="flex-1">
 														<div className="text-sm font-medium text-secondary-900 dark:text-white">
-															{historyItem.action}
+															{historyLabel(historyItem.action)}
 														</div>
 														<div className="text-xs text-secondary-500 dark:text-white">
-															by{" "}
-															{historyItem.users?.username ||
-																historyItem.users?.email ||
-																"System"}
+															{t("by {{name}}", {
+																name:
+																	historyItem.users?.username ||
+																	historyItem.users?.email ||
+																	t("System"),
+															})}
 														</div>
 														<div className="text-xs text-secondary-400">
 															{formatDate(historyItem.created_at)}
@@ -1616,7 +1732,7 @@ const Reporting = () => {
 											))
 										) : (
 											<div className="text-sm text-secondary-500 dark:text-white">
-												No history available
+												{t("No history available")}
 											</div>
 										)}
 									</div>
@@ -1631,7 +1747,7 @@ const Reporting = () => {
 									}}
 									className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700"
 								>
-									Close
+									{t("Close")}
 								</button>
 							</div>
 						</div>

@@ -40,6 +40,8 @@ const ALERT_TYPE_LABELS = {
 	user_tfa_disabled: tk("User Tfa Disabled"),
 	ssh_session_started: tk("Ssh Session Started"),
 	rdp_session_started: tk("Rdp Session Started"),
+	sso_fallback_login: tk("SSO Fallback Login"),
+	sso_fallback_refused: tk("SSO Fallback Refused"),
 	server_update: tk("Server Update"),
 	agent_update: tk("Agent Update"),
 };

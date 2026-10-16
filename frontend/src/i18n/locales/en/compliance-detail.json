@@ -1,0 +1,10 @@
+{
+	"{{count}} file_one": "{{count}} file",
+	"{{count}} file_other": "{{count}} files",
+	"{{count}} scan found_one": "{{count}} scan found",
+	"{{count}} scan found_other": "{{count}} scans found",
+	"{{count}} pass_one": "{{count}} pass",
+	"{{count}} pass_other": "{{count}} pass",
+	"{{count}} warn_one": "{{count}} warn",
+	"{{count}} warn_other": "{{count}} warn"
+}

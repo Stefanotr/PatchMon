@@ -11,9 +11,12 @@ import {
 	ShieldX,
 } from "lucide-react";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import i18n, { dateFnsLocale } from "../../i18n";
 import { formatDate } from "../../utils/api";
 import { complianceAPI } from "../../utils/complianceApi";
+import { SEVERITY_LABELS } from "../../utils/complianceStatus";
 
 const SEVERITY_COLORS = {
 	critical: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
@@ -30,31 +33,44 @@ const LIMIT = 25;
 const normalize_status_display = (status) => {
 	if (!status) return " -";
 	const s = String(status).toLowerCase();
-	if (["fail", "failed", "failure"].includes(s)) return "Fail";
-	if (["pass", "passed"].includes(s)) return "Pass";
-	if (["warn", "warning", "warned"].includes(s)) return "Warn";
+	if (["fail", "failed", "failure"].includes(s)) return i18n.t("Fail");
+	if (["pass", "passed"].includes(s)) return i18n.t("Pass");
+	if (["warn", "warning", "warned"].includes(s)) return i18n.t("Warn");
 	if (["skip", "skipped", "notapplicable", "not_applicable"].includes(s))
-		return "N/A";
+		return i18n.t("N/A");
 	return status;
 };
 
 const get_status_icon = (status) => {
 	const s = String(status).toLowerCase();
 	if (["fail", "failed", "failure"].includes(s))
-		return <ShieldX className="h-4 w-4 text-red-500" title="Failed" />;
+		return (
+			<ShieldX className="h-4 w-4 text-red-500" title={i18n.t("Failed")} />
+		);
 	if (["warn", "warning", "warned"].includes(s))
-		return <ShieldAlert className="h-4 w-4 text-yellow-500" title="Warning" />;
+		return (
+			<ShieldAlert
+				className="h-4 w-4 text-yellow-500"
+				title={i18n.t("Warning")}
+			/>
+		);
 	if (["pass", "passed"].includes(s))
-		return <ShieldCheck className="h-4 w-4 text-green-500" title="Passed" />;
+		return (
+			<ShieldCheck
+				className="h-4 w-4 text-green-500"
+				title={i18n.t("Passed")}
+			/>
+		);
 	return (
 		<Shield
 			className="h-4 w-4 text-secondary-400 dark:text-white"
-			title="N/A"
+			title={i18n.t("N/A")}
 		/>
 	);
 };
 
 const HostComplianceDetail = ({ hostId }) => {
+	const { t } = useTranslation();
 	const [status_filter, set_status_filter] = useState("");
 	const [severity_filter, set_severity_filter] = useState("");
 	const [page, set_page] = useState(0);
@@ -133,7 +149,7 @@ const HostComplianceDetail = ({ hostId }) => {
 						set_page(0);
 					}}
 					className={`card p-4 text-left transition-colors ${status_filter === "pass" ? "ring-2 ring-green-500" : "hover:bg-secondary-50 dark:hover:bg-secondary-700/50"}`}
-					title="Filter to passing rules"
+					title={t("Filter to passing rules")}
 				>
 					<div className="flex items-center">
 						<div className="flex-shrink-0">
@@ -141,7 +157,7 @@ const HostComplianceDetail = ({ hostId }) => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Passed rules
+								{t("Passed rules")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{passed}
@@ -156,7 +172,7 @@ const HostComplianceDetail = ({ hostId }) => {
 						set_page(0);
 					}}
 					className={`card p-4 text-left transition-colors ${status_filter === "fail" ? "ring-2 ring-red-500" : "hover:bg-secondary-50 dark:hover:bg-secondary-700/50"}`}
-					title="Filter to failing rules"
+					title={t("Filter to failing rules")}
 				>
 					<div className="flex items-center">
 						<div className="flex-shrink-0">
@@ -164,7 +180,7 @@ const HostComplianceDetail = ({ hostId }) => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Failed
+								{t("Failed")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{failed}
@@ -179,7 +195,7 @@ const HostComplianceDetail = ({ hostId }) => {
 						set_page(0);
 					}}
 					className={`card p-4 text-left transition-colors ${status_filter === "warn" ? "ring-2 ring-yellow-500" : "hover:bg-secondary-50 dark:hover:bg-secondary-700/50"}`}
-					title="Filter to warning rules"
+					title={t("Filter to warning rules")}
 				>
 					<div className="flex items-center">
 						<div className="flex-shrink-0">
@@ -187,7 +203,7 @@ const HostComplianceDetail = ({ hostId }) => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Warning
+								{t("Warning")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{warnings_count}
@@ -202,14 +218,16 @@ const HostComplianceDetail = ({ hostId }) => {
 						set_page(0);
 					}}
 					className={`card p-4 text-left transition-colors ${status_filter === "skipped" ? "ring-2 ring-secondary-500" : "hover:bg-secondary-50 dark:hover:bg-secondary-700/50"}`}
-					title="Filter to skipped/N/A rules"
+					title={t("Filter to skipped/N/A rules")}
 				>
 					<div className="flex items-center">
 						<div className="flex-shrink-0">
 							<Shield className="h-5 w-5 text-secondary-500 dark:text-white mr-2" />
 						</div>
 						<div className="w-0 flex-1">
-							<p className="text-sm text-secondary-500 dark:text-white">N/A</p>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								{t("N/A")}
+							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{na_count}
 							</p>
@@ -223,12 +241,17 @@ const HostComplianceDetail = ({ hostId }) => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Last scan
+								{t("Last scan")}
 							</p>
-							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+							{/* A relative time is longer than a number: smaller text keeps it
+							    on one or two lines in the narrow card. */}
+							<p className="text-base font-semibold leading-snug text-secondary-900 dark:text-white">
 								{completed_at
-									? formatDistanceToNow(completed_at, { addSuffix: true })
-									: "No scan yet"}
+									? formatDistanceToNow(completed_at, {
+											addSuffix: true,
+											locale: dateFnsLocale(),
+										})
+									: t("No scan yet")}
 							</p>
 							{completed_at && (
 								<p className="mt-0.5 text-xs text-secondary-500 dark:text-white font-normal">
@@ -244,11 +267,14 @@ const HostComplianceDetail = ({ hostId }) => {
 			<div className="card flex-1 flex flex-col overflow-hidden min-h-0">
 				<div className="border-b border-secondary-200 dark:border-secondary-600 px-4 py-3">
 					<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-						Rule results
+						{t("Rule results")}
 					</h2>
 					<p className="text-sm text-secondary-500 dark:text-white mt-0.5">
-						Results for this host from the latest scan
-						{profile_label ? ` (${profile_label})` : ""}
+						{profile_label
+							? t("Results for this host from the latest scan ({{profile}})", {
+									profile: profile_label,
+								})
+							: t("Results for this host from the latest scan")}
 					</p>
 				</div>
 
@@ -256,14 +282,15 @@ const HostComplianceDetail = ({ hostId }) => {
 					<div className="p-12 text-center">
 						<Shield className="h-12 w-12 text-secondary-400 dark:text-white mx-auto mb-3" />
 						<p className="text-secondary-600 dark:text-white">
-							No scan yet. Run a compliance scan from the main Compliance page
-							to see results here.
+							{t(
+								"No scan yet. Run a compliance scan from the main Compliance page to see results here.",
+							)}
 						</p>
 						<Link
 							to="/compliance"
 							className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
 						>
-							Go to Compliance
+							{t("Go to Compliance")}
 						</Link>
 					</div>
 				) : (
@@ -278,11 +305,11 @@ const HostComplianceDetail = ({ hostId }) => {
 								}}
 								className="block w-full sm:w-48 pl-3 pr-10 py-2 text-base border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
 							>
-								<option value="">All statuses</option>
-								<option value="fail">Failed</option>
-								<option value="warn">Warning</option>
-								<option value="pass">Passed</option>
-								<option value="skipped">N/A</option>
+								<option value="">{t("All statuses")}</option>
+								<option value="fail">{t("Failed")}</option>
+								<option value="warn">{t("Warning")}</option>
+								<option value="pass">{t("Passed")}</option>
+								<option value="skipped">{t("N/A")}</option>
 							</select>
 							<select
 								value={severity_filter}
@@ -292,12 +319,12 @@ const HostComplianceDetail = ({ hostId }) => {
 								}}
 								className="block w-full sm:w-48 pl-3 pr-10 py-2 text-base border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
 							>
-								<option value="">All severities</option>
-								<option value="critical">Critical</option>
-								<option value="high">High</option>
-								<option value="medium">Medium</option>
-								<option value="low">Low</option>
-								<option value="unknown">Unknown</option>
+								<option value="">{t("All severities")}</option>
+								<option value="critical">{t("Critical")}</option>
+								<option value="high">{t("High")}</option>
+								<option value="medium">{t("Medium")}</option>
+								<option value="low">{t("Low")}</option>
+								<option value="unknown">{t("Unknown")}</option>
 							</select>
 							{results_loading && (
 								<RefreshCw className="h-4 w-4 text-secondary-400 dark:text-white animate-spin" />
@@ -313,20 +340,21 @@ const HostComplianceDetail = ({ hostId }) => {
 								{total === 0 && !status_filter && !severity_filter ? (
 									<>
 										<p className="font-medium text-secondary-700 dark:text-white">
-											This scan has no rule results.
+											{t("This scan has no rule results.")}
 										</p>
 										<p className="mt-2 text-sm">
-											Either the agent did not send a{" "}
-											<code className="rounded bg-secondary-200 dark:bg-secondary-600 px-1">
-												results
-											</code>{" "}
-											array in its scan payload, or the backend could not store
-											them. Check agent and server logs when the scan was
-											submitted for the cause.
+											<Trans
+												i18nKey="Either the agent did not send a <code>results</code> array in its scan payload, or the backend could not store them. Check agent and server logs when the scan was submitted for the cause."
+												components={{
+													code: (
+														<code className="rounded bg-secondary-200 dark:bg-secondary-600 px-1" />
+													),
+												}}
+											/>
 										</p>
 									</>
 								) : (
-									"No rules match the current filters."
+									t("No rules match the current filters.")
 								)}
 							</div>
 						) : (
@@ -336,16 +364,16 @@ const HostComplianceDetail = ({ hostId }) => {
 										<thead className="bg-secondary-50 dark:bg-secondary-700">
 											<tr>
 												<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider w-28">
-													Status
+													{t("Status")}
 												</th>
 												<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-													Rule
+													{t("Rule")}
 												</th>
 												<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider w-24">
-													Severity
+													{t("Severity")}
 												</th>
 												<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider w-28">
-													Profile
+													{t("Profile")}
 												</th>
 											</tr>
 										</thead>
@@ -391,10 +419,10 @@ const HostComplianceDetail = ({ hostId }) => {
 																	SEVERITY_COLORS.unknown
 																}`}
 															>
-																{(severity || "unknown")
-																	.charAt(0)
-																	.toUpperCase() +
-																	(severity || "unknown").slice(1)}
+																{SEVERITY_LABELS[severity]
+																	? t(SEVERITY_LABELS[severity])
+																	: severity.charAt(0).toUpperCase() +
+																		severity.slice(1)}
 															</span>
 														</td>
 														<td className="px-4 py-2 whitespace-nowrap text-sm text-secondary-500 dark:text-white">
@@ -412,8 +440,11 @@ const HostComplianceDetail = ({ hostId }) => {
 								{total_pages > 1 && (
 									<div className="flex items-center justify-between px-4 py-3 border-t border-secondary-200 dark:border-secondary-600">
 										<p className="text-sm text-secondary-500 dark:text-white">
-											Showing {page * LIMIT + 1}–
-											{Math.min((page + 1) * LIMIT, total)} of {total} rules
+											{t("Showing {{from}}–{{to}} of {{total}} rules", {
+												from: page * LIMIT + 1,
+												to: Math.min((page + 1) * LIMIT, total),
+												total,
+											})}
 										</p>
 										<div className="flex items-center gap-2">
 											<button
@@ -425,7 +456,10 @@ const HostComplianceDetail = ({ hostId }) => {
 												<ChevronLeft className="h-4 w-4" />
 											</button>
 											<span className="text-sm text-secondary-500 dark:text-white">
-												Page {page + 1} of {total_pages}
+												{t("Page {{page}} of {{pages}}", {
+													page: page + 1,
+													pages: total_pages,
+												})}
 											</span>
 											<button
 												type="button"

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
 	Legend,
 	Line,
@@ -12,6 +13,7 @@ import { formatDateOnly } from "../../utils/api";
 import { complianceAPI } from "../../utils/complianceApi";
 
 const ComplianceTrend = ({ hostId, days = 30 }) => {
+	const { t } = useTranslation();
 	const { data: trends } = useQuery({
 		queryKey: ["compliance-trends", hostId, days],
 		queryFn: () =>
@@ -70,7 +72,9 @@ const ComplianceTrend = ({ hostId, days = 30 }) => {
 									className="w-2.5 h-2.5 rounded-full"
 									style={{ backgroundColor: entry.color }}
 								/>
-								<span className="text-gray-300">{entry.name}:</span>
+								<span className="text-gray-300">
+									{t("{{name}}:", { name: entry.name })}
+								</span>
 								<span className="text-white font-medium">
 									{entry.value.toFixed(1)}%
 								</span>
@@ -83,7 +87,7 @@ const ComplianceTrend = ({ hostId, days = 30 }) => {
 
 	return (
 		<div className="bg-secondary-800 rounded-lg border border-secondary-700 p-4">
-			<h3 className="text-white font-medium mb-4">Compliance Trend</h3>
+			<h3 className="text-white font-medium mb-4">{t("Compliance Trend")}</h3>
 			<div className="h-48">
 				<ResponsiveContainer width="100%" height="100%">
 					<LineChart data={chartData}>

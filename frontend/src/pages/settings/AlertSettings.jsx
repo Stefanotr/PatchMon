@@ -11,8 +11,10 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useConfirm } from "../../contexts/ConfirmContext";
 import { useToast } from "../../contexts/ToastContext";
+import i18n, { tk } from "../../i18n";
 import { formatAlertType } from "../../utils/alertLabels";
 import {
 	adminUsersAPI,
@@ -29,24 +31,24 @@ const TD =
 const SEVERITIES = [
 	{
 		value: "informational",
-		label: "Info",
+		label: tk("Info"),
 		color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
 	},
 	{
 		value: "warning",
-		label: "Warning",
+		label: tk("Warning"),
 		color:
 			"bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
 	},
 	{
 		value: "error",
-		label: "Error",
+		label: tk("Error"),
 		color:
 			"bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
 	},
 	{
 		value: "critical",
-		label: "Critical",
+		label: tk("Critical"),
 		color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
 	},
 ];
@@ -133,8 +135,23 @@ const CATEGORY_ORDER = [
 	"system",
 ];
 
+// Labels of the categories the server knows, the Title Case form of their
+// identifier. Any other category shows that form, untranslated.
+const CATEGORY_LABELS = {
+	host: tk("Host"),
+	patching: tk("Patching"),
+	compliance: tk("Compliance"),
+	docker: tk("Docker"),
+	security: tk("Security"),
+	remote_access: tk("Remote Access"),
+	system: tk("System"),
+	general: tk("General"),
+};
+
 const formatCategory = (cat) =>
-	cat.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+	CATEGORY_LABELS[cat]
+		? i18n.t(CATEGORY_LABELS[cat])
+		: cat.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
 
 const groupConfigsByCategory = (configs) => {
 	const groups = {};
@@ -177,6 +194,7 @@ const Toggle = ({ checked, onChange, disabled }) => (
 const AlertSettings = () => {
 	const queryClient = useQueryClient();
 	const toast = useToast();
+	const { t } = useTranslation();
 	const [localConfigs, setLocalConfigs] = useState(null);
 	const [collapsedCategories, setCollapsedCategories] = useState({});
 
@@ -227,10 +245,10 @@ const AlertSettings = () => {
 		mutationFn: (data) => settingsAPI.update(data),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["settings"] });
-			toast.success("Settings saved");
+			toast.success(t("Settings saved"));
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to save"),
+			toast.error(err.response?.data?.error || t("Failed to save")),
 	});
 
 	const bulkUpdateMutation = useMutation({
@@ -245,10 +263,10 @@ const AlertSettings = () => {
 			// re-hydrate unconditionally, including any value the server
 			// normalised on the way in.
 			setLocalConfigs(null);
-			toast.success("Settings applied");
+			toast.success(t("Settings applied"));
 		},
 		onError: (err) =>
-			toast.error(err.response?.data?.error || "Failed to apply"),
+			toast.error(err.response?.data?.error || t("Failed to apply")),
 	});
 
 	const isDirty =
@@ -323,7 +341,7 @@ const AlertSettings = () => {
 		if (alertConfigs && Array.isArray(alertConfigs)) {
 			setLocalConfigs(alertConfigs.map((c) => ({ ...c })));
 		}
-		toast.info("Changes discarded");
+		toast.info(t("Changes discarded"));
 	};
 
 	const alertsEnabled = settings?.alerts_enabled !== false;
@@ -352,14 +370,14 @@ const AlertSettings = () => {
 					<AlertTriangle className="h-5 w-5 text-danger-500 mt-0.5" />
 					<div>
 						<p className="text-sm font-medium text-danger-800 dark:text-danger-200">
-							Failed to load alert settings
+							{t("Failed to load alert settings")}
 						</p>
 						<button
 							type="button"
 							onClick={() => refetch()}
 							className="mt-2 btn-outline text-xs"
 						>
-							Try again
+							{t("Try again")}
 						</button>
 					</div>
 				</div>
@@ -373,7 +391,7 @@ const AlertSettings = () => {
 			{isDirty && alertsEnabled && (
 				<div className="card p-3 flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
 					<p className="text-sm text-amber-800 dark:text-amber-200">
-						You have unsaved changes
+						{t("You have unsaved changes")}
 					</p>
 					<div className="flex items-center gap-2">
 						<button
@@ -382,7 +400,7 @@ const AlertSettings = () => {
 							disabled={bulkUpdateMutation.isPending}
 							className="btn-outline flex items-center gap-1 text-sm"
 						>
-							<X className="h-3.5 w-3.5" /> Discard
+							<X className="h-3.5 w-3.5" /> {t("Discard")}
 						</button>
 						<button
 							type="button"
@@ -395,7 +413,7 @@ const AlertSettings = () => {
 							) : (
 								<Save className="h-3.5 w-3.5" />
 							)}
-							Apply
+							{t("Apply")}
 						</button>
 					</div>
 				</div>
@@ -406,14 +424,14 @@ const AlertSettings = () => {
 				<div className="card p-4 md:p-6 space-y-4">
 					<div className="flex items-center justify-between">
 						<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-							Alert type configurations
+							{t("Alert type configurations")}
 						</h2>
 						<button
 							type="button"
 							onClick={() => refetch()}
 							className="btn-outline flex items-center gap-1 text-sm"
 						>
-							<RefreshCw className="h-3.5 w-3.5" /> Refresh
+							<RefreshCw className="h-3.5 w-3.5" /> {t("Refresh")}
 						</button>
 					</div>
 
@@ -421,16 +439,16 @@ const AlertSettings = () => {
 						<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
 							<thead className="bg-secondary-50 dark:bg-secondary-700">
 								<tr>
-									<th className={`${TH} min-w-[160px]`}>Alert type</th>
-									<th className={`${TH} w-16`}>Active</th>
-									<th className={`${TH} w-28`}>Severity</th>
-									<th className={`${TH} w-28`}>Alert delay</th>
-									<th className={`${TH} w-28`}>Frequency</th>
-									<th className={`${TH} w-28`}>Reminder</th>
-									<th className={`${TH} w-24`}>Threshold</th>
-									<th className={`${TH} min-w-[180px]`}>Auto-assign</th>
-									<th className={`${TH} w-28`}>Retention</th>
-									<th className={`${TH} w-28`}>Auto-resolve</th>
+									<th className={`${TH} min-w-[160px]`}>{t("Alert type")}</th>
+									<th className={`${TH} w-16`}>{t("Active")}</th>
+									<th className={`${TH} w-28`}>{t("Severity")}</th>
+									<th className={`${TH} w-28`}>{t("Alert delay")}</th>
+									<th className={`${TH} w-28`}>{t("Frequency")}</th>
+									<th className={`${TH} w-28`}>{t("Reminder")}</th>
+									<th className={`${TH} w-24`}>{t("Threshold")}</th>
+									<th className={`${TH} min-w-[180px]`}>{t("Auto-assign")}</th>
+									<th className={`${TH} w-28`}>{t("Retention")}</th>
+									<th className={`${TH} w-28`}>{t("Auto-resolve")}</th>
 								</tr>
 							</thead>
 							<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
@@ -467,7 +485,9 @@ const AlertSettings = () => {
 															key={c.alert_type}
 															className="hover:bg-secondary-50 dark:hover:bg-secondary-700"
 														>
-															<td className={TD}>
+															{/* Wraps: French alert names are long, and the
+															    other columns need the width. */}
+															<td className="px-4 py-2 text-sm text-secondary-900 dark:text-white min-w-[12rem]">
 																<span className="font-medium">
 																	{formatAlertType(c.alert_type)}
 																</span>
@@ -503,7 +523,7 @@ const AlertSettings = () => {
 																	>
 																		{SEVERITIES.map((s) => (
 																			<option key={s.value} value={s.value}>
-																				{s.label}
+																				{t(s.label)}
 																			</option>
 																		))}
 																	</select>
@@ -535,7 +555,7 @@ const AlertSettings = () => {
 																			disabled={dis}
 																		/>
 																		<span className="text-xs text-secondary-400">
-																			sec
+																			{t("sec")}
 																		</span>
 																	</div>
 																)}
@@ -604,7 +624,7 @@ const AlertSettings = () => {
 																			</span>
 																		</div>
 																		<p className="mt-0.5 text-xs text-secondary-400">
-																			0 = no reminders
+																			{t("0 = no reminders")}
 																		</p>
 																	</div>
 																)}
@@ -656,7 +676,7 @@ const AlertSettings = () => {
 																			c.alert_type,
 																		) && (
 																			<span className="text-xs text-secondary-400">
-																				sec
+																				{t("sec")}
 																			</span>
 																		)}
 																	</div>
@@ -697,10 +717,10 @@ const AlertSettings = () => {
 																			>
 																				<option value="">
 																					{usersLoading
-																						? "Loading..."
+																						? t("Loading...")
 																						: !usersData?.length
-																							? "No users found"
-																							: "Select user..."}
+																							? t("No users found")
+																							: t("Select user...")}
 																				</option>
 																				{usersData?.map((u) => (
 																					<option key={u.id} value={u.id}>
@@ -738,7 +758,7 @@ const AlertSettings = () => {
 																			disabled={dis}
 																		/>
 																		<span className="text-xs text-secondary-400">
-																			days
+																			{t("days")}
 																		</span>
 																	</div>
 																)}
@@ -769,7 +789,7 @@ const AlertSettings = () => {
 																			disabled={dis}
 																		/>
 																		<span className="text-xs text-secondary-400">
-																			days
+																			{t("days")}
 																		</span>
 																	</div>
 																)}
@@ -791,8 +811,9 @@ const AlertSettings = () => {
 				<div className="card p-8 text-center">
 					<AlertTriangle className="h-12 w-12 mx-auto text-secondary-300 dark:text-secondary-600 mb-3" />
 					<p className="text-sm text-secondary-500">
-						Enable the alerts system using the master switch below to configure
-						alert types.
+						{t(
+							"Enable the alerts system using the master switch below to configure alert types.",
+						)}
 					</p>
 				</div>
 			)}
@@ -803,11 +824,12 @@ const AlertSettings = () => {
 				{alertsEnabled && (
 					<div className="card p-4 md:p-6 space-y-4">
 						<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-							Alert cleanup
+							{t("Alert cleanup")}
 						</h2>
 						<p className="text-sm text-secondary-600 dark:text-white">
-							Preview and delete alerts based on retention policies configured
-							above.
+							{t(
+								"Preview and delete alerts based on retention policies configured above.",
+							)}
 						</p>
 						<CleanupSection />
 					</div>
@@ -820,10 +842,10 @@ const AlertSettings = () => {
 					<div className="flex items-center justify-between">
 						<div>
 							<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-								Alerts system
+								{t("Alerts system")}
 							</h2>
 							<p className="text-sm text-secondary-600 dark:text-white mt-1">
-								Master switch for the entire alerts system
+								{t("Master switch for the entire alerts system")}
 							</p>
 						</div>
 						<div className="flex items-center gap-3">
@@ -837,7 +859,7 @@ const AlertSettings = () => {
 								disabled={updateSettingsMutation.isPending}
 							/>
 							<span className="text-sm font-medium text-secondary-700 dark:text-white">
-								{alertsEnabled ? "Enabled" : "Disabled"}
+								{alertsEnabled ? t("Enabled") : t("Disabled")}
 							</span>
 						</div>
 					</div>
@@ -845,7 +867,9 @@ const AlertSettings = () => {
 						<div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md flex items-start gap-2">
 							<AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
 							<p className="text-sm text-yellow-700 dark:text-yellow-300">
-								All alert services are disabled. No alerts will be created.
+								{t(
+									"All alert services are disabled. No alerts will be created.",
+								)}
 							</p>
 						</div>
 					)}
@@ -858,6 +882,7 @@ const AlertSettings = () => {
 const CleanupSection = () => {
 	const toast = useToast();
 	const confirm = useConfirm();
+	const { t } = useTranslation();
 	const [previewLoading, setPreviewLoading] = useState(false);
 	const [previewData, setPreviewData] = useState(null);
 
@@ -868,7 +893,7 @@ const CleanupSection = () => {
 			const data = response.data.data;
 			setPreviewData(Array.isArray(data) ? data : (data?.alerts ?? []));
 		} catch {
-			toast.error("Failed to preview cleanup");
+			toast.error(t("Failed to preview cleanup"));
 		} finally {
 			setPreviewLoading(false);
 		}
@@ -876,9 +901,9 @@ const CleanupSection = () => {
 
 	const handleCleanup = async () => {
 		const confirmed = await confirm({
-			title: "Delete alerts",
-			message: `Delete ${previewData.length} alert(s)?`,
-			confirmLabel: "Delete alerts",
+			title: t("Delete alerts"),
+			message: t("Delete {{count}} alert(s)?", { count: previewData.length }),
+			confirmLabel: t("Delete alerts"),
 		});
 		if (!confirmed) return;
 
@@ -886,11 +911,16 @@ const CleanupSection = () => {
 			const response = await alertsAPI.triggerCleanup();
 			const count =
 				response.data.data.deleted ?? response.data.data.deleted_count ?? 0;
-			toast.success(`Cleanup completed: ${count} alert(s) deleted`);
+			toast.success(
+				t("Cleanup completed: {{count}} alert(s) deleted", { count }),
+			);
 			setPreviewData(null);
 		} catch (err) {
+			// The error detail comes from the server: placeholder only.
 			toast.error(
-				`Cleanup failed: ${err.response?.data?.error || err.message}`,
+				t("Cleanup failed: {{error}}", {
+					error: err.response?.data?.error || err.message,
+				}),
 			);
 		}
 	};
@@ -909,7 +939,7 @@ const CleanupSection = () => {
 					) : (
 						<RefreshCw className="h-3.5 w-3.5" />
 					)}
-					Preview cleanup
+					{t("Preview cleanup")}
 				</button>
 				{previewData && previewData.length > 0 && (
 					<button
@@ -917,20 +947,23 @@ const CleanupSection = () => {
 						onClick={handleCleanup}
 						className="btn-danger flex items-center gap-2 text-sm"
 					>
-						<Trash2 className="h-3.5 w-3.5" /> Delete {previewData.length}{" "}
-						alerts
+						<Trash2 className="h-3.5 w-3.5" />{" "}
+						{t("Delete {{count}} alerts", { count: previewData.length })}
 					</button>
 				)}
 			</div>
 			{previewData && previewData.length === 0 && (
 				<p className="text-sm text-secondary-500 flex items-center gap-1">
-					<Check className="h-4 w-4 text-green-500" /> No alerts need cleanup.
+					<Check className="h-4 w-4 text-green-500" />{" "}
+					{t("No alerts need cleanup.")}
 				</p>
 			)}
 			{previewData && previewData.length > 0 && (
 				<div className="rounded-md p-3 bg-secondary-50 dark:bg-secondary-700/50">
 					<p className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
-						{previewData.length} alert(s) would be deleted:
+						{t("{{count}} alert(s) would be deleted:", {
+							count: previewData.length,
+						})}
 					</p>
 					<ul className="list-disc list-inside text-sm text-secondary-600 dark:text-white space-y-0.5">
 						{previewData.slice(0, 10).map((a) => (
@@ -940,7 +973,11 @@ const CleanupSection = () => {
 							</li>
 						))}
 						{previewData.length > 10 && (
-							<li>... and {previewData.length - 10} more</li>
+							<li>
+								{t("... and {{count}} more", {
+									count: previewData.length - 10,
+								})}
+							</li>
 						)}
 					</ul>
 				</div>
