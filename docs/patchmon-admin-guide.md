@@ -1657,7 +1657,7 @@ Leap 16.0 containers made from the stock Proxmox template hit this on their firs
 
 #### Windows patching {#windows-patching}
 
-Windows hosts are patched from the same places as Linux hosts: Host Detail, the Packages page and the Patch wizard. The agent on the host must be **2.1.4 or later**. For an older agent the server refuses the run with "Update the PatchMon agent on this host to v2.1.4 or later to patch Windows"; update the agent first (**Host Info → Update Now**).
+Windows hosts are patched from the same places as Linux hosts: Host Detail, the Packages page and the Patch wizard. The agent on the host must be **2.1.4 or later**. For an older agent the server refuses the run with "Update the PatchMon agent on this host to v2.1.4 or later to patch Windows"; update the agent first (**Host Info → Update Now**). In this fork, agents `2.1.4-fork.N` are refused too, with "Update the PatchMon agent on this host to patch Windows: fork agents 2.1.4-fork.N use the fork's former Windows patching": they patch with the fork's former runner, which ignores the **Windows Updates** / **Applications (winget)** scope of a Patch all and refuses a Patch selected. Fork agents from `2.1.5-fork.1` on use PatchMon's.
 
 ##### What can be patched
 

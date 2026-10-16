@@ -64,6 +64,9 @@ func windowsAgentVersionError(agentVersion *string) *runRequestError {
 	if agentVersion != nil {
 		v = *agentVersion
 	}
+	if forkAgentHasFormerWindowsRunner(v) {
+		return badRunRequest(forkFormerWindowsRunnerMessage)
+	}
 	if v != "" && util.CompareVersions(v, minWindowsPatchAgentFloor) >= 0 {
 		return nil
 	}
