@@ -248,30 +248,30 @@ export const partitionPatchableHosts = (hosts) => {
 };
 
 export const RUN_ITEM_STATUS = {
-	pending: { label: "Pending", className: "badge-secondary" },
-	would_install: { label: "Would install", className: "badge-primary" },
-	not_applicable: { label: "Not applicable", className: "badge-secondary" },
-	installed: { label: "Installed", className: "badge-success" },
+	pending: { label: tk("Pending"), className: "badge-secondary" },
+	would_install: { label: tk("Would install"), className: "badge-primary" },
+	not_applicable: { label: tk("Not applicable"), className: "badge-secondary" },
+	installed: { label: tk("Installed"), className: "badge-success" },
 	already_installed: {
-		label: "Already installed",
+		label: tk("Already installed"),
 		className: "badge-secondary",
 	},
 	installed_pending_reboot: {
-		label: "Installed, restart required",
+		label: tk("Installed, restart required"),
 		className: "badge-warning",
 	},
 	installed_with_errors: {
-		label: "Installed with errors",
+		label: tk("Installed with errors"),
 		className: "badge-warning",
 	},
-	failed: { label: "Failed", className: "badge-danger" },
-	aborted: { label: "Aborted", className: "badge-danger" },
-	skipped: { label: "Skipped", className: "badge-secondary" },
+	failed: { label: tk("Failed"), className: "badge-danger" },
+	aborted: { label: tk("Aborted"), className: "badge-danger" },
+	skipped: { label: tk("Skipped"), className: "badge-secondary" },
 };
 
 export const runItemStatus = (status) =>
 	RUN_ITEM_STATUS[status] || {
-		label: status ? String(status) : "Unknown",
+		label: status ? String(status) : tk("Unknown"),
 		className: "badge-secondary",
 	};
 

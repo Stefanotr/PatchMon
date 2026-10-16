@@ -1,4 +1,6 @@
 import { RotateCcw } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { tk } from "../../i18n";
 import {
 	runItemResultParts,
 	runItemSourceLabel,
@@ -9,20 +11,27 @@ const itemKey = (item) => `${item.kind}:${item.identifier || item.id}`;
 
 const itemName = (item) => item.title || item.identifier;
 
+const COLUMNS = [tk("Name"), tk("Status"), tk("Result"), tk("Restart")];
+
 const StatusBadge = ({ status }) => {
+	const { t } = useTranslation();
 	const s = runItemStatus(status);
-	return <span className={`${s.className} w-fit`}>{s.label}</span>;
+	return <span className={`${s.className} w-fit`}>{t(s.label)}</span>;
 };
 
-const RestartCell = ({ required }) =>
-	required ? (
+const RestartCell = ({ required }) => {
+	const { t } = useTranslation();
+	return required ? (
 		<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
 			<RotateCcw className="h-3 w-3" />
-			Required
+			{t("Required")}
 		</span>
 	) : (
-		<span className="text-sm text-secondary-500 dark:text-white">No</span>
+		<span className="text-sm text-secondary-500 dark:text-white">
+			{t("No")}
+		</span>
 	);
+};
 
 const ResultText = ({ item }) => {
 	const { message, code } = runItemResultParts(item);
@@ -49,20 +58,25 @@ const ResultText = ({ item }) => {
 	);
 };
 
+// The source and the KB each stay on one line; a narrow column breaks
+// between them, never inside "Windows Update".
 const SourceLine = ({ item }) => (
 	<span className="text-xs text-secondary-500 dark:text-secondary-400">
-		{runItemSourceLabel(item.kind)}
-		{item.kb && <span className="font-mono"> · {item.kb}</span>}
+		<span className="whitespace-nowrap">{runItemSourceLabel(item.kind)}</span>
+		{item.kb && (
+			<span className="font-mono whitespace-nowrap"> · {item.kb}</span>
+		)}
 	</span>
 );
 
 const RunItemsCard = ({ items }) => {
+	const { t } = useTranslation();
 	if (!Array.isArray(items) || items.length === 0) return null;
 
 	return (
 		<div className="card p-4 sm:p-6 flex flex-col min-w-0">
 			<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4 flex-shrink-0">
-				Updates ({items.length})
+				{t("Updates ({{count}})", { count: items.length })}
 			</h3>
 
 			<div className="md:hidden space-y-3">
@@ -82,7 +96,7 @@ const RunItemsCard = ({ items }) => {
 						<ResultText item={item} />
 						<div className="flex items-center gap-2 pt-2 border-t border-secondary-200 dark:border-secondary-600">
 							<span className="text-xs text-secondary-500 dark:text-white">
-								Restart:
+								{t("Restart:")}
 							</span>
 							<RestartCell required={item.reboot_required} />
 						</div>
@@ -94,18 +108,18 @@ const RunItemsCard = ({ items }) => {
 				<table className="w-full min-w-[40rem] table-fixed divide-y divide-secondary-200 dark:divide-secondary-600">
 					<colgroup>
 						<col />
-						<col className="w-44" />
-						<col className="w-52" />
-						<col className="w-24" />
+						<col className="w-36" />
+						<col className="w-48" />
+						<col className="w-32" />
 					</colgroup>
 					<thead className="bg-secondary-50 dark:bg-secondary-700">
 						<tr>
-							{["Name", "Status", "Result", "Restart"].map((label) => (
+							{COLUMNS.map((label) => (
 								<th
 									key={label}
 									className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 								>
-									{label}
+									{t(label)}
 								</th>
 							))}
 						</tr>
@@ -118,10 +132,7 @@ const RunItemsCard = ({ items }) => {
 								className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors align-top"
 							>
 								<td className="px-3 sm:px-4 py-2">
-									<p
-										className="text-sm text-secondary-900 dark:text-white truncate"
-										title={itemName(item)}
-									>
+									<p className="text-sm text-secondary-900 dark:text-white [overflow-wrap:anywhere]">
 										{itemName(item)}
 									</p>
 									<SourceLine item={item} />

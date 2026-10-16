@@ -2,17 +2,21 @@ import { Package } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { tk } from "../i18n";
 import { packageDetailPath } from "../utils/packageLinks";
 
 const COLLAPSE_THRESHOLD = 2;
 
-const NOT_IN_INVENTORY = "Not in the package inventory";
+const NOT_IN_INVENTORY = tk("Not in the package inventory");
 
-function PackageName({ name, packageIds, className = "", onClick }) {
+// title: the full text to show on hover where the name may be cut short.
+function PackageName({ name, packageIds, className = "", onClick, title }) {
+	const { t } = useTranslation();
 	const to = packageDetailPath(name, packageIds);
 	if (!to) {
+		const why = t(NOT_IN_INVENTORY);
 		return (
-			<span className={className} title={NOT_IN_INVENTORY}>
+			<span className={className} title={title ? `${title}\n${why}` : why}>
 				{name}
 			</span>
 		);
@@ -22,6 +26,7 @@ function PackageName({ name, packageIds, className = "", onClick }) {
 			to={to}
 			className={`text-primary-600 dark:text-primary-400 hover:underline ${className}`}
 			onClick={onClick}
+			title={title}
 		>
 			{name}
 		</Link>
@@ -119,18 +124,19 @@ export function CompactPackageSummary({ run, className = "" }) {
 
 	return (
 		<span
-			className={`inline-flex items-center gap-1.5 text-sm text-secondary-900 dark:text-white min-w-0 ${className}`}
+			className={`flex items-center gap-1.5 text-sm text-secondary-900 dark:text-white min-w-0 max-w-full ${className}`}
 			title={fullList}
 		>
 			<Package className="h-4 w-4 text-secondary-400 dark:text-secondary-500 shrink-0" />
 			<PackageName
 				name={first}
 				packageIds={run.package_ids}
-				className="truncate"
+				className="truncate min-w-0"
 				onClick={(e) => e.stopPropagation()}
+				title={fullList}
 			/>
 			{restCount > 0 && (
-				<span className="text-xs font-medium text-secondary-500 dark:text-secondary-400 shrink-0">
+				<span className="text-xs font-medium text-secondary-500 dark:text-secondary-400 shrink-0 whitespace-nowrap">
 					{t("+{{count}} more", { count: restCount })}
 				</span>
 			)}
