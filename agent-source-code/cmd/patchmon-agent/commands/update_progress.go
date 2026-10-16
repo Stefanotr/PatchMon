@@ -6,8 +6,6 @@ import (
 	"io"
 	"strings"
 	"sync"
-
-	"patchmon-agent/internal/packages"
 )
 
 // How an agent update goes, told to the server over the WebSocket so the
@@ -166,9 +164,9 @@ func (u *updateReporter) quietLocked() bool {
 }
 
 func (u *updateReporter) messageLocked(stage, message string) updateProgressMessage {
-	// OneLine names an empty text "(unnamed)": a stage has no message.
+	// oneLine names an empty text "(unnamed)": a stage has no message.
 	if message != "" {
-		message = packages.OneLine(message)
+		message = oneLine(message)
 	}
 	if len(message) > updateMessageMax {
 		message = strings.ToValidUTF8(message[:updateMessageMax], "")

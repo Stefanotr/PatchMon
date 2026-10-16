@@ -15,12 +15,33 @@ import (
 	"github.com/PatchMon/PatchMon/server-source-code/internal/safeconv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 const freeBSDBasePackageName = "freebsd-base"
 
 var freeBSDPkgSummaryLinePattern = regexp.MustCompile(`^\s+(\S+):\s+`)
 var freeBSDPkgActionLinePattern = regexp.MustCompile(`^\[\d+/\d+\]\s+(?:Installing|Upgrading|Reinstalling)\s+(\S+)`)
+
+// apk v3 pads the counter ("( 1/14)") and tags packages from tagged repositories ("busybox@edge").
+// Purging counts: the agent lets apk remove orphans, and a reviewer should see them.
+var apkActionLinePattern = regexp.MustCompile(`^\(\s*\d+/\d+\)\s+(?:Installing|Upgrading|Reinstalling|Downgrading|Replacing|Purging)\s+([^\s@]+)`)
+
+// The agent prints the plan zypper returned as XML under a "[patchmon] zypper plans" line.
+var zypperPlanLinePattern = regexp.MustCompile(`^  (?:upgrade|install|reinstall|remove) (\S+) `)
+var zypperCommitLinePattern = regexp.MustCompile(`^\(\s*\d+/\d+\) (?:Installing|Removing): (\S+)`)
+
+// rpmNameFromNVRA turns libsolv-tools-base-0.7.31-150500.6.5.1.aarch64 into libsolv-tools-base.
+func rpmNameFromNVRA(nvra string) string {
+	for range 2 {
+		i := strings.LastIndex(nvra, "-")
+		if i <= 0 {
+			return ""
+		}
+		nvra = nvra[:i]
+	}
+	return nvra
+}
 
 // isFreeBSD reports whether the host OS type represents FreeBSD. The synthetic
 // "freebsd-base" package must only be emitted for FreeBSD hosts; otherwise
@@ -30,10 +51,19 @@ func isFreeBSD(osType string) bool {
 	return strings.EqualFold(strings.TrimSpace(osType), "freebsd")
 }
 
+func isUCS(osType string) bool {
+	return strings.Contains(strings.ToLower(osType), "univention")
+}
+
+// PacmanSelectedPatchUnsupported must match the agent's message for the same refusal.
+const PacmanSelectedPatchUnsupported = "Arch Linux does not support partial upgrades, so PatchMon cannot patch selected packages on this host. Use Patch all."
+
+// RefusesSelectedPatch reports a selected-package run on a pacman host, which would be a partial upgrade.
+func RefusesSelectedPatch(packageManager *string, patchType string) bool {
+	return patchType == "patch_package" && packageManager != nil && *packageManager == "pacman"
+}
+
 func parsePackagesAffectedFromDryRunOutput(osType, output string) []string {
-	if IsWindowsOSType(osType) {
-		return parseWindowsPatchStatusLines(output, windowsStatusPlan)
-	}
 	var pkgs []string
 	seen := make(map[string]bool)
 	addPkg := func(name string) {
@@ -50,8 +80,23 @@ func parsePackagesAffectedFromDryRunOutput(osType, output string) []string {
 	}
 
 	inFreeBSDPkgSection := false
+	inZypperPlan := false
 	for _, line := range strings.Split(output, "\n") {
 		trimmed := strings.TrimSpace(line)
+
+		switch {
+		case strings.HasPrefix(trimmed, "[patchmon] zypper plans"):
+			inZypperPlan = true
+			continue
+		case strings.HasPrefix(trimmed, "$ "), strings.HasPrefix(trimmed, "[patchmon] "):
+			inZypperPlan = false
+		}
+		if inZypperPlan {
+			if matches := zypperPlanLinePattern.FindStringSubmatch(line); len(matches) == 2 {
+				addPkg(matches[1])
+			}
+			continue
+		}
 
 		// apt-get simulate: "Inst pkgname ..."
 		if strings.HasPrefix(trimmed, "Inst ") {
@@ -59,6 +104,12 @@ func parsePackagesAffectedFromDryRunOutput(osType, output string) []string {
 			if len(fields) >= 2 {
 				addPkg(fields[1])
 			}
+			continue
+		}
+
+		// apk (--simulate and real): "(1/3) Upgrading pkgname (oldver -> newver)"
+		if matches := apkActionLinePattern.FindStringSubmatch(trimmed); len(matches) == 2 {
+			addPkg(matches[1])
 			continue
 		}
 
@@ -95,11 +146,7 @@ func parsePackagesAffectedFromDryRunOutput(osType, output string) []string {
 //   - dnf/yum: "Upgrading  : pkgname.arch" / "Installing : pkgname.arch" or transaction summary sections
 //   - FreeBSD pkg: transaction summary lines and "[1/3] Upgrading pkgname ..." execution lines
 //   - freebsd-update: base-system updates are recorded as the synthetic "freebsd-base" package (FreeBSD hosts only)
-//   - Windows: "[ok] <name>" status lines (see windows_patch_output.go)
 func parsePackagesAffectedFromRealOutput(osType, output string) []string {
-	if IsWindowsOSType(osType) {
-		return parseWindowsPatchStatusLines(output, windowsStatusOK)
-	}
 	seen := make(map[string]bool)
 	var pkgs []string
 	addPkg := func(name string) {
@@ -118,8 +165,34 @@ func parsePackagesAffectedFromRealOutput(osType, output string) []string {
 	}
 
 	inFreeBSDPkgSection := false
+	ucs := isUCS(osType)
+	inUCSUpgrade := false
+	inUCSPkgList := false
+	// A real apk run also echoes its --simulate plans, which use the same step lines.
+	apkApplying := true
 	for _, line := range strings.Split(output, "\n") {
 		trimmed := strings.TrimSpace(line)
+		// univention-upgrade lists the packages it installs on one comma-separated line
+		// and hides apt's own output. Names are kept whole: libperl5.36 is not libperl5.
+		if inUCSPkgList {
+			inUCSPkgList = false
+			for _, name := range strings.Split(trimmed, ",") {
+				name = strings.TrimSpace(strings.SplitN(name, ":", 2)[0])
+				if name != "" && !seen[name] {
+					seen[name] = true
+					pkgs = append(pkgs, name)
+				}
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "$ ") {
+			inUCSUpgrade = ucs && strings.HasPrefix(trimmed, "$ univention-upgrade")
+			apkApplying = strings.HasPrefix(trimmed, "$ apk upgrade") && !strings.Contains(trimmed, "--simulate")
+		}
+		if inUCSUpgrade && (trimmed == "The following packages will be upgraded:" || trimmed == "The following packages will be installed:") {
+			inUCSPkgList = true
+			continue
+		}
 		// apt-get simulate: "Inst pkgname ..."
 		if strings.HasPrefix(trimmed, "Inst ") {
 			fields := strings.Fields(trimmed)
@@ -141,6 +214,21 @@ func parsePackagesAffectedFromRealOutput(osType, output string) []string {
 			fields := strings.Fields(trimmed)
 			if len(fields) >= 3 {
 				addPkg(fields[2])
+			}
+			continue
+		}
+		if matches := zypperCommitLinePattern.FindStringSubmatch(trimmed); len(matches) == 2 {
+			if name := rpmNameFromNVRA(matches[1]); name != "" && !seen[name] {
+				seen[name] = true
+				pkgs = append(pkgs, name)
+			}
+			continue
+		}
+		// Added as-is: apk names such as lua5.4 contain dots that addPkg would cut.
+		if matches := apkActionLinePattern.FindStringSubmatch(trimmed); len(matches) == 2 {
+			if apkApplying && !seen[matches[1]] {
+				seen[matches[1]] = true
+				pkgs = append(pkgs, matches[1])
 			}
 			continue
 		}
@@ -241,10 +329,32 @@ type CreateRunOpts struct {
 	ValidationRunID  *string
 	ApprovedByUserID *string
 	// InitialStatus overrides the default status derivation. When empty the
-	// status is "pending_validation" for dry runs, "queued" otherwise. Set to
-	// "pending_approval" with dryRun=false to represent a "submit for
-	// approval" run that hasn't been executed and isn't a dry-run either.
-	InitialStatus string
+	// status is "pending_validation" for dry runs, "scheduled" when scheduledAt
+	// is set, "queued" otherwise. Set to "pending_approval" with dryRun=false
+	// to represent a "submit for approval" run that hasn't been executed and
+	// isn't a dry-run either.
+	InitialStatus         string
+	Items                 []NewPatchRunItem
+	WindowsIncludeUpdates *bool
+	WindowsIncludeApps    *bool
+}
+
+// ErrHostHasActivePatchRun is returned when a host already has a queued,
+// validating or running patch run; patch_runs_one_active_per_host enforces it.
+var ErrHostHasActivePatchRun = errors.New("host already has an active patch run")
+
+// ErrValidationNotApprovable is returned when the validation run was approved
+// by a concurrent request or is no longer awaiting approval.
+var ErrValidationNotApprovable = errors.New("validation run is no longer awaiting approval")
+
+const activePatchRunIndex = "patch_runs_one_active_per_host"
+
+func mapActiveRunConflict(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == activePatchRunIndex {
+		return ErrHostHasActivePatchRun
+	}
+	return err
 }
 
 // CreateRun creates a new patch run. If id is empty, a new UUID is generated.
@@ -253,7 +363,81 @@ type CreateRunOpts struct {
 // scheduledAt is when the patch will run (optional; nil for immediate runs).
 // policyID, policyName, policySnapshot capture the effective policy at trigger time (all optional).
 // opts.InitialStatus, if non-empty, overrides the dry-run-derived status.
+// Returns ErrHostHasActivePatchRun when the host already has an active run.
 func (s *PatchRunsStore) CreateRun(ctx context.Context, id, hostID, jobID, patchType string, packageName *string, packageNames []string, triggeredByUserID *string, dryRun bool, scheduledAt *time.Time, policyID, policyName *string, policySnapshot []byte, opts *CreateRunOpts) (string, error) {
+	params, err := newCreatePatchRunParams(id, hostID, jobID, patchType, packageName, packageNames, triggeredByUserID, dryRun, scheduledAt, policyID, policyName, policySnapshot, opts)
+	if err != nil {
+		return "", err
+	}
+	d := s.db.DB(ctx)
+	if opts == nil || len(opts.Items) == 0 {
+		if err := d.Queries.CreatePatchRun(ctx, params); err != nil {
+			return params.ID, mapActiveRunConflict(err)
+		}
+		return params.ID, nil
+	}
+	tx, err := d.Begin(ctx)
+	if err != nil {
+		return params.ID, err
+	}
+	defer func() {
+		_ = tx.Rollback(context.WithoutCancel(ctx))
+	}()
+	q := d.Queries.WithTx(tx)
+	if err := q.CreatePatchRun(ctx, params); err != nil {
+		return params.ID, mapActiveRunConflict(err)
+	}
+	if err := insertPatchRunItems(ctx, q, params.ID, hostID, opts.Items); err != nil {
+		return params.ID, err
+	}
+	return params.ID, tx.Commit(ctx)
+}
+
+// ApproveAndCreateRun marks the validation run approved and creates the linked
+// execution run in one transaction, so a refused run never consumes the approval.
+// Returns ErrValidationNotApprovable or ErrHostHasActivePatchRun on conflict.
+// opts may carry Items and the Windows scope flags; its ValidationRunID and ApprovedByUserID are ignored.
+func (s *PatchRunsStore) ApproveAndCreateRun(ctx context.Context, validationRunID string, approvedByUserID *string, id, hostID, jobID, patchType string, packageName *string, packageNames []string, triggeredByUserID *string, scheduledAt *time.Time, policyID, policyName *string, policySnapshot []byte, opts *CreateRunOpts) error {
+	runOpts := CreateRunOpts{}
+	if opts != nil {
+		runOpts = *opts
+	}
+	runOpts.ValidationRunID = &validationRunID
+	runOpts.ApprovedByUserID = approvedByUserID
+	runOpts.InitialStatus = ""
+	params, err := newCreatePatchRunParams(id, hostID, jobID, patchType, packageName, packageNames, triggeredByUserID, false, scheduledAt, policyID, policyName, policySnapshot, &runOpts)
+	if err != nil {
+		return err
+	}
+	d := s.db.DB(ctx)
+	tx, err := d.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(context.WithoutCancel(ctx))
+	}()
+	q := d.Queries.WithTx(tx)
+	n, err := q.MarkValidationApproved(ctx, db.MarkValidationApprovedParams{
+		ID:               validationRunID,
+		ApprovedByUserID: approvedByUserID,
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrValidationNotApprovable
+	}
+	if err := q.CreatePatchRun(ctx, params); err != nil {
+		return mapActiveRunConflict(err)
+	}
+	if err := insertPatchRunItems(ctx, q, params.ID, hostID, runOpts.Items); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func newCreatePatchRunParams(id, hostID, jobID, patchType string, packageName *string, packageNames []string, triggeredByUserID *string, dryRun bool, scheduledAt *time.Time, policyID, policyName *string, policySnapshot []byte, opts *CreateRunOpts) (db.CreatePatchRunParams, error) {
 	if id == "" {
 		id = uuid.New().String()
 	}
@@ -262,43 +446,47 @@ func (s *PatchRunsStore) CreateRun(ctx context.Context, id, hostID, jobID, patch
 		var err error
 		pkgNames, err = json.Marshal(packageNames)
 		if err != nil {
-			return "", err
+			return db.CreatePatchRunParams{}, err
 		}
 	}
 	status := "queued"
 	if dryRun {
 		status = "pending_validation"
+	} else if scheduledAt != nil {
+		status = "scheduled"
 	}
 	if opts != nil && opts.InitialStatus != "" {
 		status = opts.InitialStatus
 	}
-	sched := pgtime.FromPtr(scheduledAt)
 	var validationRunID *string
 	var approvedByUserID *string
+	var includeUpdates, includeApps *bool
 	if opts != nil {
 		validationRunID = opts.ValidationRunID
 		approvedByUserID = opts.ApprovedByUserID
+		includeUpdates = opts.WindowsIncludeUpdates
+		includeApps = opts.WindowsIncludeApps
 	}
-	d := s.db.DB(ctx)
-	err := d.Queries.CreatePatchRun(ctx, db.CreatePatchRunParams{
-		ID:                id,
-		HostID:            hostID,
-		JobID:             jobID,
-		PatchType:         patchType,
-		PackageName:       packageName,
-		PackageNames:      pkgNames,
-		Status:            status,
-		ShellOutput:       "",
-		TriggeredByUserID: triggeredByUserID,
-		DryRun:            dryRun,
-		ScheduledAt:       sched,
-		PolicyID:          policyID,
-		PolicyName:        policyName,
-		PolicySnapshot:    policySnapshot,
-		ValidationRunID:   validationRunID,
-		ApprovedByUserID:  approvedByUserID,
-	})
-	return id, err
+	return db.CreatePatchRunParams{
+		ID:                    id,
+		HostID:                hostID,
+		JobID:                 jobID,
+		PatchType:             patchType,
+		PackageName:           packageName,
+		PackageNames:          pkgNames,
+		Status:                status,
+		ShellOutput:           "",
+		TriggeredByUserID:     triggeredByUserID,
+		DryRun:                dryRun,
+		ScheduledAt:           pgtime.FromPtr(scheduledAt),
+		PolicyID:              policyID,
+		PolicyName:            policyName,
+		PolicySnapshot:        policySnapshot,
+		ValidationRunID:       validationRunID,
+		ApprovedByUserID:      approvedByUserID,
+		WindowsIncludeUpdates: includeUpdates,
+		WindowsIncludeApps:    includeApps,
+	}, nil
 }
 
 // GetByID returns a patch run by ID with host info.
@@ -327,19 +515,25 @@ func (s *PatchRunsStore) GetByID(ctx context.Context, id string) (*db.GetPatchRu
 //   - Terminal stages (completed, failed, cancelled, dry_run_completed) REPLACE
 //     shell_output with the authoritative full output from the agent. This
 //     avoids duplication of progress chunks already appended during the run.
-func (s *PatchRunsStore) UpdateOutput(ctx context.Context, id, osType, stage, output, errorMessage string) error {
+//
+// The bool is true when this report moved a real run into completed, failed or cancelled.
+func (s *PatchRunsStore) UpdateOutput(ctx context.Context, id, osType, stage, output, errorMessage string) (bool, error) {
+	if IsWindowsOSType(osType) {
+		return s.updateWindowsOutput(ctx, id, stage, output, errorMessage)
+	}
 	d := s.db.DB(ctx)
 	switch stage {
 	case "started":
-		return d.Queries.UpdatePatchRunStarted(ctx, id)
+		return false, mapActiveRunConflict(d.Queries.UpdatePatchRunStarted(ctx, id))
 	case "progress":
 		if output == "" {
-			return nil
+			return false, nil
 		}
-		return d.Queries.UpdatePatchRunProgress(ctx, db.UpdatePatchRunProgressParams{ID: id, ShellOutput: output})
+		return false, d.Queries.UpdatePatchRunProgress(ctx, db.UpdatePatchRunProgressParams{ID: id, ShellOutput: output})
 	case "completed":
-		if err := d.Queries.UpdatePatchRunCompleted(ctx, db.UpdatePatchRunCompletedParams{ID: id, ShellOutput: output}); err != nil {
-			return err
+		rows, err := d.Queries.UpdatePatchRunCompleted(ctx, db.UpdatePatchRunCompletedParams{ID: id, ShellOutput: output})
+		if err != nil {
+			return false, err
 		}
 		// Parse packages_affected from real run output for visibility.
 		// Uses a multi-format parser covering apt "Unpacking"/"Setting up" lines
@@ -348,31 +542,21 @@ func (s *PatchRunsStore) UpdateOutput(ctx context.Context, id, osType, stage, ou
 			b, _ := json.Marshal(pkgs)
 			_ = d.Queries.UpdatePatchRunPackagesAffected(ctx, db.UpdatePatchRunPackagesAffectedParams{ID: id, PackagesAffected: b})
 		}
-		return nil
+		return rows > 0, nil
 	case "dry_run_completed":
 		pkgs := parsePackagesAffectedFromDryRunOutput(osType, output)
 		var b []byte
 		if len(pkgs) > 0 {
 			b, _ = json.Marshal(pkgs)
 		}
-		return d.Queries.UpdatePatchRunValidated(ctx, db.UpdatePatchRunValidatedParams{ID: id, ShellOutput: output, PackagesAffected: b})
+		return false, d.Queries.UpdatePatchRunValidated(ctx, db.UpdatePatchRunValidatedParams{ID: id, ShellOutput: output, PackagesAffected: b})
 	case "failed":
-		if err := d.Queries.UpdatePatchRunFailed(ctx, db.UpdatePatchRunFailedParams{
+		rows, err := d.Queries.UpdatePatchRunFailed(ctx, db.UpdatePatchRunFailedParams{
 			ID:           id,
 			ShellOutput:  output,
 			ErrorMessage: &errorMessage,
-		}); err != nil {
-			return err
-		}
-		// A Windows run installs item by item, so a run that failed on one
-		// item has usually installed others. Record those, as for a stop.
-		if IsWindowsOSType(osType) {
-			if pkgs := parsePackagesAffectedFromRealOutput(osType, output); len(pkgs) > 0 {
-				b, _ := json.Marshal(pkgs)
-				_ = d.Queries.UpdatePatchRunPackagesAffected(ctx, db.UpdatePatchRunPackagesAffectedParams{ID: id, PackagesAffected: b})
-			}
-		}
-		return nil
+		})
+		return rows > 0, err
 	case "cancelled":
 		errPtr := &errorMessage
 		if errorMessage == "" {
@@ -384,7 +568,7 @@ func (s *PatchRunsStore) UpdateOutput(ctx context.Context, id, osType, stage, ou
 			ErrorMessage: errPtr,
 		})
 		if err != nil {
-			return err
+			return false, err
 		}
 		if rows == 0 {
 			// The status guard blocked the transition. On the COMMON path this
@@ -405,12 +589,12 @@ func (s *PatchRunsStore) UpdateOutput(ctx context.Context, id, osType, stage, ou
 				ErrorMessage: errPtr,
 			})
 			if outErr != nil {
-				return outErr
+				return false, outErr
 			}
 			if outRows == 0 {
 				// Genuinely a different terminal state (completed / failed /
 				// timed_out). Leave it alone.
-				return nil
+				return false, nil
 			}
 		}
 		// Record packages that were actually applied before the stop so the
@@ -419,16 +603,108 @@ func (s *PatchRunsStore) UpdateOutput(ctx context.Context, id, osType, stage, ou
 			b, _ := json.Marshal(pkgs)
 			_ = d.Queries.UpdatePatchRunPackagesAffected(ctx, db.UpdatePatchRunPackagesAffectedParams{ID: id, PackagesAffected: b})
 		}
-		return nil
+		return true, nil
 	default:
-		return nil
+		return false, nil
 	}
 }
 
-// UpdateStatus updates patch run status (e.g. for re-queuing when agent offline).
-func (s *PatchRunsStore) UpdateStatus(ctx context.Context, id, status string) error {
+// updateWindowsOutput applies the same stage transitions as UpdateOutput, but takes
+// packages_affected from the run's items instead of parsing package manager output.
+func (s *PatchRunsStore) updateWindowsOutput(ctx context.Context, id, stage, output, errorMessage string) (bool, error) {
 	d := s.db.DB(ctx)
-	return d.Queries.UpdatePatchRunStatus(ctx, db.UpdatePatchRunStatusParams{ID: id, Status: status})
+	affected := func() ([]byte, error) {
+		items, err := d.Queries.ListPatchRunItems(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		pkgs := windowsPackagesAffected(stage, items)
+		if len(pkgs) == 0 {
+			return nil, nil
+		}
+		return json.Marshal(pkgs)
+	}
+	var rows int64
+	var err error
+	switch stage {
+	case "started":
+		return false, mapActiveRunConflict(d.Queries.UpdatePatchRunStarted(ctx, id))
+	case "progress":
+		if output == "" {
+			return false, nil
+		}
+		return false, d.Queries.UpdatePatchRunProgress(ctx, db.UpdatePatchRunProgressParams{ID: id, ShellOutput: output})
+	case "dry_run_completed":
+		b, err := affected()
+		if err != nil {
+			return false, err
+		}
+		return false, d.Queries.UpdatePatchRunValidated(ctx, db.UpdatePatchRunValidatedParams{ID: id, ShellOutput: output, PackagesAffected: b, ErrorMessage: nonEmpty(errorMessage)})
+	case "completed":
+		rows, err = d.Queries.UpdatePatchRunCompleted(ctx, db.UpdatePatchRunCompletedParams{ID: id, ShellOutput: output, ErrorMessage: nonEmpty(errorMessage)})
+	case "failed":
+		rows, err = d.Queries.UpdatePatchRunFailed(ctx, db.UpdatePatchRunFailedParams{ID: id, ShellOutput: output, ErrorMessage: &errorMessage})
+	case "cancelled":
+		errPtr := &errorMessage
+		if errorMessage == "" {
+			errPtr = nil
+		}
+		rows, err = d.Queries.UpdatePatchRunCancelled(ctx, db.UpdatePatchRunCancelledParams{ID: id, ShellOutput: output, ErrorMessage: errPtr})
+		if err == nil && rows == 0 {
+			rows, err = d.Queries.UpdatePatchRunCancelledOutput(ctx, db.UpdatePatchRunCancelledOutputParams{ID: id, ShellOutput: output, ErrorMessage: errPtr})
+		}
+	default:
+		return false, nil
+	}
+	if err != nil || rows == 0 {
+		return false, err
+	}
+	b, err := affected()
+	if err != nil {
+		return true, err
+	}
+	if b != nil {
+		if err := d.Queries.UpdatePatchRunPackagesAffected(ctx, db.UpdatePatchRunPackagesAffectedParams{ID: id, PackagesAffected: b}); err != nil {
+			return true, err
+		}
+	}
+	return true, nil
+}
+
+// ActivateScheduledRun moves a scheduled run to queued when its window arrives;
+// false means no longer scheduled, ErrHostHasActivePatchRun means the host is busy.
+func (s *PatchRunsStore) ActivateScheduledRun(ctx context.Context, id string) (bool, error) {
+	d := s.db.DB(ctx)
+	n, err := d.Queries.ActivateScheduledPatchRun(ctx, id)
+	if err != nil {
+		return false, mapActiveRunConflict(err)
+	}
+	return n > 0, nil
+}
+
+// SkipScheduledRun terminates a scheduled run without dispatching it.
+func (s *PatchRunsStore) SkipScheduledRun(ctx context.Context, id, reason string) error {
+	d := s.db.DB(ctx)
+	_, err := d.Queries.SkipScheduledPatchRun(ctx, db.SkipScheduledPatchRunParams{ID: id, ErrorMessage: &reason})
+	return err
+}
+
+// Requeue resets a run awaiting an offline agent; false means it left the
+// awaiting-dispatch states and its task must be dropped.
+func (s *PatchRunsStore) Requeue(ctx context.Context, id, status string) (bool, error) {
+	d := s.db.DB(ctx)
+	n, err := d.Queries.RequeuePatchRun(ctx, db.RequeuePatchRunParams{ID: id, Status: status})
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// MarkDispatched moves a run to running only if it is still awaiting dispatch.
+func (s *PatchRunsStore) MarkDispatched(ctx context.Context, id string) error {
+	d := s.db.DB(ctx)
+	_, err := d.Queries.MarkPatchRunDispatched(ctx, id)
+	return err
 }
 
 // Cancel transitions a patch run to the cancelled terminal state on a
@@ -460,25 +736,6 @@ func (s *PatchRunsStore) MarkRunsAgentDisconnected(ctx context.Context, hostID, 
 		ErrorMessage: errPtr,
 		HostID:       hostID,
 	})
-}
-
-// MarkValidationApproved marks a validation run as approved (terminal state).
-// The actual patch run is created separately via CreateRun with ValidationRunID set.
-//
-// Returns false when no row moved, which means another approval got there
-// first (or the run left an approvable status). Callers must treat that as a
-// conflict and stop: the status guard in the SQL is the only thing serialising
-// concurrent approvals.
-func (s *PatchRunsStore) MarkValidationApproved(ctx context.Context, id string, approvedByUserID *string) (bool, error) {
-	d := s.db.DB(ctx)
-	n, err := d.Queries.MarkValidationApproved(ctx, db.MarkValidationApprovedParams{
-		ID:               id,
-		ApprovedByUserID: approvedByUserID,
-	})
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
 }
 
 // SetPolicySnapshot stores the effective policy snapshot on a run (called at trigger/approve time).
@@ -590,25 +847,28 @@ func convertStartedAtRows(r []db.ListPatchRunsOrderByStartedAtRow) []db.ListPatc
 	out := make([]db.ListPatchRunsRow, len(r))
 	for i := range r {
 		out[i] = db.ListPatchRunsRow{
-			ID:                  r[i].ID,
-			HostID:              r[i].HostID,
-			JobID:               r[i].JobID,
-			PatchType:           r[i].PatchType,
-			PackageName:         r[i].PackageName,
-			PackageNames:        r[i].PackageNames,
-			Status:              r[i].Status,
-			ShellOutput:         r[i].ShellOutput,
-			ErrorMessage:        r[i].ErrorMessage,
-			StartedAt:           r[i].StartedAt,
-			CompletedAt:         r[i].CompletedAt,
-			ScheduledAt:         r[i].ScheduledAt,
-			TriggeredByUserID:   r[i].TriggeredByUserID,
-			CreatedAt:           r[i].CreatedAt,
-			UpdatedAt:           r[i].UpdatedAt,
-			HostFriendlyName:    r[i].HostFriendlyName,
-			HostHostname:        r[i].HostHostname,
-			TriggeredByUsername: r[i].TriggeredByUsername,
-			ValidationRunID:     r[i].ValidationRunID,
+			ID:                    r[i].ID,
+			HostID:                r[i].HostID,
+			JobID:                 r[i].JobID,
+			PatchType:             r[i].PatchType,
+			PackageName:           r[i].PackageName,
+			PackageNames:          r[i].PackageNames,
+			Status:                r[i].Status,
+			ShellOutput:           r[i].ShellOutput,
+			ErrorMessage:          r[i].ErrorMessage,
+			StartedAt:             r[i].StartedAt,
+			CompletedAt:           r[i].CompletedAt,
+			ScheduledAt:           r[i].ScheduledAt,
+			TriggeredByUserID:     r[i].TriggeredByUserID,
+			CreatedAt:             r[i].CreatedAt,
+			UpdatedAt:             r[i].UpdatedAt,
+			HostFriendlyName:      r[i].HostFriendlyName,
+			HostHostname:          r[i].HostHostname,
+			HostOsType:            r[i].HostOsType,
+			TriggeredByUsername:   r[i].TriggeredByUsername,
+			ValidationRunID:       r[i].ValidationRunID,
+			WindowsIncludeUpdates: r[i].WindowsIncludeUpdates,
+			WindowsIncludeApps:    r[i].WindowsIncludeApps,
 		}
 	}
 	return out
@@ -618,25 +878,28 @@ func convertStartedAtAscRows(r []db.ListPatchRunsOrderByStartedAtAscRow) []db.Li
 	out := make([]db.ListPatchRunsRow, len(r))
 	for i := range r {
 		out[i] = db.ListPatchRunsRow{
-			ID:                  r[i].ID,
-			HostID:              r[i].HostID,
-			JobID:               r[i].JobID,
-			PatchType:           r[i].PatchType,
-			PackageName:         r[i].PackageName,
-			PackageNames:        r[i].PackageNames,
-			Status:              r[i].Status,
-			ShellOutput:         r[i].ShellOutput,
-			ErrorMessage:        r[i].ErrorMessage,
-			StartedAt:           r[i].StartedAt,
-			CompletedAt:         r[i].CompletedAt,
-			ScheduledAt:         r[i].ScheduledAt,
-			TriggeredByUserID:   r[i].TriggeredByUserID,
-			CreatedAt:           r[i].CreatedAt,
-			UpdatedAt:           r[i].UpdatedAt,
-			HostFriendlyName:    r[i].HostFriendlyName,
-			HostHostname:        r[i].HostHostname,
-			TriggeredByUsername: r[i].TriggeredByUsername,
-			ValidationRunID:     r[i].ValidationRunID,
+			ID:                    r[i].ID,
+			HostID:                r[i].HostID,
+			JobID:                 r[i].JobID,
+			PatchType:             r[i].PatchType,
+			PackageName:           r[i].PackageName,
+			PackageNames:          r[i].PackageNames,
+			Status:                r[i].Status,
+			ShellOutput:           r[i].ShellOutput,
+			ErrorMessage:          r[i].ErrorMessage,
+			StartedAt:             r[i].StartedAt,
+			CompletedAt:           r[i].CompletedAt,
+			ScheduledAt:           r[i].ScheduledAt,
+			TriggeredByUserID:     r[i].TriggeredByUserID,
+			CreatedAt:             r[i].CreatedAt,
+			UpdatedAt:             r[i].UpdatedAt,
+			HostFriendlyName:      r[i].HostFriendlyName,
+			HostHostname:          r[i].HostHostname,
+			HostOsType:            r[i].HostOsType,
+			TriggeredByUsername:   r[i].TriggeredByUsername,
+			ValidationRunID:       r[i].ValidationRunID,
+			WindowsIncludeUpdates: r[i].WindowsIncludeUpdates,
+			WindowsIncludeApps:    r[i].WindowsIncludeApps,
 		}
 	}
 	return out
@@ -646,25 +909,28 @@ func convertCompletedAtRows(r []db.ListPatchRunsOrderByCompletedAtRow) []db.List
 	out := make([]db.ListPatchRunsRow, len(r))
 	for i := range r {
 		out[i] = db.ListPatchRunsRow{
-			ID:                  r[i].ID,
-			HostID:              r[i].HostID,
-			JobID:               r[i].JobID,
-			PatchType:           r[i].PatchType,
-			PackageName:         r[i].PackageName,
-			PackageNames:        r[i].PackageNames,
-			Status:              r[i].Status,
-			ShellOutput:         r[i].ShellOutput,
-			ErrorMessage:        r[i].ErrorMessage,
-			StartedAt:           r[i].StartedAt,
-			CompletedAt:         r[i].CompletedAt,
-			ScheduledAt:         r[i].ScheduledAt,
-			TriggeredByUserID:   r[i].TriggeredByUserID,
-			CreatedAt:           r[i].CreatedAt,
-			UpdatedAt:           r[i].UpdatedAt,
-			HostFriendlyName:    r[i].HostFriendlyName,
-			HostHostname:        r[i].HostHostname,
-			TriggeredByUsername: r[i].TriggeredByUsername,
-			ValidationRunID:     r[i].ValidationRunID,
+			ID:                    r[i].ID,
+			HostID:                r[i].HostID,
+			JobID:                 r[i].JobID,
+			PatchType:             r[i].PatchType,
+			PackageName:           r[i].PackageName,
+			PackageNames:          r[i].PackageNames,
+			Status:                r[i].Status,
+			ShellOutput:           r[i].ShellOutput,
+			ErrorMessage:          r[i].ErrorMessage,
+			StartedAt:             r[i].StartedAt,
+			CompletedAt:           r[i].CompletedAt,
+			ScheduledAt:           r[i].ScheduledAt,
+			TriggeredByUserID:     r[i].TriggeredByUserID,
+			CreatedAt:             r[i].CreatedAt,
+			UpdatedAt:             r[i].UpdatedAt,
+			HostFriendlyName:      r[i].HostFriendlyName,
+			HostHostname:          r[i].HostHostname,
+			HostOsType:            r[i].HostOsType,
+			TriggeredByUsername:   r[i].TriggeredByUsername,
+			ValidationRunID:       r[i].ValidationRunID,
+			WindowsIncludeUpdates: r[i].WindowsIncludeUpdates,
+			WindowsIncludeApps:    r[i].WindowsIncludeApps,
 		}
 	}
 	return out
@@ -674,25 +940,28 @@ func convertCompletedAtAscRows(r []db.ListPatchRunsOrderByCompletedAtAscRow) []d
 	out := make([]db.ListPatchRunsRow, len(r))
 	for i := range r {
 		out[i] = db.ListPatchRunsRow{
-			ID:                  r[i].ID,
-			HostID:              r[i].HostID,
-			JobID:               r[i].JobID,
-			PatchType:           r[i].PatchType,
-			PackageName:         r[i].PackageName,
-			PackageNames:        r[i].PackageNames,
-			Status:              r[i].Status,
-			ShellOutput:         r[i].ShellOutput,
-			ErrorMessage:        r[i].ErrorMessage,
-			StartedAt:           r[i].StartedAt,
-			CompletedAt:         r[i].CompletedAt,
-			ScheduledAt:         r[i].ScheduledAt,
-			TriggeredByUserID:   r[i].TriggeredByUserID,
-			CreatedAt:           r[i].CreatedAt,
-			UpdatedAt:           r[i].UpdatedAt,
-			HostFriendlyName:    r[i].HostFriendlyName,
-			HostHostname:        r[i].HostHostname,
-			TriggeredByUsername: r[i].TriggeredByUsername,
-			ValidationRunID:     r[i].ValidationRunID,
+			ID:                    r[i].ID,
+			HostID:                r[i].HostID,
+			JobID:                 r[i].JobID,
+			PatchType:             r[i].PatchType,
+			PackageName:           r[i].PackageName,
+			PackageNames:          r[i].PackageNames,
+			Status:                r[i].Status,
+			ShellOutput:           r[i].ShellOutput,
+			ErrorMessage:          r[i].ErrorMessage,
+			StartedAt:             r[i].StartedAt,
+			CompletedAt:           r[i].CompletedAt,
+			ScheduledAt:           r[i].ScheduledAt,
+			TriggeredByUserID:     r[i].TriggeredByUserID,
+			CreatedAt:             r[i].CreatedAt,
+			UpdatedAt:             r[i].UpdatedAt,
+			HostFriendlyName:      r[i].HostFriendlyName,
+			HostHostname:          r[i].HostHostname,
+			HostOsType:            r[i].HostOsType,
+			TriggeredByUsername:   r[i].TriggeredByUsername,
+			ValidationRunID:       r[i].ValidationRunID,
+			WindowsIncludeUpdates: r[i].WindowsIncludeUpdates,
+			WindowsIncludeApps:    r[i].WindowsIncludeApps,
 		}
 	}
 	return out
@@ -702,25 +971,28 @@ func convertStatusRows(r []db.ListPatchRunsOrderByStatusRow) []db.ListPatchRunsR
 	out := make([]db.ListPatchRunsRow, len(r))
 	for i := range r {
 		out[i] = db.ListPatchRunsRow{
-			ID:                  r[i].ID,
-			HostID:              r[i].HostID,
-			JobID:               r[i].JobID,
-			PatchType:           r[i].PatchType,
-			PackageName:         r[i].PackageName,
-			PackageNames:        r[i].PackageNames,
-			Status:              r[i].Status,
-			ShellOutput:         r[i].ShellOutput,
-			ErrorMessage:        r[i].ErrorMessage,
-			StartedAt:           r[i].StartedAt,
-			CompletedAt:         r[i].CompletedAt,
-			ScheduledAt:         r[i].ScheduledAt,
-			TriggeredByUserID:   r[i].TriggeredByUserID,
-			CreatedAt:           r[i].CreatedAt,
-			UpdatedAt:           r[i].UpdatedAt,
-			HostFriendlyName:    r[i].HostFriendlyName,
-			HostHostname:        r[i].HostHostname,
-			TriggeredByUsername: r[i].TriggeredByUsername,
-			ValidationRunID:     r[i].ValidationRunID,
+			ID:                    r[i].ID,
+			HostID:                r[i].HostID,
+			JobID:                 r[i].JobID,
+			PatchType:             r[i].PatchType,
+			PackageName:           r[i].PackageName,
+			PackageNames:          r[i].PackageNames,
+			Status:                r[i].Status,
+			ShellOutput:           r[i].ShellOutput,
+			ErrorMessage:          r[i].ErrorMessage,
+			StartedAt:             r[i].StartedAt,
+			CompletedAt:           r[i].CompletedAt,
+			ScheduledAt:           r[i].ScheduledAt,
+			TriggeredByUserID:     r[i].TriggeredByUserID,
+			CreatedAt:             r[i].CreatedAt,
+			UpdatedAt:             r[i].UpdatedAt,
+			HostFriendlyName:      r[i].HostFriendlyName,
+			HostHostname:          r[i].HostHostname,
+			HostOsType:            r[i].HostOsType,
+			TriggeredByUsername:   r[i].TriggeredByUsername,
+			ValidationRunID:       r[i].ValidationRunID,
+			WindowsIncludeUpdates: r[i].WindowsIncludeUpdates,
+			WindowsIncludeApps:    r[i].WindowsIncludeApps,
 		}
 	}
 	return out
@@ -730,25 +1002,28 @@ func convertStatusDescRows(r []db.ListPatchRunsOrderByStatusDescRow) []db.ListPa
 	out := make([]db.ListPatchRunsRow, len(r))
 	for i := range r {
 		out[i] = db.ListPatchRunsRow{
-			ID:                  r[i].ID,
-			HostID:              r[i].HostID,
-			JobID:               r[i].JobID,
-			PatchType:           r[i].PatchType,
-			PackageName:         r[i].PackageName,
-			PackageNames:        r[i].PackageNames,
-			Status:              r[i].Status,
-			ShellOutput:         r[i].ShellOutput,
-			ErrorMessage:        r[i].ErrorMessage,
-			StartedAt:           r[i].StartedAt,
-			CompletedAt:         r[i].CompletedAt,
-			ScheduledAt:         r[i].ScheduledAt,
-			TriggeredByUserID:   r[i].TriggeredByUserID,
-			CreatedAt:           r[i].CreatedAt,
-			UpdatedAt:           r[i].UpdatedAt,
-			HostFriendlyName:    r[i].HostFriendlyName,
-			HostHostname:        r[i].HostHostname,
-			TriggeredByUsername: r[i].TriggeredByUsername,
-			ValidationRunID:     r[i].ValidationRunID,
+			ID:                    r[i].ID,
+			HostID:                r[i].HostID,
+			JobID:                 r[i].JobID,
+			PatchType:             r[i].PatchType,
+			PackageName:           r[i].PackageName,
+			PackageNames:          r[i].PackageNames,
+			Status:                r[i].Status,
+			ShellOutput:           r[i].ShellOutput,
+			ErrorMessage:          r[i].ErrorMessage,
+			StartedAt:             r[i].StartedAt,
+			CompletedAt:           r[i].CompletedAt,
+			ScheduledAt:           r[i].ScheduledAt,
+			TriggeredByUserID:     r[i].TriggeredByUserID,
+			CreatedAt:             r[i].CreatedAt,
+			UpdatedAt:             r[i].UpdatedAt,
+			HostFriendlyName:      r[i].HostFriendlyName,
+			HostHostname:          r[i].HostHostname,
+			HostOsType:            r[i].HostOsType,
+			TriggeredByUsername:   r[i].TriggeredByUsername,
+			ValidationRunID:       r[i].ValidationRunID,
+			WindowsIncludeUpdates: r[i].WindowsIncludeUpdates,
+			WindowsIncludeApps:    r[i].WindowsIncludeApps,
 		}
 	}
 	return out
@@ -758,25 +1033,28 @@ func convertCreatedAtAscRows(r []db.ListPatchRunsOrderByCreatedAtAscRow) []db.Li
 	out := make([]db.ListPatchRunsRow, len(r))
 	for i := range r {
 		out[i] = db.ListPatchRunsRow{
-			ID:                  r[i].ID,
-			HostID:              r[i].HostID,
-			JobID:               r[i].JobID,
-			PatchType:           r[i].PatchType,
-			PackageName:         r[i].PackageName,
-			PackageNames:        r[i].PackageNames,
-			Status:              r[i].Status,
-			ShellOutput:         r[i].ShellOutput,
-			ErrorMessage:        r[i].ErrorMessage,
-			StartedAt:           r[i].StartedAt,
-			CompletedAt:         r[i].CompletedAt,
-			ScheduledAt:         r[i].ScheduledAt,
-			TriggeredByUserID:   r[i].TriggeredByUserID,
-			CreatedAt:           r[i].CreatedAt,
-			UpdatedAt:           r[i].UpdatedAt,
-			HostFriendlyName:    r[i].HostFriendlyName,
-			HostHostname:        r[i].HostHostname,
-			TriggeredByUsername: r[i].TriggeredByUsername,
-			ValidationRunID:     r[i].ValidationRunID,
+			ID:                    r[i].ID,
+			HostID:                r[i].HostID,
+			JobID:                 r[i].JobID,
+			PatchType:             r[i].PatchType,
+			PackageName:           r[i].PackageName,
+			PackageNames:          r[i].PackageNames,
+			Status:                r[i].Status,
+			ShellOutput:           r[i].ShellOutput,
+			ErrorMessage:          r[i].ErrorMessage,
+			StartedAt:             r[i].StartedAt,
+			CompletedAt:           r[i].CompletedAt,
+			ScheduledAt:           r[i].ScheduledAt,
+			TriggeredByUserID:     r[i].TriggeredByUserID,
+			CreatedAt:             r[i].CreatedAt,
+			UpdatedAt:             r[i].UpdatedAt,
+			HostFriendlyName:      r[i].HostFriendlyName,
+			HostHostname:          r[i].HostHostname,
+			HostOsType:            r[i].HostOsType,
+			TriggeredByUsername:   r[i].TriggeredByUsername,
+			ValidationRunID:       r[i].ValidationRunID,
+			WindowsIncludeUpdates: r[i].WindowsIncludeUpdates,
+			WindowsIncludeApps:    r[i].WindowsIncludeApps,
 		}
 	}
 	return out
@@ -1125,4 +1403,11 @@ func (s *PatchPolicyExclusionsStore) Delete(ctx context.Context, policyID, hostI
 		PatchPolicyID: policyID,
 		HostID:        hostID,
 	})
+}
+
+func nonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

@@ -72,8 +72,8 @@ func (h *PackagesHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // GetByID handles GET /packages/:packageId.
 func (h *PackagesHandler) GetByID(w http.ResponseWriter, r *http.Request) {
-	packageID, ok := urlParam(r, "packageId")
-	if !ok || packageID == "" {
+	packageID := decodedURLParam(r, "packageId")
+	if packageID == "" {
 		Error(w, http.StatusBadRequest, "packageId is required")
 		return
 	}
@@ -91,8 +91,8 @@ func (h *PackagesHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 // GetHosts handles GET /packages/:packageId/hosts.
 func (h *PackagesHandler) GetHosts(w http.ResponseWriter, r *http.Request) {
-	packageID, ok := urlParam(r, "packageId")
-	if !ok || packageID == "" {
+	packageID := decodedURLParam(r, "packageId")
+	if packageID == "" {
 		Error(w, http.StatusBadRequest, "packageId is required")
 		return
 	}
@@ -145,8 +145,8 @@ func (h *PackagesHandler) GetHosts(w http.ResponseWriter, r *http.Request) {
 
 // GetActivity handles GET /packages/:packageId/activity.
 func (h *PackagesHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
-	packageID, ok := urlParam(r, "packageId")
-	if !ok || packageID == "" {
+	packageID := decodedURLParam(r, "packageId")
+	if packageID == "" {
 		Error(w, http.StatusBadRequest, "packageId is required")
 		return
 	}

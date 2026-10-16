@@ -14,6 +14,7 @@ import (
 	"github.com/PatchMon/PatchMon/server-source-code/internal/database"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/db"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/pgtime"
+	"github.com/PatchMon/PatchMon/server-source-code/internal/util"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -90,6 +91,11 @@ type ReportPackage struct {
 	WUACategories     []string `json:"wuaCategories,omitempty"`
 	WUASupportURL     string   `json:"wuaSupportUrl,omitempty"`
 	WUARevisionNumber int32    `json:"wuaRevisionNumber,omitempty"`
+	WUABrowseOnly     bool     `json:"wuaBrowseOnly,omitempty"`
+	WUAType           string   `json:"wuaType,omitempty"`
+	WingetID          string   `json:"wingetId,omitempty"`
+	WingetPinned      bool     `json:"wingetPinned,omitempty"`
+	WingetStoreApp    bool     `json:"wingetStoreApp,omitempty"`
 }
 
 // ReportRepository is a single repository from the agent report.
@@ -114,6 +120,8 @@ type ReportPayload struct {
 	Architecture           string             `json:"architecture"`
 	AgentVersion           string             `json:"agentVersion"`
 	MachineID              string             `json:"machineId"`
+	HostID                 string             `json:"hostId,omitempty"`
+	ConfigVersion          string             `json:"configVersion,omitempty"`
 	KernelVersion          string             `json:"kernelVersion"`
 	InstalledKernelVersion string             `json:"installedKernelVersion"`
 	SELinuxStatus          string             `json:"selinuxStatus"`
@@ -148,6 +156,9 @@ type ReportPayload struct {
 	// stored on the matching update_history row so the Agent Activity UI can
 	// show "agent took N ms" alongside the server-processing duration.
 	AgentExecutionMs *int `json:"agentExecutionMs,omitempty"`
+	// WindowsUpdatesOmitted means the agent left its Windows Update rows out of this report
+	// (it could not scan during a patch run); the host's stored ones are kept.
+	WindowsUpdatesOmitted bool `json:"windowsUpdatesOmitted,omitempty"`
 }
 
 // ReportHashes is the four "main report" canonical hashes the agent ships
@@ -342,16 +353,11 @@ func sortReportInputs(payload *ReportPayload) {
 // COALESCE in the UpdateHostFromReport SQL).
 func (s *ReportStore) ProcessReport(ctx context.Context, hostID string, payload *ReportPayload, sections ReportSections, hashes ReportHashes) (*ProcessReportResult, error) {
 	d := s.db.DB(ctx)
-	securityCount := 0
-	updatesCount := 0
-	for _, p := range payload.Packages {
-		if p.NeedsUpdate {
-			updatesCount++
-		}
-		if p.IsSecurityUpdate {
-			securityCount++
-		}
+	if payload.WindowsUpdatesOmitted {
+		payload.Packages = withoutWindowsUpdates(payload.Packages)
 	}
+	counts := countReportPackages(payload.Packages)
+	keptTotal := 0
 
 	// Strip NUL and invalid UTF-8 before anything touches a query parameter.
 	// Postgres cannot store either, and one bad byte from one Windows host
@@ -417,6 +423,12 @@ func (s *ReportStore) ProcessReport(ctx context.Context, hostID string, payload 
 	}
 	if payload.MachineID != "" {
 		params.MachineID = &payload.MachineID
+	}
+	if util.ValidConfigVersion(payload.ConfigVersion) {
+		params.ConfigVersion = &payload.ConfigVersion
+	}
+	if util.ValidHostID(payload.HostID) {
+		params.ReportedHostID = &payload.HostID
 	}
 	if payload.OSType != "" {
 		params.OsType = &payload.OSType
@@ -556,7 +568,17 @@ func (s *ReportStore) ProcessReport(ctx context.Context, hostID string, payload 
 	// packages section. Without this guard a partial report (e.g. interfaces
 	// only) would wipe the package list and reinsert nothing.
 	if sections.Packages {
-		if err := q.DeleteHostPackagesByHostID(ctx, hostID); err != nil {
+		if payload.WindowsUpdatesOmitted {
+			kept, err := q.CountHostWindowsUpdateRows(ctx, hostID)
+			if err != nil {
+				return nil, fmt.Errorf("CountHostWindowsUpdateRows: %w", err)
+			}
+			counts = counts.plus(reportCounts{updates: int(kept.NeedsUpdate), security: int(kept.Security)})
+			keptTotal = int(kept.Total)
+			if err := q.DeleteHostPackagesExceptWindowsUpdates(ctx, hostID); err != nil {
+				return nil, fmt.Errorf("DeleteHostPackagesExceptWindowsUpdates: %w", err)
+			}
+		} else if err := q.DeleteHostPackagesByHostID(ctx, hostID); err != nil {
 			return nil, fmt.Errorf("DeleteHostPackagesByHostID: %w", err)
 		}
 	}
@@ -721,7 +743,7 @@ func (s *ReportStore) ProcessReport(ctx context.Context, hostID string, payload 
 		}
 	}
 
-	totalPkg := int32(len(payload.Packages))
+	totalPkg := int32(len(payload.Packages) + keptTotal)
 	execTime := payload.ExecutionTime
 	// Discriminate full vs partial for the Agent Activity feed: a payload
 	// without a Sections list is a legacy/full report, anything that arrived
@@ -747,8 +769,8 @@ func (s *ReportStore) ProcessReport(ctx context.Context, hostID string, payload 
 	if err := q.InsertUpdateHistory(ctx, db.InsertUpdateHistoryParams{
 		ID:                uuid.New().String(),
 		HostID:            hostID,
-		PackagesCount:     int32(updatesCount),
-		SecurityCount:     int32(securityCount),
+		PackagesCount:     int32(counts.updates),
+		SecurityCount:     int32(counts.security),
 		TotalPackages:     &totalPkg,
 		PayloadSizeKb:     &payloadSizeKb,
 		ExecutionTime:     &execTime,
@@ -768,8 +790,8 @@ func (s *ReportStore) ProcessReport(ctx context.Context, hostID string, payload 
 
 	return &ProcessReportResult{
 		PackagesProcessed: len(payload.Packages),
-		UpdatesAvailable:  updatesCount,
-		SecurityUpdates:   securityCount,
+		UpdatesAvailable:  counts.updates,
+		SecurityUpdates:   counts.security,
 	}, nil
 }
 
@@ -985,6 +1007,11 @@ type hostPackageRow struct {
 	WUADescription     string   `json:"wua_description"`
 	WUASupportURL      string   `json:"wua_support_url"`
 	WUARevisionNumber  int32    `json:"wua_revision_number"`
+	WingetID           string   `json:"winget_id"`
+	WingetPinned       *bool    `json:"winget_pinned"`
+	WingetStoreApp     *bool    `json:"winget_store_app"`
+	WUABrowseOnly      *bool    `json:"wua_browse_only"`
+	WUAUpdateType      string   `json:"wua_update_type"`
 }
 
 // buildHostPackagesPayload encodes host_packages rows as a jsonb array suitable
@@ -1032,6 +1059,17 @@ func buildHostPackagesPayload(
 			IsSecurityUpdate:   p.IsSecurityUpdate,
 			SourceRepositoryID: sourceRepoID,
 		}
+		if IsValidWingetID(p.WingetID) {
+			row.WingetID = p.WingetID
+			if p.WingetPinned {
+				pinned := true
+				row.WingetPinned = &pinned
+			}
+		}
+		if p.WingetStoreApp {
+			storeApp := true
+			row.WingetStoreApp = &storeApp
+		}
 
 		// Windows Update entries carry WUA metadata. The agent flags them by
 		// setting WUAGuid; we keep the same Go-side detection rule the
@@ -1046,8 +1084,47 @@ func buildHostPackagesPayload(
 			if len(p.WUACategories) > 0 {
 				row.WUACategories = p.WUACategories
 			}
+			browseOnly := p.WUABrowseOnly
+			row.WUABrowseOnly = &browseOnly
+			if p.WUAType == WUAUpdateTypeSoftware || p.WUAType == WUAUpdateTypeDriver || p.WUAType == WUAUpdateTypeFeature {
+				row.WUAUpdateType = p.WUAType
+			}
 		}
 		rows = append(rows, row)
 	}
 	return json.Marshal(rows)
+}
+
+// windowsUpdateCategory is the package category the Windows agent gives every Windows Update row.
+const windowsUpdateCategory = "Windows Update"
+
+func withoutWindowsUpdates(pkgs []ReportPackage) []ReportPackage {
+	out := pkgs[:0]
+	for _, p := range pkgs {
+		if p.Category != windowsUpdateCategory {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+type reportCounts struct {
+	updates, security int
+}
+
+func (c reportCounts) plus(o reportCounts) reportCounts {
+	return reportCounts{updates: c.updates + o.updates, security: c.security + o.security}
+}
+
+func countReportPackages(pkgs []ReportPackage) reportCounts {
+	var c reportCounts
+	for _, p := range pkgs {
+		if p.NeedsUpdate {
+			c.updates++
+		}
+		if p.IsSecurityUpdate {
+			c.security++
+		}
+	}
+	return c
 }

@@ -3,397 +3,222 @@ package packages
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
+	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
-	"patchmon-agent/internal/system"
 	"patchmon-agent/internal/winexec"
+	"patchmon-agent/pkg/models"
 
 	"github.com/sirupsen/logrus"
 )
 
-// ErrWinGetNotInstalled means the host has no winget.exe the agent runs: the
-// one in the App Installer package under Program Files (findWinGet). Windows
-// Server before 2025 ships without it, so for a patch_all run it only means
-// there are no applications to upgrade.
-var ErrWinGetNotInstalled = errors.New("WinGet is not installed on this host")
+const childWaitDelay = 10 * time.Second
 
-// powershellCommand starts the PowerShell the scripts run under: Windows
-// PowerShell by absolute path. Tests point it at another PowerShell to
-// exercise the scripts on any OS.
-var powershellCommand = winexec.PowerShell
+type wuaScriptBackend struct{}
 
-// processWaitDelay bounds how long a step waits for its pipes once the process
-// is gone: installers launched by winget can inherit and hold them.
-const processWaitDelay = 30 * time.Second
+func newWUAScriptBackend() wuaBackend { return wuaScriptBackend{} }
 
-// WindowsPatcher runs patch operations on a Windows host: WUA (through its COM
-// API, driven from PowerShell) for Windows Updates and winget.exe for apps.
-//
-// Calls are not safe to run concurrently: WUA serialises installs itself and
-// two winget upgrades race on the same installers. The caller holds a lock.
-type WindowsPatcher struct {
-	logger *logrus.Logger
+type wuaRequest struct {
+	Op  string   `json:"op"`
+	ID  string   `json:"id,omitempty"`
+	IDs []string `json:"ids,omitempty"`
 }
 
-// NewWindowsPatcher creates a Windows patcher.
-func NewWindowsPatcher(logger *logrus.Logger) *WindowsPatcher {
-	return &WindowsPatcher{logger: logger}
-}
-
-// psPrelude is shared by the patch scripts. Errors stop the script so a
-// failure can never be reported as success, and Describe digs out the COM
-// HRESULT, which PowerShell wraps in a MethodInvocationException.
-const psPrelude = `
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-function OneLine([string]$s) { return (($s -replace '[\r\n\t]+', ' ').Trim()) }
-function Describe($err) {
-  $e = $err.Exception
-  while ($e.InnerException) { $e = $e.InnerException }
-  return ('{0} (0x{1:X8})' -f (OneLine $e.Message), [int32]$e.HResult)
-}
-`
-
-// wuaScanScript searches Windows Update online with the collector's criteria,
-// so the run sees the same set of updates the report did, and reads the
-// installer state that decides whether anything can install right now. The
-// criteria include driver and optional (BrowseOnly) updates; Type and
-// BrowseOnly let patch_all leave those out.
-const wuaScanScript = psPrelude + `
-try {
-  $session = New-Object -ComObject Microsoft.Update.Session
-  $session.ClientApplicationID = 'PatchMon'
-  $searcher = $session.CreateUpdateSearcher()
-  $found = $searcher.Search('IsInstalled=0 AND IsHidden=0')
-} catch {
-  Write-Output ('PATCHMON_ERROR:' + (Describe $_))
-  exit 0
-}
-$updates = @()
-foreach ($u in $found.Updates) {
-  $kbs = @($u.KBArticleIDs | ForEach-Object { 'KB' + $_ })
-  $size = [int64]0
-  try { $size = [int64]$u.MaxDownloadSize } catch {}
-  $reboot = 0
-  $needsInput = $false
-  try {
-    $reboot = [int]$u.InstallationBehavior.RebootBehavior
-    $needsInput = [bool]$u.InstallationBehavior.CanRequestUserInput
-  } catch {}
-  $updates += [pscustomobject]@{
-    guid        = [string]$u.Identity.UpdateID
-    title       = [string]$u.Title
-    kbs         = [string[]]$kbs
-    size        = $size
-    reboot      = $reboot
-    downloaded  = [bool]$u.IsDownloaded
-    eula        = [bool]$u.EulaAccepted
-    needs_input = $needsInput
-    severity    = [string]$u.MsrcSeverity
-    type        = [int]$u.Type
-    browse_only = [bool]$u.BrowseOnly
-  }
-}
-$busy = $false
-$rebootBefore = $false
-try {
-  $installer = $session.CreateUpdateInstaller()
-  $busy = [bool]$installer.IsBusy
-  $rebootBefore = [bool]$installer.RebootRequiredBeforeInstallation
-} catch {}
-$result = [pscustomobject]@{ updates = [object[]]$updates; busy = $busy; reboot_before = $rebootBefore }
-Write-Output ('PATCHMON_RESULT:' + (ConvertTo-Json -InputObject $result -Compress -Depth 5))
-`
-
-// wuaInstallScript downloads and installs the one update named by
-// PATCHMON_WUA_GUID. The GUID comes from this host's own scan and is checked
-// again here before it is put in the search criteria.
-//
-// The search goes to the local datastore first (the scan that planned the run
-// just refreshed it) and online only when that misses.
-const wuaInstallScript = psPrelude + `
-function Emit([string]$status, [string]$detail, [bool]$reboot) {
-  $r = [pscustomobject]@{ status = $status; detail = (OneLine $detail); reboot = $reboot }
-  Write-Output ('PATCHMON_RESULT:' + (ConvertTo-Json -InputObject $r -Compress))
-  exit 0
-}
-function CodeName([int]$c) {
-  switch ($c) {
-    0 { 'not started' } 1 { 'in progress' } 2 { 'succeeded' }
-    3 { 'succeeded with errors' } 4 { 'failed' } 5 { 'aborted' }
-    default { "result $c" }
-  }
-}
-$guid = [string]$env:PATCHMON_WUA_GUID
-if ($guid -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') {
-  Emit 'fail' 'invalid update ID' $false
-}
-try {
-  $session = New-Object -ComObject Microsoft.Update.Session
-  $session.ClientApplicationID = 'PatchMon'
-  $searcher = $session.CreateUpdateSearcher()
-  $criteria = "UpdateID='" + $guid + "'"
-  $found = $null
-  try {
-    $searcher.Online = $false
-    $found = $searcher.Search($criteria)
-  } catch {}
-  if ($null -eq $found -or $found.Updates.Count -eq 0) {
-    $searcher.Online = $true
-    $found = $searcher.Search($criteria)
-  }
-} catch {
-  Emit 'fail' ('Windows Update search failed: ' + (Describe $_)) $false
-}
-if ($found.Updates.Count -eq 0) {
-  Emit 'skip' 'Windows Update no longer offers this update (superseded or withdrawn)' $false
-}
-$u = $found.Updates.Item(0)
-if ($u.IsInstalled) {
-  Emit 'skip' 'already installed' $false
-}
-try {
-  if (-not $u.EulaAccepted) {
-    Write-Output 'Accepting licence terms'
-    $u.AcceptEula()
-  }
-  $coll = New-Object -ComObject Microsoft.Update.UpdateColl
-  [void]$coll.Add($u)
-  if (-not $u.IsDownloaded) {
-    Write-Output 'Downloading'
-    $downloader = $session.CreateUpdateDownloader()
-    $downloader.Updates = $coll
-    $dr = $downloader.Download().GetUpdateResult(0)
-    if ([int]$dr.ResultCode -ne 2) {
-      Emit 'fail' ('download {0} (0x{1:X8})' -f (CodeName ([int]$dr.ResultCode)), [int32]$dr.HResult) $false
-    }
-    Write-Output 'Download complete'
-  }
-  Write-Output 'Installing'
-  $installer = $session.CreateUpdateInstaller()
-  try { $installer.ClientApplicationID = 'PatchMon' } catch {}
-  # Unattended: an update that would need to show UI fails instead of hanging.
-  try { $installer.ForceQuiet = $true } catch {}
-  $installer.Updates = $coll
-  $ir = $installer.Install()
-  $ur = $ir.GetUpdateResult(0)
-  $reboot = [bool]($ir.RebootRequired -or $ur.RebootRequired)
-  if ([int]$ur.ResultCode -eq 2) {
-    if ($reboot) { Emit 'ok' 'installed; a restart is needed to finish' $true }
-    Emit 'ok' 'installed' $false
-  }
-  Emit 'fail' ('install {0} (0x{1:X8})' -f (CodeName ([int]$ur.ResultCode)), [int32]$ur.HResult) $reboot
-} catch {
-  Emit 'fail' (Describe $_) $false
-}
-`
-
-// wingetListScript lists upgradable apps with the winget.exe in
-// PATCHMON_WINGET (wingetPathEnv), which findWinGet resolved. The markers
-// around winget's output tell it apart from anything PowerShell prints.
-const wingetListScript = `
-$ErrorActionPreference = 'SilentlyContinue'
-$env:TERM = 'dumb'
-Write-Output 'WINGET_BEGIN'
-$out = & $env:PATCHMON_WINGET list --upgrade-available --accept-source-agreements --disable-interactivity 2>&1
-$code = $LASTEXITCODE
-if ($out) { $out | Out-String }
-Write-Output ('WINGET_EXIT:' + $code)
-`
-
-func (p *WindowsPatcher) powershell(ctx context.Context, script string, env []string, out io.Writer) ([]byte, error) {
-	var captured bytes.Buffer
-	cmd := powershellCommand(ctx, "-NoProfile", "-NonInteractive", "-Command", winexec.Script(script))
-	cmd.Env = append(os.Environ(), env...)
-	cmd.WaitDelay = processWaitDelay
-	var filter *markerFilter
-	if out != nil {
-		filter = &markerFilter{dst: out}
-		w := io.MultiWriter(&captured, filter)
-		cmd.Stdout, cmd.Stderr = w, w
-	} else {
-		cmd.Stdout, cmd.Stderr = &captured, &captured
+func (wuaScriptBackend) exec(ctx context.Context, req wuaRequest, log func(string)) (wuaOutput, error) {
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return wuaOutput{}, err
 	}
-	err := cmd.Run()
-	if filter != nil {
-		filter.Flush()
+	cmd := exec.CommandContext(ctx, winexec.PowerShellPath(), wuaPowerShellArgs()...)
+	cmd.Stdin = bytes.NewReader(payload)
+	hideWindow(cmd)
+	cmd.WaitDelay = childWaitDelay
+	pr, pw := io.Pipe()
+	var stderr bytes.Buffer
+	cmd.Stdout = pw
+	cmd.Stderr = &cappedBuffer{buf: &stderr, limit: 64 * 1024}
+	if err := cmd.Start(); err != nil {
+		_ = pw.Close()
+		return wuaOutput{}, fmt.Errorf("start PowerShell: %w", err)
 	}
-	if errors.Is(err, exec.ErrWaitDelay) {
-		err = nil
+	type parsed struct {
+		out wuaOutput
+		err error
 	}
+	done := make(chan parsed, 1)
+	go func() {
+		out, perr := parseWUAOutput(pr, log)
+		_, _ = io.Copy(io.Discard, pr)
+		done <- parsed{out, perr}
+	}()
+	_ = cmd.Wait()
+	_ = pw.Close()
+	p := <-done
 	if ctx.Err() != nil {
-		return captured.Bytes(), fmt.Errorf("timed out: %w", ctx.Err())
+		return p.out, ctx.Err()
 	}
-	return winexec.TrimBOM(captured.Bytes()), err
+	if p.err != nil && stderr.Len() > 0 {
+		log(stripTerminalControls(stderr.String()) + "\n")
+	}
+	return p.out, p.err
 }
 
-// ScanWUA searches Windows Update for pending updates.
-func (p *WindowsPatcher) ScanWUA(ctx context.Context) (WUAScan, error) {
-	out, err := p.powershell(ctx, wuaScanScript, nil, nil)
-	scan, perr := ParseWUAScan(out)
-	if perr == nil {
-		return scan, nil
-	}
+func (b wuaScriptBackend) Scan(ctx context.Context, log func(string)) (wuaScan, error) {
+	out, err := b.exec(ctx, wuaRequest{Op: "scan"}, log)
 	if err != nil {
-		return WUAScan{}, fmt.Errorf("%w (%v)", err, perr)
+		return wuaScan{}, err
 	}
-	return WUAScan{}, perr
+	return wuaScan{Updates: out.Updates, RebootRequiredBeforeInstall: out.Final.RebootRequiredBeforeInstall}, nil
 }
 
-// ListWinGetUpgrades returns the apps winget.exe can upgrade, and which
-// winget.exe it asked. It returns an error wrapping ErrWinGetNotInstalled
-// when there is none.
-func (p *WindowsPatcher) ListWinGetUpgrades(ctx context.Context) (WinGetListing, error) {
-	path, err := findWinGet()
+func (b wuaScriptBackend) Download(ctx context.Context, ids []string, log func(string)) (map[string]wuaOpResult, error) {
+	out, err := b.exec(ctx, wuaRequest{Op: "download", IDs: ids}, log)
 	if err != nil {
-		return WinGetListing{}, err
+		return nil, err
 	}
-	out, err := p.powershell(ctx, wingetListScript, []string{wingetPathEnv + "=" + path}, nil)
-	if err != nil {
-		return WinGetListing{}, err
+	res := make(map[string]wuaOpResult, len(out.Results))
+	for _, r := range out.Results {
+		res[strings.ToLower(r.ID)] = r
 	}
-	listing, err := parseWinGetListOutput(string(out))
-	if err != nil {
-		return WinGetListing{}, err
-	}
-	listing.Path = path
-	return listing, nil
+	return res, nil
 }
 
-// parseWinGetListOutput reads the output of wingetListScript. The script
-// prints WINGET_BEGIN before running winget and WINGET_EXIT after it, so the
-// first of the one and the last of the other are its own, and only the lines
-// between them, which winget printed, are parsed as tables.
-func parseWinGetListOutput(out string) (WinGetListing, error) {
-	out = strings.ReplaceAll(out, "\r\n", "\n")
-	// winget redraws its spinner with bare carriage returns.
-	out = strings.ReplaceAll(out, "\r", "\n")
-	lines := strings.Split(out, "\n")
+func (b wuaScriptBackend) Status(ctx context.Context, id string, log func(string)) (wuaOpResult, error) {
+	out, err := b.exec(ctx, wuaRequest{Op: "status", ID: id}, log)
+	if err != nil {
+		return wuaOpResult{}, err
+	}
+	return out.Final.wuaOpResult, nil
+}
 
-	beginAt, exitAt := -1, -1
-	exitCode := int64(-1)
-	for i, raw := range lines {
-		line := strings.TrimSpace(raw)
-		switch {
-		case beginAt < 0 && line == "WINGET_BEGIN":
-			beginAt = i
-		case beginAt >= 0 && strings.HasPrefix(line, "WINGET_EXIT:"):
-			if v, err := strconv.ParseInt(strings.TrimPrefix(line, "WINGET_EXIT:"), 10, 64); err == nil {
-				exitCode, exitAt = v, i
+func (b wuaScriptBackend) Install(ctx context.Context, id string, log func(string)) (wuaOpResult, error) {
+	out, err := b.exec(ctx, wuaRequest{Op: "install", ID: id}, log)
+	if err != nil {
+		return wuaOpResult{}, err
+	}
+	return out.Final.wuaOpResult, nil
+}
+
+type wingetExecBackend struct {
+	apps func() []models.Package
+	path string
+	env  []string
+}
+
+func newWingetExecBackend(apps func() []models.Package) wingetBackend {
+	return &wingetExecBackend{apps: apps}
+}
+
+func (b *wingetExecBackend) Resolve() error {
+	path, env, err := resolveWinget()
+	if err != nil {
+		return err
+	}
+	b.path, b.env = path, env
+	return nil
+}
+
+func (b *wingetExecBackend) Run(ctx context.Context, args []string, log func(string)) (uint32, string, error) {
+	env := b.env
+	if len(args) > 0 && args[0] == "upgrade" {
+		dir, err := newRunTempDir(envValue(b.env, "TEMP"))
+		if err != nil {
+			return 0, "", fmt.Errorf("prepare a private temp directory for winget: %w", err)
+		}
+		defer func() {
+			if err := os.RemoveAll(dir); err != nil && log != nil {
+				log("[winget] could not remove its temp directory " + dir + ": " + err.Error() + "\n")
 			}
-		}
+		}()
+		env = withTempDir(b.env, dir)
 	}
-	if exitAt < 0 {
-		return WinGetListing{}, fmt.Errorf("winget list did not finish%s", tailHint([]byte(out)))
+	cmd := exec.CommandContext(ctx, b.path, args...)
+	cmd.Env = env
+	hideWindow(cmd)
+	cmd.WaitDelay = childWaitDelay
+	lines := newLineLogger(log, 1<<20)
+	w := &lockedWriter{w: lines}
+	cmd.Stdout = w
+	cmd.Stderr = w
+	err := cmd.Run()
+	lines.Flush()
+	if ctx.Err() != nil {
+		return 0, lines.Output(), ctx.Err()
 	}
-	body := lines[beginAt+1 : exitAt]
-	apps, unreadable := parseWinGetUpgradeTables(body)
-	// LASTEXITCODE is a signed 32-bit value in PowerShell.
-	code := uint32(exitCode)
-	if len(apps) == 0 && exitCode != 0 && code != wingetNoPackagesFound {
-		return WinGetListing{}, fmt.Errorf("winget list exited with 0x%08X%s", code, tailHint([]byte(strings.Join(body, "\n"))))
-	}
-	return WinGetListing{Apps: apps, Unreadable: unreadable}, nil
-}
-
-// InstallWUA downloads and installs one update, streaming progress to out.
-func (p *WindowsPatcher) InstallWUA(ctx context.Context, u WUAUpdate, out io.Writer) (ItemResult, error) {
-	if !IsWUAGUID(u.GUID) {
-		return ItemResult{}, fmt.Errorf("invalid update ID %q", u.GUID)
-	}
-	raw, err := p.powershell(ctx, wuaInstallScript, []string{"PATCHMON_WUA_GUID=" + u.GUID}, out)
-	res, perr := ParseItemResult(raw)
-	if perr == nil {
-		return res, nil
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return uint32(ee.ExitCode()), lines.Output(), nil
 	}
 	if err != nil {
-		return ItemResult{}, fmt.Errorf("%w (%v)", err, perr)
+		return 0, lines.Output(), err
 	}
-	return ItemResult{}, perr
+	return 0, lines.Output(), nil
 }
 
-// UpgradeWinGet upgrades one app by exact ID. winget.exe is executed directly
-// with an argument vector, never through a shell or PowerShell.
-func (p *WindowsPatcher) UpgradeWinGet(ctx context.Context, wingetPath string, app WinGetUpgrade, out io.Writer) (ItemResult, error) {
-	if !validWinGetPath(wingetPath) {
-		return ItemResult{}, fmt.Errorf("unexpected winget.exe path %q", wingetPath)
+func (b *wingetExecBackend) UpdatableApps() []models.Package {
+	if b.apps == nil {
+		return nil
 	}
-	if !wingetIDPattern.MatchString(app.ID) || app.IDTruncated {
-		return ItemResult{}, fmt.Errorf("refusing to target WinGet ID %q", app.ID)
-	}
-	if app.Source != "" && !wingetSourcePattern.MatchString(app.Source) {
-		return ItemResult{}, fmt.Errorf("refusing WinGet source %q", app.Source)
-	}
-	cmd := exec.CommandContext(ctx, wingetPath, WinGetUpgradeArgs(app)...)
-	cmd.Env = append(os.Environ(), "TERM=dumb")
-	cmd.Stdout, cmd.Stderr = out, out
-	cmd.WaitDelay = processWaitDelay
-	err := cmd.Run()
-	if ctx.Err() != nil {
-		return ItemResult{}, fmt.Errorf("timed out: %w", ctx.Err())
-	}
-	if err == nil || errors.Is(err, exec.ErrWaitDelay) {
-		return ClassifyWinGetExit(0), nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		// Windows exit codes are unsigned 32-bit; ExitCode carries them as int.
-		return ClassifyWinGetExit(uint32(exitErr.ExitCode())), nil
-	}
-	return ItemResult{}, err
+	return b.apps()
 }
 
-// RebootPending reports whether Windows is waiting for a restart, using the
-// same checks as the inventory report.
-func (p *WindowsPatcher) RebootPending() (bool, string) {
-	return system.New(p.logger).CheckRebootRequired()
+func (b *wingetExecBackend) PendingFileRenames() []string {
+	return significantRenames(pendingFileRenameValues(), renameTempDirs(b.env))
 }
 
-// markerFilter forwards script output line by line, dropping the machine
-// readable result lines, which are noise in the run output.
-type markerFilter struct {
-	mu  sync.Mutex
-	dst io.Writer
-	buf []byte
-}
-
-func (f *markerFilter) Write(p []byte) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.buf = append(f.buf, p...)
-	for {
-		i := bytes.IndexByte(f.buf, '\n')
-		if i < 0 {
-			break
+func renameTempDirs(childEnv []string) []string {
+	var dirs []string
+	if root := os.Getenv("SystemRoot"); root != "" {
+		dirs = append(dirs, filepath.Join(root, "Temp"), filepath.Join(root, "SystemTemp"))
+	}
+	for _, kv := range append(os.Environ(), childEnv...) {
+		k, v, _ := strings.Cut(kv, "=")
+		if (strings.EqualFold(k, "TEMP") || strings.EqualFold(k, "TMP")) && v != "" {
+			dirs = append(dirs, v)
 		}
-		f.emit(f.buf[:i+1])
-		f.buf = f.buf[i+1:]
 	}
-	return len(p), nil
+	return dirs
 }
 
-// Flush forwards a trailing partial line.
-func (f *markerFilter) Flush() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.buf) > 0 {
-		f.emit(f.buf)
-		f.buf = nil
+func (b *wingetExecBackend) UpgradeState(ctx context.Context, id string, log func(string)) (wingetUpgradeState, error) {
+	code, out, err := b.Run(ctx, wingetListArgs(id), log)
+	if err != nil {
+		return wingetStateNone, err
 	}
+	if wingetListCheckFailed(code) {
+		return wingetStateNone, &wingetCheckError{code: code}
+	}
+	if code == 0 && wingetOutputListsID(out, id) {
+		return wingetStateAvailable, nil
+	}
+	code, out, err = b.Run(ctx, wingetInstalledArgs(id), nil)
+	if err != nil {
+		return wingetStateNone, err
+	}
+	if wingetListCheckFailed(code) {
+		return wingetStateNone, &wingetCheckError{code: code}
+	}
+	quiet := logrus.New()
+	quiet.SetOutput(io.Discard)
+	return installedUpgradeState(NewWindowsManager(quiet).parseWingetTable(out), id), nil
 }
 
-func (f *markerFilter) emit(line []byte) {
-	t := bytes.TrimSpace(winexec.TrimBOM(line))
-	if bytes.HasPrefix(t, []byte(psResultMarker)) || bytes.HasPrefix(t, []byte(psErrorMarker)) {
-		return
+func (b *wingetExecBackend) StoreApps(apps []models.Package) map[string]bool {
+	quiet := logrus.New()
+	quiet.SetOutput(io.Discard)
+	appx := NewWindowsManager(quiet).getStoreAppx()
+	out := map[string]bool{}
+	for _, p := range apps {
+		if isStoreApp(p, appx, windowsAppsDir()) {
+			out[strings.ToLower(p.WingetID)] = true
+		}
 	}
-	_, _ = f.dst.Write(line)
+	return out
 }

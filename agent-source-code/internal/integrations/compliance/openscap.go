@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"patchmon-agent/internal/logutil"
+	"patchmon-agent/internal/packages"
 	"patchmon-agent/pkg/models"
 
 	"github.com/sirupsen/logrus"
@@ -554,7 +556,20 @@ func (s *OpenSCAPScanner) installRHEL(ctx context.Context) error {
 func (s *OpenSCAPScanner) installSUSE(ctx context.Context) error {
 	s.logger.Info("Installing/upgrading OpenSCAP on SUSE-based system...")
 
-	output, err := exec.CommandContext(ctx, "zypper", "--non-interactive", "install", "openscap-utils").CombinedOutput()
+	release, err := packages.AcquireZypper(ctx, func() {
+		s.logger.Info("Waiting for a zypper operation by this agent to finish before installing OpenSCAP")
+	})
+	if err != nil {
+		return fmt.Errorf("waiting for zypper: %w", err)
+	}
+	defer release()
+	zypper := func(pkg string) *exec.Cmd {
+		cmd := exec.CommandContext(ctx, "zypper", "--non-interactive", "install", pkg)
+		cmd.Env = packages.ZypperEnv(os.Environ())
+		return cmd
+	}
+
+	output, err := zypper("openscap-utils").CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			s.logger.Warn("OpenSCAP installation timed out after 5 minutes")
@@ -564,7 +579,7 @@ func (s *OpenSCAPScanner) installSUSE(ctx context.Context) error {
 		return fmt.Errorf("failed to install OpenSCAP: %w - %s", err, truncateOutput(output))
 	}
 
-	ssgOutput, ssgErr := exec.CommandContext(ctx, "zypper", "--non-interactive", "install", "scap-security-guide").CombinedOutput()
+	ssgOutput, ssgErr := zypper("scap-security-guide").CombinedOutput()
 	if ssgErr != nil {
 		s.logger.WithField("output", logutil.Sanitize(string(ssgOutput))).Warn("scap-security-guide not available; content will be synced from the PatchMon server")
 	}
@@ -798,12 +813,10 @@ func (s *OpenSCAPScanner) checkAvailability() {
 
 // detectOS detects the operating system
 func (s *OpenSCAPScanner) detectOS() models.ComplianceOSInfo {
-	info := models.ComplianceOSInfo{}
-
 	file, err := os.Open(osReleasePath)
 	if err != nil {
 		s.logger.WithError(err).Debug("Failed to open os-release")
-		return info
+		return models.ComplianceOSInfo{}
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
@@ -811,7 +824,15 @@ func (s *OpenSCAPScanner) detectOS() models.ComplianceOSInfo {
 		}
 	}()
 
-	scanner := bufio.NewScanner(file)
+	return s.parseOSRelease(file)
+}
+
+// parseOSRelease reads os-release content. A derivative that sets ID_LIKE=debian but no
+// DEBIAN_CODENAME, such as UCS 5.2, takes its Debian codename from VERSION_CODENAME.
+func (s *OpenSCAPScanner) parseOSRelease(r io.Reader) models.ComplianceOSInfo {
+	info := models.ComplianceOSInfo{}
+	var versionCodename string
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
 		parts := strings.SplitN(line, "=", 2)
@@ -830,6 +851,8 @@ func (s *OpenSCAPScanner) detectOS() models.ComplianceOSInfo {
 			s.ubuntuCodename = value
 		case "DEBIAN_CODENAME":
 			s.debianCodename = value
+		case "VERSION_CODENAME":
+			versionCodename = value
 		case "ID_LIKE":
 			// Store ID_LIKE for base distribution detection
 			s.idLike = value
@@ -842,6 +865,10 @@ func (s *OpenSCAPScanner) detectOS() models.ComplianceOSInfo {
 				info.Family = "suse"
 			}
 		}
+	}
+
+	if s.debianCodename == "" && strings.Contains(s.idLike, "debian") {
+		s.debianCodename = versionCodename
 	}
 
 	// Set family from ID if not set from ID_LIKE

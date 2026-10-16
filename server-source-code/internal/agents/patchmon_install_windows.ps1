@@ -1,6 +1,6 @@
 # PatchMon Agent Installation Script for Windows (Server-Provided Version)
 # The server injects PATCHMON_SERVER_URL, PATCHMON_BOOTSTRAP_TOKEN, PATCHMON_IGNORE_SSL
-# as env vars at the top of this script before serving it.
+# and PATCHMON_HOST_ID as env vars at the top of this script before serving it.
 
 $ErrorActionPreference = "Stop"
 
@@ -84,6 +84,7 @@ $APIKey        = $env:PATCHMON_API_KEY
 $InstallPath   = "C:\Program Files\PatchMon"
 $ConfigPath    = "C:\ProgramData\PatchMon"
 $SkipSslVerify = ($env:PATCHMON_IGNORE_SSL -eq "true" -or $env:PATCHMON_IGNORE_SSL -eq "1")
+$HostId        = if ($env:PATCHMON_HOST_ID -match '^[A-Za-z0-9-]{1,64}$') { $env:PATCHMON_HOST_ID } else { "" }
 
 # -AllowRemoteRestart: this host allows the restarts PatchMon asks for
 # (remote-restart-enabled under integrations in config.yml). Only this
@@ -216,6 +217,18 @@ if (Get-ChildItem -LiteralPath $ConfigPath -Force) {
     & $icacls (Join-Path $ConfigPath '*') /reset /T /C /Q | Out-Null
 }
 
+# Lock the config dir to SYSTEM and Administrators before any secret is written.
+# (OI)(CI) makes config.yml/credentials.yml inherit the lock; /T /C heals an older install.
+Write-Host "Securing configuration directory..." -ForegroundColor Yellow
+try {
+    & icacls $ConfigPath /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C | Out-Null
+    $grantExit = $LASTEXITCODE
+    & icacls $ConfigPath /setowner "*S-1-5-32-544" /T /C | Out-Null
+    if ($grantExit -ne 0 -or $LASTEXITCODE -ne 0) { throw "icacls reported a non-zero exit" }
+} catch {
+    Write-Warning "Could not fully secure $ConfigPath. Credentials may be readable by other local users until permissions are corrected."
+}
+
 # Download the binary from the server
 Write-Host "Downloading PatchMon agent..." -ForegroundColor Yellow
 try {
@@ -268,6 +281,7 @@ credentials_file: '$($ConfigPath -replace "'", "''")\credentials.yml'
 log_file: '$($ConfigPath -replace "'", "''")\patchmon-agent.log'
 log_level: 'info'
 skip_ssl_verify: $($SkipSslVerify.ToString().ToLower())
+host_id: '$HostId'
 "@
     Set-Content -Path $configFile -Value $configContent -Encoding UTF8
 } else {
@@ -305,8 +319,15 @@ if ($ServerURL -and $APIID -and $APIKey) {
     if ($SkipSslVerify) {
         $env:PATCHMON_SKIP_SSL_VERIFY = "true"
     }
+    $setApiArgs = @("--config", $configFile, "config", "set-api", $APIID, $APIKey, $ServerURL)
     try {
-        Invoke-AgentBinary -Path $targetPath -AgentArgs @("--config", $configFile, "config", "set-api", $APIID, $APIKey, $ServerURL)
+        if ($HostId) {
+            Invoke-AgentBinary -Path $targetPath -AgentArgs ($setApiArgs + @("--host-id", $HostId))
+        }
+        # An agent older than 2.1.4 rejects --host-id; it learns the host ID later instead.
+        if (-not $HostId -or $LASTEXITCODE -ne 0) {
+            Invoke-AgentBinary -Path $targetPath -AgentArgs $setApiArgs
+        }
     } catch {
         Show-AgentLaunchFailure -Path $targetPath -InstallDir $InstallPath -ConfigFile $configFile -Reason $_.Exception.Message
         exit 1

@@ -22,12 +22,19 @@ import {
 	X,
 	Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	Fragment,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { useRemoteRestartMap } from "../hooks/useRemoteRestart";
-import { tk } from "../i18n";
+import i18n, { tk } from "../i18n";
 import { formatDate, packagesAPI } from "../utils/api";
 import {
 	buildRebootRequest,
@@ -35,20 +42,27 @@ import {
 	patchingAPI,
 	pollDryRunUntilDone,
 	restartChoiceError,
+	STILL_RUNNING_MESSAGE,
 } from "../utils/patchingApi";
 import { extraDependencies } from "../utils/patchRun";
+import {
+	DEFAULT_WINDOWS_SCOPE,
+	dryRunPackageLimit,
+	FEATURE_UPGRADE_WARNING,
+	hostOsType,
+	isWindowsOs,
+	isWindowsScopeValid,
+	partitionPatchableHosts,
+	patchErrorMessage,
+	RESTART_NOT_AUTOMATIC,
+	UNPATCHABLE_REASON_TEXT,
+	windowsPatchAllSummary,
+	windowsPatchInfo,
+} from "../utils/windowsPatching";
 import RestartOptions from "./RestartOptions";
 import ModalPortal from "./ui/ModalPortal";
 
-// Packages a dry run validates at once: the package_names cap of a run in
-// server-source-code/internal/handler/patching.go. A dry run is one package
-// manager simulation per host (one inventory and plan on Windows), so it
-// costs about the same for 100 packages as for 1.
-const DRY_RUN_PACKAGE_LIMIT = 100;
-// Dry runs triggered at once, then dry runs polled at once (one request every
-// two seconds each). The hosts all run their dry runs in parallel either way.
 const VALIDATION_CONCURRENCY = 5;
-const VALIDATION_POLL_CONCURRENCY = 20;
 
 // Outcome sentences, worded so approval and patch flows read right. Approve
 // mode submits one existing run at a time and always queues it; trigger mode
@@ -85,6 +99,32 @@ const OUTCOME_TEXT = {
 		retry: tk("Retrying only re-submits the failed host."),
 	},
 };
+
+// A timed-out validation is still pending_validation on the server, so it is
+// approved rather than re-triggered, which the one-active-run rule would refuse.
+const REUSABLE_VALIDATION_STATUSES = [
+	"validated",
+	"pending_validation",
+	"timeout",
+];
+
+const approveRefusedMessage = (err) =>
+	err?.response?.status === 400 &&
+	/^Only validated, pending-validation/.test(err.response.data?.error || "")
+		? i18n.t(
+				"The host came back and is validating now. Patch it from Runs & History once validation finishes.",
+			)
+		: null;
+
+const stillRunningRow = (patchRunId) => ({
+	status: "still_running",
+	packages_affected: [],
+	shell_output: "",
+	error: STILL_RUNNING_MESSAGE,
+	patch_run_id: patchRunId,
+});
+
+const isWindowsTarget = (target) => isWindowsOs(target?.osType);
 
 const outcomeTextFor = (isApprove, mode) => {
 	if (isApprove) return OUTCOME_TEXT.run;
@@ -164,6 +204,12 @@ async function runWithConcurrency(items, limit, worker) {
  *                      approve-mode bulk. Drives the per-run render in the
  *                      Submit step; patch_all rows show a summary instead of
  *                      a packages table.
+ *   windowsScopeByRun  { [runId]: { updates, apps } } - optional, approve mode.
+ *                      Marks a patch_all run as Windows and carries its scope.
+ *   packageMeta        { [name]: { source, featureUpgrade } } - optional,
+ *                      Windows-only per-package details for lockHosts flows.
+ *                      Host discovery fills the same map on its own.
+ *   presetHosts[].os_type  optional; enables the Windows behaviour.
  */
 export default function PatchWizard({
 	isOpen,
@@ -180,6 +226,8 @@ export default function PatchWizard({
 	initialStep = 0,
 	packagesByRun,
 	patchTypeByRun,
+	windowsScopeByRun,
+	packageMeta,
 }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
@@ -199,6 +247,11 @@ export default function PatchWizard({
 	// skip the step entirely rather than showing a rubber-stamp page.
 	const packagesAreFixed =
 		isPatchAll || isApprove || lockPackages || (packageNames?.length || 0) <= 1;
+	const presetAllWindows =
+		lockHosts &&
+		(presetHosts || []).length > 0 &&
+		(presetHosts || []).every((h) => isWindowsOs(hostOsType(h)));
+	const windowsPatchAll = isPatchAll && !isApprove && presetAllWindows;
 
 	// --- Stable session identity ------------------------------------------
 	// Callers very commonly pass inline array/object literals for presetHosts,
@@ -238,10 +291,9 @@ export default function PatchWizard({
 			{
 				id: "validate",
 				label: tk("Validate"),
-				// Validate only makes sense for a fresh trigger of a package
-				// patch. patch_all cannot dry-run (backend rejects it) and
-				// approve mode already has a validation result on file.
-				hidden: isApprove || isPatchAll,
+				// Approve mode already has a validation result on file.
+				// patch_all can only dry-run on Windows hosts.
+				hidden: isApprove || (isPatchAll && !windowsPatchAll),
 			},
 			{ id: "timing", label: tk("Timing"), hidden: false },
 			{
@@ -256,7 +308,7 @@ export default function PatchWizard({
 			},
 			{ id: "submit", label: tk("Submit"), hidden: false },
 		],
-		[lockHosts, isApprove, isPatchAll, packagesAreFixed],
+		[lockHosts, isApprove, isPatchAll, packagesAreFixed, windowsPatchAll],
 	);
 	const steps = useMemo(() => allSteps.filter((s) => !s.hidden), [allSteps]);
 
@@ -280,6 +332,7 @@ export default function PatchWizard({
 	// a second approver to act on later. Default is approve_now because that
 	// matches the existing behaviour of Queue & patch.
 	const [approvalDecision, setApprovalDecision] = useState("approve_now");
+	const [windowsScope, setWindowsScope] = useState(DEFAULT_WINDOWS_SCOPE);
 
 	// --- Host discovery (only used when !lockHosts) ---
 	// Fetch hosts for each package in parallel when we need to discover them.
@@ -331,6 +384,7 @@ export default function PatchWizard({
 						runId,
 						friendly_name: h.friendly_name,
 						hostname: h.hostname,
+						osType: hostOsType(h),
 					};
 				});
 			}
@@ -339,12 +393,13 @@ export default function PatchWizard({
 				hostId: h.id,
 				friendly_name: h.friendly_name,
 				hostname: h.hostname,
+				osType: hostOsType(h),
 			}));
 		}
 		const byId = new Map();
 		for (const q of hostQueries) {
-			const list = q.data || [];
-			for (const h of list) {
+			const { patchable } = partitionPatchableHosts(q.data);
+			for (const h of patchable) {
 				const id = h.hostId || h.host_id || h.id;
 				if (!id) continue;
 				if (restrictSet && !restrictSet.has(id)) continue;
@@ -354,6 +409,7 @@ export default function PatchWizard({
 						hostId: id,
 						friendly_name: h.friendly_name || h.friendlyName,
 						hostname: h.hostname,
+						osType: hostOsType(h),
 					});
 				}
 			}
@@ -371,6 +427,49 @@ export default function PatchWizard({
 		hostQueries,
 		restrictSet,
 	]);
+
+	const unpatchablePairs = useMemo(() => {
+		if (lockHosts) return [];
+		const out = [];
+		(packageNames || []).forEach((pkgName, i) => {
+			const { unpatchable } = partitionPatchableHosts(hostQueries[i]?.data);
+			for (const u of unpatchable) {
+				const id = u.host.hostId || u.host.host_id || u.host.id;
+				if (restrictSet && !restrictSet.has(id)) continue;
+				out.push({
+					key: `${id}|${pkgName}`,
+					hostLabel:
+						u.host.friendly_name ||
+						u.host.friendlyName ||
+						u.host.hostname ||
+						id,
+					pkgName,
+					reasonText: t(
+						UNPATCHABLE_REASON_TEXT[u.reason] ||
+							tk("Not patchable on this host"),
+					),
+				});
+			}
+		});
+		return out;
+	}, [lockHosts, packageNames, hostQueries, restrictSet, t]);
+
+	const effectivePackageMeta = useMemo(() => {
+		const meta = { ...(packageMeta || {}) };
+		(packageNames || []).forEach((pkgName, i) => {
+			for (const h of hostQueries[i]?.data || []) {
+				if (!isWindowsOs(hostOsType(h))) continue;
+				const info = windowsPatchInfo(h);
+				if (!info.patchable) continue;
+				const prev = meta[pkgName] || {};
+				meta[pkgName] = {
+					source: prev.source || info.source,
+					featureUpgrade: !!prev.featureUpgrade || info.featureUpgrade,
+				};
+			}
+		});
+		return meta;
+	}, [packageMeta, packageNames, hostQueries]);
 
 	const isLoading = !lockHosts && hostQueries.some((q) => q.isLoading);
 	const hasInitialized = useRef(false);
@@ -390,6 +489,7 @@ export default function PatchWizard({
 		setExpandedDepsByTarget({});
 		setPolicyOverrides({});
 		setApprovalDecision("approve_now");
+		setWindowsScope(DEFAULT_WINDOWS_SCOPE);
 		setSubmitResultByTarget({});
 		setSubmitMode(null);
 		hasReported.current = false;
@@ -432,6 +532,31 @@ export default function PatchWizard({
 	const [error, setError] = useState(null);
 	const [validationByTarget, setValidationByTarget] = useState({});
 	const [isValidating, setIsValidating] = useState(false);
+	const validationAbort = useRef(null);
+	// Rows whose dry run exists on the server become still_running; rows never
+	// triggered are dropped so Run/Re-run validation stays reachable.
+	const stopValidation = useCallback(() => {
+		if (!validationAbort.current || validationAbort.current.signal.aborted) {
+			return;
+		}
+		validationAbort.current.abort();
+		setIsValidating(false);
+		setValidationByTarget((prev) => {
+			const next = {};
+			for (const [id, v] of Object.entries(prev)) {
+				if (v.status !== "pending" && v.status !== "validating") {
+					next[id] = v;
+				} else if (v.patch_run_id) {
+					next[id] = stillRunningRow(v.patch_run_id);
+				}
+			}
+			return next;
+		});
+	}, []);
+	useEffect(() => {
+		if (!isOpen) stopValidation();
+	}, [isOpen, stopValidation]);
+	useEffect(() => () => validationAbort.current?.abort(), []);
 	const [expandedOutput, setExpandedOutput] = useState(null);
 	// Per-target policy override: targetId -> "default" | policyId | "immediate"
 	const [policyOverrides, setPolicyOverrides] = useState({});
@@ -505,12 +630,19 @@ export default function PatchWizard({
 	);
 
 	const handleClose = useCallback(() => {
+		stopValidation();
 		if (submittedRuns.length > 0) {
 			finishAndClose(submitResultByTarget);
 			return;
 		}
 		onClose?.();
-	}, [submittedRuns, submitResultByTarget, finishAndClose, onClose]);
+	}, [
+		submittedRuns,
+		submitResultByTarget,
+		finishAndClose,
+		onClose,
+		stopValidation,
+	]);
 
 	const currentStepId = steps[step]?.id;
 	// Find the current interactive step's index within allSteps so the
@@ -550,19 +682,6 @@ export default function PatchWizard({
 	// is viable for every host (patch_all and patch_package without a
 	// validation run simply create a new pending run on the backend), so we
 	// don't gate the feature on this count anymore.
-	const approvableRunCount = useMemo(() => {
-		let n = 0;
-		for (const id of selectedTargetIds) {
-			const v = validationByTarget[id];
-			if (
-				v?.patch_run_id &&
-				(v.status === "validated" || v.status === "pending_validation")
-			) {
-				n += 1;
-			}
-		}
-		return n;
-	}, [selectedTargetIds, validationByTarget]);
 	// Submit for approval is always a real choice for any fresh trigger.
 	// patch_all and patch_package without a prior dry-run create a new
 	// "pending_approval" run; patch_package after validation reuses the
@@ -596,13 +715,13 @@ export default function PatchWizard({
 		if (!isOpen) return;
 		const onKeyDown = (e) => {
 			if (e.key !== "Escape") return;
-			if (isPatching || isValidating) return;
+			if (isPatching) return;
 			e.stopPropagation();
 			handleClose();
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [isOpen, isPatching, isValidating, handleClose]);
+	}, [isOpen, isPatching, handleClose]);
 
 	// --- Navigation helpers ----------------------------------------------
 	// goNext/goBack walk the step list, skipping past steps that are
@@ -683,7 +802,7 @@ export default function PatchWizard({
 		const map = {};
 		(packageNames || []).forEach((pkgName, i) => {
 			if (!selectedSet.has(pkgName)) return;
-			const list = hostQueries[i]?.data || [];
+			const { patchable: list } = partitionPatchableHosts(hostQueries[i]?.data);
 			for (const h of list) {
 				const id = h.hostId || h.host_id || h.id;
 				if (!id) continue;
@@ -710,14 +829,107 @@ export default function PatchWizard({
 		[packagesByRun, discoveredPackagesByHost, selectedPkgs],
 	);
 
-	const canValidate =
-		!isApprove &&
-		!isPatchAll &&
-		selectedPkgs.length > 0 &&
-		selectedPkgs.length <= DRY_RUN_PACKAGE_LIMIT;
+	const selectionKey = useCallback(
+		(target) =>
+			JSON.stringify({
+				patchType,
+				packages: isPatchAll ? null : [...packagesForTarget(target)].sort(),
+				scope: isPatchAll && isWindowsTarget(target) ? windowsScope : null,
+			}),
+		[patchType, isPatchAll, packagesForTarget, windowsScope],
+	);
+
+	// Only a validation run for exactly the current selection may be approved.
+	const reusableRunId = useCallback(
+		(target) => {
+			const v = validationByTarget[target.id];
+			return v?.patch_run_id &&
+				REUSABLE_VALIDATION_STATUSES.includes(v.status) &&
+				v.selection === selectionKey(target)
+				? v.patch_run_id
+				: null;
+		},
+		[validationByTarget, selectionKey],
+	);
+
+	const approvableRunCount = useMemo(
+		() => selectedTargets.filter((t) => reusableRunId(t)).length,
+		[selectedTargets, reusableRunId],
+	);
+
+	const stillValidatingIds = useMemo(
+		() =>
+			selectedTargets
+				.filter((t) => validationByTarget[t.id]?.status === "still_running")
+				.map((t) => t.id),
+		[selectedTargets, validationByTarget],
+	);
+
+	// An offline host's pending validation for a different selection still
+	// holds the host's one active run, so a fresh trigger would be refused.
+	const staleValidationIds = useMemo(
+		() =>
+			selectedTargets
+				.filter((t) => {
+					const v = validationByTarget[t.id];
+					return (
+						v?.patch_run_id &&
+						(v.status === "timeout" || v.status === "pending_validation") &&
+						v.selection !== selectionKey(t)
+					);
+				})
+				.map((t) => t.id),
+		[selectedTargets, validationByTarget, selectionKey],
+	);
+	const excludedFromSubmit = [...stillValidatingIds, ...staleValidationIds];
+
+	// Windows hosts have no dependency resolution; an affected title that was
+	// not requested is never an extra package.
+	const extraDepsFor = useCallback(
+		(target, requested, affected) =>
+			isPatchAll || isWindowsTarget(target)
+				? []
+				: extraDependencies({
+						package_names: requested,
+						packages_affected: affected,
+					}),
+		[isPatchAll],
+	);
+
+	const dryRunLimit = Math.min(
+		...selectedTargets.map((t) => dryRunPackageLimit(t.osType)),
+		...(selectedTargets.length === 0 ? [dryRunPackageLimit("")] : []),
+	);
+
+	const scopeValid = !windowsPatchAll || isWindowsScopeValid(windowsScope);
+
+	const canValidate = windowsPatchAll
+		? scopeValid
+		: !isApprove &&
+			!isPatchAll &&
+			selectedPkgs.length > 0 &&
+			selectedTargets.every(
+				(t) => packagesForTarget(t).length <= dryRunPackageLimit(t.osType),
+			);
+
+	const windowsScopeBody = (target) =>
+		isPatchAll && isWindowsTarget(target)
+			? { windows_scope: { ...windowsScope } }
+			: {};
+
+	const featureUpgradesSelected = isPatchAll
+		? []
+		: selectedPkgs.filter((n) => effectivePackageMeta[n]?.featureUpgrade);
+
+	const toggleScope = (key) => {
+		setWindowsScope((prev) => ({ ...prev, [key]: !prev[key] }));
+		setValidationByTarget({});
+	};
 
 	const handleValidate = async () => {
 		if (selectedTargets.length === 0) return;
+		validationAbort.current?.abort();
+		const { signal } = (validationAbort.current = new AbortController());
 		setIsValidating(true);
 		// Seed every selected target as "pending" so the UI can render a live
 		// per-row list immediately, instead of a single batch-wide spinner.
@@ -731,25 +943,12 @@ export default function PatchWizard({
 		}
 		setValidationByTarget(seeded);
 
-		const markFailed = (target, error) =>
-			setValidationByTarget((prev) => ({
-				...prev,
-				[target.id]: {
-					status: "failed",
-					packages_affected: [],
-					shell_output: "",
-					error,
-				},
-			}));
-
-		// Every dry run is triggered before any is waited on, so all hosts
-		// validate at the same time: a Windows dry run can take minutes and
-		// must not hold back the hosts queued behind it.
-		const runIdByTarget = {};
 		await runWithConcurrency(
 			selectedTargets,
 			VALIDATION_CONCURRENCY,
 			async (target) => {
+				if (signal.aborted) return;
+				const selection = selectionKey(target);
 				setValidationByTarget((prev) => ({
 					...prev,
 					[target.id]: {
@@ -757,48 +956,100 @@ export default function PatchWizard({
 						status: "validating",
 					},
 				}));
+				let runId;
 				try {
 					// Send only the packages this host actually has outdated —
 					// the wizard already knows from host discovery, so there's
 					// no point asking a host to dry-run packages it doesn't have.
-					const hostPkgs = packagesForTarget(target);
-					const res = await patchingAPI.trigger(
-						target.hostId,
-						"patch_package",
-						null,
-						hostPkgs,
-						{ dry_run: true },
-					);
-					const runId = res?.patch_run_id;
-					if (!runId) {
-						markFailed(target, t("No run ID returned"));
+					const res = isPatchAll
+						? await patchingAPI.trigger(
+								target.hostId,
+								"patch_all",
+								null,
+								null,
+								{
+									dry_run: true,
+									...windowsScopeBody(target),
+								},
+							)
+						: await patchingAPI.trigger(
+								target.hostId,
+								"patch_package",
+								null,
+								packagesForTarget(target),
+								{ dry_run: true },
+							);
+					runId = res?.patch_run_id;
+					if (signal.aborted) {
+						if (runId && validationAbort.current?.signal === signal) {
+							setValidationByTarget((prev) => ({
+								...prev,
+								[target.id]: stillRunningRow(runId),
+							}));
+						}
 						return;
 					}
-					runIdByTarget[target.id] = runId;
-				} catch (err) {
-					markFailed(target, err.response?.data?.error || err.message);
-				}
-			},
-		);
-
-		await runWithConcurrency(
-			selectedTargets.filter((target) => runIdByTarget[target.id]),
-			VALIDATION_POLL_CONCURRENCY,
-			async (target) => {
-				const runId = runIdByTarget[target.id];
-				try {
-					const result = await pollDryRunUntilDone(runId);
+					if (!runId) {
+						setValidationByTarget((prev) => ({
+							...prev,
+							[target.id]: {
+								status: "failed",
+								packages_affected: [],
+								shell_output: "",
+								error: t("No run ID returned"),
+							},
+						}));
+						return;
+					}
 					setValidationByTarget((prev) => ({
 						...prev,
-						[target.id]: { ...result, patch_run_id: runId },
+						[target.id]: {
+							...prev[target.id],
+							patch_run_id: runId,
+							selection,
+						},
+					}));
+					const result = await pollDryRunUntilDone(runId, {
+						signal,
+						onStatus: (status) =>
+							setValidationByTarget((prev) =>
+								prev[target.id]?.status === "validating"
+									? {
+											...prev,
+											[target.id]: {
+												...prev[target.id],
+												reconnecting: status === "agent_disconnected",
+											},
+										}
+									: prev,
+							),
+					});
+					if (!result) return;
+					setValidationByTarget((prev) => ({
+						...prev,
+						[target.id]: { ...result, patch_run_id: runId, selection },
 					}));
 				} catch (err) {
-					markFailed(target, err.response?.data?.error || err.message);
+					if (signal.aborted) return;
+					setValidationByTarget((prev) => ({
+						...prev,
+						[target.id]: {
+							status: "failed",
+							packages_affected: [],
+							shell_output: "",
+							error: patchErrorMessage(err),
+						},
+					}));
 				}
 			},
 		);
 
-		setIsValidating(false);
+		if (!signal.aborted) setIsValidating(false);
+	};
+
+	const continueWithoutWaiting = () => {
+		stopValidation();
+		goNext();
 	};
 
 	const handleConfirm = async () => {
@@ -816,23 +1067,14 @@ export default function PatchWizard({
 		const nextSubmitMode = userChoseSubmit ? "approval" : "patch";
 		// Built once so every host gets the same restart time.
 		const reboot = canRestart ? buildRebootRequest(restartChoice) : null;
-		// A validation still running on the host counts: it becomes a
-		// validated run waiting for approval once it finishes.
-		const targetHasPendingRun = (id) => {
-			const v = validationByTarget[id];
-			return (
-				!!v?.patch_run_id &&
-				(v.status === "validated" ||
-					v.status === "pending_validation" ||
-					!!v.still_running)
-			);
-		};
 
 		// Only targets without a run of their own are submitted, so retrying a
 		// partial failure never fires a second request at a target we already
 		// patched.
 		const pending = selectedTargets.filter(
-			(t) => submitResultByTarget[t.id]?.status !== "success",
+			(t) =>
+				submitResultByTarget[t.id]?.status !== "success" &&
+				!excludedFromSubmit.includes(t.id),
 		);
 		if (pending.length === 0) {
 			finishAndClose(submitResultByTarget);
@@ -846,9 +1088,9 @@ export default function PatchWizard({
 				// Reuse an existing pending validation run when we have one —
 				// otherwise we'd leave two pending rows on the same host (one
 				// from validation, one from pending_approval).
-				if (targetHasPendingRun(target.id)) {
+				if (reusableRunId(target)) {
 					return {
-						runId: validationByTarget[target.id].patch_run_id,
+						runId: reusableRunId(target),
 						immediate: false,
 					};
 				}
@@ -861,7 +1103,7 @@ export default function PatchWizard({
 					patchType,
 					null,
 					isPatchAll ? null : packagesForTarget(target),
-					{ pending_approval: true },
+					{ pending_approval: true, ...windowsScopeBody(target) },
 				);
 				if (!response?.patch_run_id) {
 					throw new Error(t("The server did not return a run for this host"));
@@ -888,35 +1130,21 @@ export default function PatchWizard({
 					throw new Error(t("No validation run on file for this host"));
 				}
 				response = await patchingAPI.approveRun(target.runId, overrideBody);
-			} else if (isPatchAll) {
+			} else if (isPatchAll && !reusableRunId(target)) {
 				response = await patchingAPI.trigger(
 					target.hostId,
 					"patch_all",
 					null,
 					null,
-					overrideBody,
+					{ ...overrideBody, ...windowsScopeBody(target) },
 				);
 			} else {
 				// Trigger mode, package patch. If a validation run exists from
 				// Step 2 we approve it (this marks the validation as
 				// "approved" and links a new execution run). Otherwise we fire
 				// a fresh trigger.
-				const validation = validationByTarget[target.id];
-				const validationRunId = validation?.patch_run_id;
-				if (validationRunId && validation.still_running) {
-					// A second run now would collide with the dry run on the
-					// host; the validation run is approved once it finishes.
-					throw new Error(
-						t(
-							"Validation is still running on this host; approve it from Patching once it finishes",
-						),
-					);
-				}
-				if (
-					validationRunId &&
-					(validation.status === "validated" ||
-						validation.status === "pending_validation")
-				) {
+				const validationRunId = reusableRunId(target);
+				if (validationRunId) {
 					response = await patchingAPI.approveRun(
 						validationRunId,
 						overrideBody,
@@ -968,7 +1196,10 @@ export default function PatchWizard({
 					status: "failed",
 					hostId: target.hostId,
 					error:
-						err?.response?.data?.error || err?.message || t("Request failed"),
+						(!isApprove &&
+							validationByTarget[target.id]?.status === "timeout" &&
+							approveRefusedMessage(err)) ||
+						patchErrorMessage(err),
 				};
 			}
 		}
@@ -1014,15 +1245,17 @@ export default function PatchWizard({
 			const v = validationByTarget[t.id];
 			if (!v || v.status !== "validated") return false;
 			return (
-				extraDependencies({
-					package_names: packagesForTarget(t),
-					packages_affected: v.packages_affected,
-				}).length > 0
+				extraDepsFor(t, packagesForTarget(t), v.packages_affected).length > 0
 			);
 		});
-	}, [validationByTarget, targets, packagesForTarget]);
+	}, [validationByTarget, targets, packagesForTarget, extraDepsFor]);
 
-	const TERMINAL_VALIDATION_STATUSES = ["validated", "failed", "timeout"];
+	const TERMINAL_VALIDATION_STATUSES = [
+		"validated",
+		"failed",
+		"timeout",
+		"still_running",
+	];
 	// Derived from selectedTargets, the same source handleValidate seeds from.
 	// A selection id with no matching target would otherwise never be seeded.
 	const validationDone =
@@ -1039,6 +1272,7 @@ export default function PatchWizard({
 			extraDeps: 0,
 			failed: 0,
 			offline: 0,
+			stillRunning: 0,
 			pending: 0,
 			validating: 0,
 			done: 0,
@@ -1049,10 +1283,7 @@ export default function PatchWizard({
 			if (status === "validated") {
 				counts.done += 1;
 				const hasExtra =
-					extraDependencies({
-						package_names: selectedPkgs,
-						packages_affected: v.packages_affected,
-					}).length > 0;
+					extraDepsFor(target, selectedPkgs, v.packages_affected).length > 0;
 				if (hasExtra) counts.extraDeps += 1;
 				else counts.clean += 1;
 			} else if (status === "failed") {
@@ -1061,6 +1292,9 @@ export default function PatchWizard({
 			} else if (status === "timeout") {
 				counts.done += 1;
 				counts.offline += 1;
+			} else if (status === "still_running") {
+				counts.done += 1;
+				counts.stillRunning += 1;
 			} else if (status === "validating") {
 				counts.validating += 1;
 			} else {
@@ -1068,7 +1302,7 @@ export default function PatchWizard({
 			}
 		}
 		return counts;
-	}, [selectedTargets, validationByTarget, selectedPkgs]);
+	}, [selectedTargets, validationByTarget, selectedPkgs, extraDepsFor]);
 
 	if (!isOpen) return null;
 
@@ -1108,7 +1342,7 @@ export default function PatchWizard({
 				? t("Retry {{count}} failed run", { count: failedTargetIds.length })
 				: t("Retry {{count}} failed host", { count: failedTargetIds.length });
 		}
-		const n = selectedTargetIds.size;
+		const n = selectedTargetIds.size - excludedFromSubmit.length;
 		if (isApprove) {
 			return n === 1
 				? t("Approve & patch")
@@ -1129,11 +1363,107 @@ export default function PatchWizard({
 	// step to show — then it's effectively a plain confirm dialog.
 	const showStepIndicator = steps.length > 1;
 
+	// Windows targets list their selection under Windows Updates and
+	// Applications (winget). Other targets keep one flat group.
+	const groupPackagesForTarget = (target, names) => {
+		if (!isWindowsTarget(target)) return [{ key: "all", label: null, names }];
+		const wua = [];
+		const winget = [];
+		const other = [];
+		for (const n of names) {
+			const src = effectivePackageMeta[n]?.source;
+			if (src === "wua") wua.push(n);
+			else if (src === "winget") winget.push(n);
+			else other.push(n);
+		}
+		if (wua.length === 0 && winget.length === 0) {
+			return [{ key: "all", label: null, names }];
+		}
+		return [
+			{ key: "wua", label: t("Windows Updates"), names: wua },
+			{ key: "winget", label: t("Applications (winget)"), names: winget },
+			{ key: "other", label: t("Other"), names: other },
+		].filter((g) => g.names.length > 0);
+	};
+
+	const featureUpgradeBadge = (name) =>
+		effectivePackageMeta[name]?.featureUpgrade ? (
+			<span className="badge-warning ml-2 whitespace-nowrap">
+				{t("Feature upgrade")}
+			</span>
+		) : null;
+
+	const unpatchableList =
+		unpatchablePairs.length > 0 ? (
+			<div className="mb-4">
+				<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-1.5">
+					{t("Not patchable ({{count}})", { count: unpatchablePairs.length })}
+				</p>
+				<ul className="space-y-1.5 max-h-32 overflow-y-auto scrollbar-thin">
+					{unpatchablePairs.map((u) => (
+						<li
+							key={u.key}
+							className="flex flex-wrap items-center gap-2 text-sm text-secondary-600 dark:text-secondary-400"
+						>
+							<span className="badge-secondary" title={u.reasonText}>
+								{t("Not patchable")}
+							</span>
+							<span className="text-secondary-900 dark:text-white">
+								{u.hostLabel}
+							</span>
+							<span className="font-mono text-xs">{u.pkgName}</span>
+							<span className="text-xs w-full">{u.reasonText}</span>
+						</li>
+					))}
+				</ul>
+			</div>
+		) : null;
+
+	const windowsScopePicker = (
+		<div className="mb-4 space-y-2">
+			<p className="text-sm font-medium text-secondary-700 dark:text-white">
+				{t("Include")}
+			</p>
+			<div className="grid sm:grid-cols-2 gap-2">
+				{[
+					["updates", t("Windows Updates")],
+					["apps", t("Applications (winget)")],
+				].map(([key, label]) => (
+					<button
+						key={key}
+						type="button"
+						aria-pressed={windowsScope[key]}
+						onClick={() => toggleScope(key)}
+						disabled={isValidating}
+						className={`flex items-center gap-3 p-3 border-2 rounded-lg w-full text-left min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed ${
+							windowsScope[key]
+								? "border-primary-500 bg-primary-50 dark:bg-primary-900/30"
+								: "border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700"
+						}`}
+					>
+						{windowsScope[key] ? (
+							<CheckSquare className="h-5 w-5 text-primary-600 shrink-0" />
+						) : (
+							<Square className="h-5 w-5 text-secondary-400 shrink-0" />
+						)}
+						<span className="text-sm font-medium text-secondary-900 dark:text-white">
+							{label}
+						</span>
+					</button>
+				))}
+			</div>
+			<p className="text-xs text-secondary-600 dark:text-secondary-400">
+				{windowsPatchAllSummary(windowsScope)}
+				{scopeValid && !canRestart ? ` ${RESTART_NOT_AUTOMATIC}` : ""}
+			</p>
+		</div>
+	);
+
 	const modal = (
 		<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[120]">
 			<button
 				type="button"
-				onClick={() => !isPatching && !isValidating && handleClose()}
+				onClick={() => !isPatching && handleClose()}
 				className="fixed inset-0 cursor-default"
 				aria-label={t("Close modal")}
 			/>
@@ -1151,7 +1481,7 @@ export default function PatchWizard({
 						</h3>
 						<button
 							type="button"
-							onClick={() => !isPatching && !isValidating && handleClose()}
+							onClick={() => !isPatching && handleClose()}
 							className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700 text-secondary-400 hover:text-secondary-600"
 						>
 							<X className="h-5 w-5" />
@@ -1237,13 +1567,20 @@ export default function PatchWizard({
 								{t("Loading hosts…")}
 							</div>
 						) : targets.length === 0 ? (
-							<p className="text-sm text-secondary-600 dark:text-secondary-400 py-4">
-								{restrictSet
-									? t(
-											"None of the selected hosts have a pending update for these packages.",
-										)
-									: t("No hosts have a pending update for these packages.")}
-							</p>
+							<>
+								<p className="text-sm text-secondary-600 dark:text-secondary-400 py-4">
+									{restrictSet
+										? t(
+												"None of the selected hosts have a pending update for these packages.",
+											)
+										: unpatchablePairs.length > 0
+											? t(
+													"These packages cannot be patched on any of the hosts that have them pending.",
+												)
+											: t("No hosts have a pending update for these packages.")}
+								</p>
+								{unpatchableList}
+							</>
 						) : (
 							<>
 								<p className="text-sm text-secondary-600 dark:text-secondary-400 mb-3">
@@ -1324,14 +1661,18 @@ export default function PatchWizard({
 										</tbody>
 									</table>
 								</div>
+								{unpatchableList}
 								{packageNames?.length > 0 && (
 									<div className="border-t border-secondary-200 dark:border-secondary-600 pt-3">
 										<p className="text-xs font-medium text-secondary-500 dark:text-secondary-400 mb-1.5">
 											{t("Packages to patch:")}
 										</p>
-										<ul className="text-sm text-secondary-600 dark:text-secondary-400 list-disc list-inside space-y-0.5 max-h-16 overflow-y-auto">
+										<ul className="text-sm text-secondary-600 dark:text-secondary-400 list-disc list-inside space-y-0.5 max-h-48 overflow-y-auto scrollbar-thin">
 											{packageNames.map((name) => (
-												<li key={name}>{name}</li>
+												<li key={name}>
+													{name}
+													{featureUpgradeBadge(name)}
+												</li>
 											))}
 										</ul>
 									</div>
@@ -1342,10 +1683,15 @@ export default function PatchWizard({
 					{/* Step 2: Validate */}
 					{currentStepId === "validate" && (
 						<>
+							{windowsPatchAll && windowsScopePicker}
 							<p className="text-sm text-secondary-600 dark:text-secondary-400 mb-4">
-								{t(
-									"Run a dry-run validation to see exactly which packages will be updated on each host before committing.",
-								)}
+								{windowsPatchAll
+									? t(
+											"Run a dry-run validation to see which updates and apps would be installed. Nothing is downloaded or installed.",
+										)
+									: t(
+											"Run a dry-run validation to see exactly which packages will be updated on each host before committing.",
+										)}
 							</p>
 							{!isValidating &&
 								Object.keys(validationByTarget).length === 0 && (
@@ -1353,7 +1699,7 @@ export default function PatchWizard({
 										<button
 											type="button"
 											onClick={handleValidate}
-											disabled={selectedTargetIds.size === 0}
+											disabled={selectedTargetIds.size === 0 || !canValidate}
 											className="btn-primary inline-flex items-center gap-2"
 										>
 											<Eye className="h-4 w-4" />
@@ -1368,12 +1714,28 @@ export default function PatchWizard({
 										<div className="flex items-center gap-2 flex-wrap">
 											{isValidating ? (
 												<RefreshCw className="h-4 w-4 animate-spin text-primary-600 shrink-0" />
+											) : validationProgress.failed > 0 ? (
+												<AlertTriangle
+													data-testid="validation-summary-failed"
+													className="h-4 w-4 text-danger-600 dark:text-danger-400 shrink-0"
+												/>
+											) : validationProgress.clean <
+												validationProgress.total ? (
+												<AlertTriangle
+													data-testid="validation-summary-warning"
+													className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0"
+												/>
 											) : (
-												<Check className="h-4 w-4 text-green-600 shrink-0" />
+												<Check
+													data-testid="validation-summary-clean"
+													className="h-4 w-4 text-green-600 shrink-0"
+												/>
 											)}
 											<span className="font-medium text-secondary-800 dark:text-secondary-200">
 												{t("Validated {{done}} / {{total}}", {
-													done: validationProgress.done,
+													done:
+														validationProgress.clean +
+														validationProgress.extraDeps,
 													total: validationProgress.total,
 												})}
 											</span>
@@ -1402,7 +1764,7 @@ export default function PatchWizard({
 													<span className="text-secondary-500 dark:text-secondary-400">
 														·
 													</span>
-													<span className="text-red-700 dark:text-red-400">
+													<span className="text-danger-700 dark:text-danger-400">
 														{t("{{count}} failed", {
 															count: validationProgress.failed,
 														})}
@@ -1417,6 +1779,18 @@ export default function PatchWizard({
 													<span className="text-secondary-600 dark:text-secondary-400">
 														{t("{{count}} offline", {
 															count: validationProgress.offline,
+														})}
+													</span>
+												</>
+											)}
+											{validationProgress.stillRunning > 0 && (
+												<>
+													<span className="text-secondary-500 dark:text-secondary-400">
+														·
+													</span>
+													<span className="text-primary-700 dark:text-primary-400">
+														{t("{{count}} still running", {
+															count: validationProgress.stillRunning,
 														})}
 													</span>
 												</>
@@ -1468,10 +1842,11 @@ export default function PatchWizard({
 										};
 										const hostLabel =
 											target.friendly_name || target.hostname || target.hostId;
-										const extraDeps = extraDependencies({
-											package_names: selectedPkgs,
-											packages_affected: v.packages_affected,
-										});
+										const extraDeps = extraDepsFor(
+											target,
+											selectedPkgs,
+											v.packages_affected,
+										);
 										const extraSet = new Set(
 											extraDeps.map((p) => p.toLowerCase()),
 										);
@@ -1483,7 +1858,8 @@ export default function PatchWizard({
 										const borderClass =
 											v.status === "pending"
 												? "border-secondary-200 dark:border-secondary-700"
-												: v.status === "validating"
+												: v.status === "validating" ||
+														v.status === "still_running"
 													? "border-primary-200 dark:border-primary-700"
 													: extraDeps.length > 0
 														? "border-amber-300 dark:border-amber-600"
@@ -1495,7 +1871,8 @@ export default function PatchWizard({
 										const headerBgClass =
 											v.status === "pending"
 												? "bg-secondary-50 dark:bg-secondary-900/40"
-												: v.status === "validating"
+												: v.status === "validating" ||
+														v.status === "still_running"
 													? "bg-primary-50 dark:bg-primary-900/20"
 													: extraDeps.length > 0
 														? "bg-amber-50 dark:bg-amber-900/30"
@@ -1526,7 +1903,9 @@ export default function PatchWizard({
 													{v.status === "validating" && (
 														<span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-primary-100 text-primary-700 dark:bg-primary-800 dark:text-primary-200">
 															<RefreshCw className="h-3 w-3 animate-spin" />
-															{t("Validating…")}
+															{v.reconnecting
+																? t("Agent reconnecting…")
+																: t("Validating…")}
 														</span>
 													)}
 													{v.status === "validated" && extraDeps.length > 0 && (
@@ -1551,14 +1930,31 @@ export default function PatchWizard({
 													)}
 													{v.status === "timeout" && (
 														<span className="text-xs px-2 py-0.5 rounded bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-secondary-300">
-															{v.still_running
-																? t("Still running")
-																: t("Offline")}
+															{t("Offline")}
+														</span>
+													)}
+													{v.status === "still_running" && (
+														<span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-primary-100 text-primary-700 dark:bg-primary-800 dark:text-primary-200">
+															<Clock className="h-3 w-3" />
+															{t("Still running")}
 														</span>
 													)}
 												</div>
 												{isTerminal && (
 													<div className="px-3 py-2 bg-white dark:bg-secondary-800">
+														{v.status === "validated" && v.skip_note && (
+															<div
+																role="status"
+																className="mb-2 p-2 rounded border border-secondary-200 dark:border-secondary-600 bg-secondary-50 dark:bg-secondary-700/40 text-secondary-700 dark:text-secondary-200"
+															>
+																<p className="text-xs font-medium">
+																	{t("Validated with skipped items")}
+																</p>
+																<p className="text-xs mt-0.5 break-words">
+																	{v.skip_note}
+																</p>
+															</div>
+														)}
 														{v.error ? (
 															<p className="text-amber-600 dark:text-amber-400 text-xs">
 																{v.error}
@@ -1570,7 +1966,7 @@ export default function PatchWizard({
 																		count: v.packages_affected.length,
 																	})}
 																</p>
-																<ul className="text-xs text-secondary-600 dark:text-secondary-400 list-disc list-inside space-y-0.5 max-h-20 overflow-y-auto">
+																<ul className="text-xs text-secondary-600 dark:text-secondary-400 list-disc list-inside space-y-0.5 max-h-48 overflow-y-auto scrollbar-thin">
 																	{v.packages_affected.map((p) => (
 																		<li
 																			key={p}
@@ -1592,7 +1988,9 @@ export default function PatchWizard({
 															</>
 														) : (
 															<p className="text-xs text-secondary-500 dark:text-secondary-400">
-																{t("No additional packages.")}
+																{isPatchAll
+																	? t("Nothing to install.")
+																	: t("No additional packages.")}
 															</p>
 														)}
 														{v.shell_output && (
@@ -1622,7 +2020,7 @@ export default function PatchWizard({
 										);
 									})}
 
-									{validationDone && !isValidating && (
+									{!isValidating && (
 										<button
 											type="button"
 											onClick={handleValidate}
@@ -1698,6 +2096,7 @@ export default function PatchWizard({
 													</td>
 													<td className="px-3 py-2 text-sm font-mono text-secondary-900 dark:text-white">
 														{name}
+														{featureUpgradeBadge(name)}
 													</td>
 												</tr>
 											);
@@ -1705,12 +2104,12 @@ export default function PatchWizard({
 									</tbody>
 								</table>
 							</div>
-							{selectedPackageNames.length > DRY_RUN_PACKAGE_LIMIT && (
+							{selectedPackageNames.length > dryRunLimit && (
 								<p className="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1">
 									<AlertTriangle className="h-3.5 w-3.5" />
 									{t(
 										"{{limit}} package limit for dry-run validation. The next step will let you skip validation and queue the patch directly.",
-										{ limit: DRY_RUN_PACKAGE_LIMIT },
+										{ limit: dryRunLimit },
 									)}
 								</p>
 							)}
@@ -1931,7 +2330,7 @@ export default function PatchWizard({
 												)}
 								</div>
 							)}
-							{isPatchAll && (
+							{isPatchAll && !windowsPatchAll && (
 								<div className="text-xs text-secondary-500 dark:text-secondary-400">
 									{t(
 										"Patch All doesn't use dry-run validation, so submit will create a pending approval run per host for a second approver to release later.",
@@ -2066,7 +2465,7 @@ export default function PatchWizard({
 									const offline = selectedTargets.filter(
 										(t) =>
 											validationByTarget[t.id]?.status === "timeout" &&
-											!validationByTarget[t.id]?.still_running,
+											!staleValidationIds.includes(t.id),
 									);
 									if (offline.length === 0) return null;
 									return (
@@ -2075,7 +2474,7 @@ export default function PatchWizard({
 											<p className="text-sm text-secondary-700 dark:text-secondary-200">
 												<Trans
 													t={t}
-													i18nKey="<strong>{{count}} host</strong> did not respond to validation and may be offline. The patch will queue but may not run until the host comes back online."
+													i18nKey="<strong>{{count}} host</strong> did not respond to validation and may be offline. It will patch without validation once the host is back online."
 													count={offline.length}
 													components={{ strong: <strong /> }}
 												/>
@@ -2083,6 +2482,34 @@ export default function PatchWizard({
 										</div>
 									);
 								})()}
+
+							{!isApprove && stillValidatingIds.length > 0 && (
+								<div className="flex items-start gap-2 p-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-700">
+									<Clock className="h-4 w-4 text-primary-600 dark:text-primary-400 mt-0.5 shrink-0" />
+									<p className="text-sm text-primary-700 dark:text-primary-200">
+										<Trans
+											t={t}
+											i18nKey="<strong>{{count}} host is</strong> still validating and will be left out. Patch it from Runs & History once validation finishes."
+											count={stillValidatingIds.length}
+											components={{ strong: <strong /> }}
+										/>
+									</p>
+								</div>
+							)}
+
+							{!isApprove && staleValidationIds.length > 0 && (
+								<div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700">
+									<AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+									<p className="text-sm text-amber-700 dark:text-amber-300">
+										<Trans
+											t={t}
+											i18nKey="<strong>{{count}} offline host has</strong> a pending validation for a different selection and will be left out. Cancel or delete that validation in Runs & History, then patch again."
+											count={staleValidationIds.length}
+											components={{ strong: <strong /> }}
+										/>
+									</p>
+								</div>
+							)}
 
 							{isApprove && (
 								<p className="text-sm text-secondary-600 dark:text-secondary-400">
@@ -2102,6 +2529,18 @@ export default function PatchWizard({
 											i18nKey="These runs will be left as <strong>pending approval</strong>. Nothing will be patched until a second approver reviews them in Runs & History."
 											components={{ strong: <strong /> }}
 										/>
+									</p>
+								</div>
+							)}
+
+							{featureUpgradesSelected.length > 0 && (
+								<div
+									role="alert"
+									className="flex items-start gap-2 p-3 rounded-lg bg-warning-50 dark:bg-warning-900/30 border border-warning-200 dark:border-warning-700"
+								>
+									<AlertTriangle className="h-4 w-4 text-warning-600 dark:text-warning-400 mt-0.5 shrink-0" />
+									<p className="text-sm text-warning-700 dark:text-warning-300">
+										{FEATURE_UPGRADE_WARNING}
 									</p>
 								</div>
 							)}
@@ -2131,15 +2570,24 @@ export default function PatchWizard({
 									(target.runId ? patchTypeByRun?.[target.runId] : null) ||
 									patchType;
 								const hostIsPatchAll = hostPatchType === "patch_all";
+								const runWindowsScope = !hostIsPatchAll
+									? null
+									: target.runId && windowsScopeByRun?.[target.runId]
+										? windowsScopeByRun[target.runId]
+										: isWindowsTarget(target) && !isApprove
+											? windowsScope
+											: null;
+								const packageGroups = groupPackagesForTarget(target, hostPkgs);
 
 								// Build package rows: requested packages first, then extra deps.
 								// For patch_all we show a single informational row; there's no
 								// finite list to display.
 								const requestedPackages = hostPkgs;
-								const extraDeps = extraDependencies({
-									package_names: hostPkgs,
-									packages_affected: v?.packages_affected,
-								});
+								const extraDeps = extraDepsFor(
+									target,
+									hostPkgs,
+									v?.packages_affected,
+								);
 
 								// Policy display. With the Timing step trimmed to
 								// default/immediate, any other value here is a stale
@@ -2196,11 +2644,15 @@ export default function PatchWizard({
 													{t("Validation skipped")}
 												</span>
 											)}
-											{v?.status === "timeout" && (
-												<span className="text-xs px-2 py-0.5 rounded bg-secondary-100 text-secondary-600 dark:bg-secondary-600 dark:text-secondary-300">
-													{v.still_running
-														? t("Validation still running")
-														: t("Host offline")}
+											{v?.status === "timeout" &&
+												!staleValidationIds.includes(target.id) && (
+													<span className="text-xs px-2 py-0.5 rounded bg-secondary-100 text-secondary-600 dark:bg-secondary-600 dark:text-secondary-300">
+														{t("Host offline, will patch without validation")}
+													</span>
+												)}
+											{v?.status === "still_running" && (
+												<span className="text-xs px-2 py-0.5 rounded bg-primary-100 text-primary-700 dark:bg-primary-800 dark:text-primary-200">
+													{t("Still validating")}
 												</span>
 											)}
 											{submitResult?.status === "success" && (
@@ -2222,9 +2674,11 @@ export default function PatchWizard({
 										{/* Packages table or summary */}
 										{hostIsPatchAll ? (
 											<div className="px-4 py-3 bg-white dark:bg-secondary-800 text-sm text-secondary-700 dark:text-secondary-300">
-												{t(
-													"All pending system package updates on this host will be installed.",
-												)}
+												{runWindowsScope
+													? `${windowsPatchAllSummary(runWindowsScope)}${canRestart ? "" : ` ${RESTART_NOT_AUTOMATIC}`}`
+													: t(
+															"All pending system package updates on this host will be installed.",
+														)}
 											</div>
 										) : (
 											<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
@@ -2239,18 +2693,38 @@ export default function PatchWizard({
 													</tr>
 												</thead>
 												<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-100 dark:divide-secondary-700">
-													{/* Requested packages */}
-													{requestedPackages.map((pkg) => (
-														<tr key={pkg}>
-															<td className="px-4 py-1.5 text-sm font-mono text-secondary-800 dark:text-secondary-200">
-																{pkg}
-															</td>
-															<td className="px-4 py-1.5">
-																<span className="text-xs text-secondary-500 dark:text-secondary-400">
-																	{t("Requested")}
-																</span>
-															</td>
-														</tr>
+													{packageGroups.map((group) => (
+														<Fragment key={group.key}>
+															{group.label && (
+																<tr className="bg-secondary-50 dark:bg-secondary-700/60">
+																	<td
+																		colSpan={2}
+																		className="px-4 py-1.5 text-xs font-medium text-secondary-600 dark:text-secondary-300"
+																	>
+																		{group.label} ({group.names.length})
+																	</td>
+																</tr>
+															)}
+															{group.names.map((pkg) => (
+																<tr key={pkg}>
+																	<td className="px-4 py-1.5 text-sm font-mono text-secondary-800 dark:text-secondary-200">
+																		{pkg}
+																	</td>
+																	<td className="px-4 py-1.5">
+																		{effectivePackageMeta[pkg]
+																			?.featureUpgrade ? (
+																			<span className="badge-warning whitespace-nowrap">
+																				{t("Feature upgrade")}
+																			</span>
+																		) : (
+																			<span className="text-xs text-secondary-500 dark:text-secondary-400">
+																				{t("Requested")}
+																			</span>
+																		)}
+																	</td>
+																</tr>
+															))}
+														</Fragment>
 													))}
 													{/* Dependencies: expandable when many */}
 													{extraDeps.length > 0 && (
@@ -2391,7 +2865,7 @@ export default function PatchWizard({
 						<button
 							type="button"
 							onClick={handleClose}
-							disabled={isPatching || isValidating}
+							disabled={isPatching}
 							className="btn-outline"
 						>
 							{submittedRuns.length > 0 ? t("Done") : t("Cancel")}
@@ -2429,26 +2903,40 @@ export default function PatchWizard({
 						    regardless of whether the user ran it. */}
 						{currentStepId === "validate" && (
 							<div className="flex gap-2">
-								{!validationDone && !isValidating && canValidate && (
+								{isValidating && (
 									<button
 										type="button"
-										onClick={goNext}
-										className="btn-outline text-sm"
+										onClick={continueWithoutWaiting}
+										disabled={!scopeValid}
+										className="btn-outline text-sm disabled:opacity-50 disabled:cursor-not-allowed"
 									>
-										{t("Skip validation")}
+										{t("Continue without waiting")}
 									</button>
 								)}
+								{!validationDone &&
+									!isValidating &&
+									(canValidate || windowsPatchAll) && (
+										<button
+											type="button"
+											onClick={goNext}
+											disabled={!scopeValid}
+											className="btn-outline text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+										>
+											Skip validation
+										</button>
+									)}
 								{validationDone && !isValidating && (
 									<button
 										type="button"
 										onClick={goNext}
-										className="btn-primary inline-flex items-center gap-1.5"
+										disabled={!scopeValid}
+										className="btn-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
 									>
 										{t("Next")}
 										<ArrowRight className="h-4 w-4" />
 									</button>
 								)}
-								{!canValidate && !validationDone && (
+								{!canValidate && !validationDone && !windowsPatchAll && (
 									<button
 										type="button"
 										onClick={goNext}
@@ -2490,7 +2978,13 @@ export default function PatchWizard({
 							<button
 								type="button"
 								onClick={handleConfirm}
-								disabled={isPatching || selectedTargetIds.size === 0}
+								disabled={
+									isPatching ||
+									selectedTargetIds.size === 0 ||
+									!scopeValid ||
+									(submittedRuns.length === 0 &&
+										excludedFromSubmit.length >= selectedTargetIds.size)
+								}
 								className="btn-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								{isPatching ? (

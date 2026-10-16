@@ -1,19 +1,16 @@
 import i18n, { tk } from "../i18n";
 import api from "./api";
+import { skippedItemsSummary } from "./patchRun";
 
 const DRY_RUN_POLL_INTERVAL_MS = 2000;
-// How long a dry run may wait for the agent to pick it up before the host is
-// reported offline.
-const DRY_RUN_PICKUP_TIMEOUT_MS = 30000;
-// How long to wait for a dry run the agent is working on. A Windows host runs
-// an online Windows Update search first, which commonly takes minutes.
-const DRY_RUN_MAX_WAIT_MS = 15 * 60 * 1000;
-// Terminal statuses that end a dry run without a validation result.
-const DRY_RUN_ABORTED_STATUSES = {
-	cancelled: "Dry run cancelled",
-	timed_out: "Dry run timed out on the host",
-	agent_disconnected: "Agent disconnected during the dry run",
-};
+const DRY_RUN_MAX_POLL_INTERVAL_MS = 10000;
+const DRY_RUN_TIMEOUT_MS = 30000;
+// Covers the agent's Windows Update search (15 min) and winget list (5 min) limits.
+const DRY_RUN_RUNNING_CAP_MS = 25 * 60 * 1000;
+const DRY_RUN_MAX_FETCH_ERRORS = 3;
+
+export const STILL_RUNNING_MESSAGE =
+	"Validation is still running on the host. Check Runs & History for the result.";
 
 /**
  * Build the absolute WebSocket URL for the live patch-run output stream.
@@ -28,52 +25,87 @@ export function buildRunStreamURL(runId) {
 	)}/stream`;
 }
 
+const DRY_RUN_FAILED_STATUSES = ["failed", "cancelled", "timed_out"];
+// The server lets a reconnecting agent move agent_disconnected back to running.
+const DRY_RUN_ACTIVE_STATUSES = ["running", "agent_disconnected"];
+
+const sleep = (ms, signal) =>
+	new Promise((resolve) => {
+		const timer = setTimeout(done, ms);
+		function done() {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", done);
+			resolve();
+		}
+		signal?.addEventListener("abort", done);
+	});
+
 /**
- * Poll a patch run until it reaches a terminal state (validated, completed,
- * failed, cancelled, timed out) or the wait runs out.
- *
- * A run the agent never picks up times out after pickupTimeoutMs as "host
- * offline". Once the agent is running it, the wait extends to maxWaitMs; if
- * that runs out too, the result is a timeout flagged still_running, since the
- * run carries on and its result lands on the run itself.
- *
- * Returns { status, packages_affected, shell_output, error, still_running? }.
+ * Poll a patch run until it reaches a terminal state or timeout.
+ * The 30s offline timeout only applies until the server has dispatched the run
+ * to the agent: a Windows Update search can take minutes.
+ * onStatus receives each raw run status while the run is still in progress.
+ * Returns { status, packages_affected, error }, or null once signal aborts.
  */
-export async function pollDryRunUntilDone(runId, opts = {}) {
-	const pickupTimeoutMs = opts.pickupTimeoutMs ?? DRY_RUN_PICKUP_TIMEOUT_MS;
-	const maxWaitMs = opts.maxWaitMs ?? DRY_RUN_MAX_WAIT_MS;
-	const intervalMs = opts.intervalMs ?? DRY_RUN_POLL_INTERVAL_MS;
+export async function pollDryRunUntilDone(runId, { signal, onStatus } = {}) {
 	const start = Date.now();
-	let pickedUp = false;
+	let interval = DRY_RUN_POLL_INTERVAL_MS;
+	let fetchErrors = 0;
 	for (;;) {
-		const run = await api.get(`/patching/runs/${runId}`).then((r) => r.data);
+		if (signal?.aborted) return null;
+		let run;
+		try {
+			run = await api.get(`/patching/runs/${runId}`).then((r) => r.data);
+			fetchErrors = 0;
+		} catch (err) {
+			if (signal?.aborted) return null;
+			fetchErrors += 1;
+			if (fetchErrors >= DRY_RUN_MAX_FETCH_ERRORS) throw err;
+			await sleep(DRY_RUN_POLL_INTERVAL_MS * 2 ** fetchErrors, signal);
+			continue;
+		}
+		if (signal?.aborted) return null;
 		const status = run?.status;
-		if (status === "validated" || status === "completed") {
+		if (
+			status === "validated" ||
+			status === "completed" ||
+			status === "dry_run_completed"
+		) {
 			return {
 				status: "validated",
 				packages_affected: run.packages_affected || [],
 				shell_output: run.shell_output || "",
+				skip_note: skippedItemsSummary(run),
 				error: null,
 			};
 		}
-		if (
-			status === "failed" ||
-			Object.hasOwn(DRY_RUN_ABORTED_STATUSES, status)
-		) {
+		if (DRY_RUN_FAILED_STATUSES.includes(status)) {
 			return {
 				status: "failed",
 				packages_affected: [],
 				shell_output: run.shell_output || "",
-				error:
-					run.error_message ||
-					DRY_RUN_ABORTED_STATUSES[status] ||
-					"Dry run failed",
+				error: run.error_message || "Dry run failed",
 			};
 		}
-		if (status === "running") pickedUp = true;
-
+		const active = DRY_RUN_ACTIVE_STATUSES.includes(status);
 		const elapsed = Date.now() - start;
-		if (!pickedUp && elapsed >= pickupTimeoutMs) {
+		if (active && elapsed >= DRY_RUN_RUNNING_CAP_MS) {
+			if (status === "agent_disconnected") {
+				return {
+					status: "failed",
+					packages_affected: [],
+					shell_output: run.shell_output || "",
+					error: run.error_message || "Agent disconnected during validation",
+				};
+			}
+			return {
+				status: "still_running",
+				packages_affected: [],
+				shell_output: run.shell_output || "",
+				error: STILL_RUNNING_MESSAGE,
+			};
+		}
+		if (!active && elapsed >= DRY_RUN_TIMEOUT_MS) {
 			return {
 				status: "timeout",
 				packages_affected: [],
@@ -81,17 +113,14 @@ export async function pollDryRunUntilDone(runId, opts = {}) {
 				error: "Validation skipped (host offline)",
 			};
 		}
-		if (elapsed >= maxWaitMs) {
-			return {
-				status: "timeout",
-				still_running: true,
-				packages_affected: [],
-				shell_output: run?.shell_output || "",
-				error:
-					"Validation is still running on the host; its result will appear on the run in Patching",
-			};
+		onStatus?.(status);
+		if (active) {
+			interval = Math.min(
+				interval + DRY_RUN_POLL_INTERVAL_MS,
+				DRY_RUN_MAX_POLL_INTERVAL_MS,
+			);
 		}
-		await new Promise((r) => setTimeout(r, intervalMs));
+		await sleep(interval, signal);
 	}
 }
 
@@ -256,6 +285,14 @@ export const patchingAPI = {
 					? { schedule_override: opts.schedule_override }
 					: {}),
 				...(opts.reboot ? { reboot: opts.reboot } : {}),
+				...(opts.windows_scope
+					? {
+							windows_scope: {
+								updates: !!opts.windows_scope.updates,
+								apps: !!opts.windows_scope.apps,
+							},
+						}
+					: {}),
 			})
 			.then((res) => res.data),
 	approveRun: (id, opts = {}) =>

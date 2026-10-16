@@ -50,5 +50,13 @@
 	"You are approving {{count}} existing run. Review the summary for each host below before approving._one": "You are approving {{count}} existing run. Review the summary for each host below before approving.",
 	"You are approving {{count}} existing run. Review the summary for each host below before approving._other": "You are approving {{count}} existing runs. Review the summary for each host below before approving.",
 	"{{count}} additional dependency_one": "{{count}} additional dependency",
-	"{{count}} additional dependency_other": "{{count}} additional dependencies"
+	"{{count}} additional dependency_other": "{{count}} additional dependencies",
+	"Not patchable ({{count}})_one": "Not patchable ({{count}})",
+	"Not patchable ({{count}})_other": "Not patchable ({{count}})",
+	"<strong>{{count}} host</strong> did not respond to validation and may be offline. It will patch without validation once the host is back online._one": "<strong>{{count}} host</strong> did not respond to validation and may be offline. It will patch without validation once the host is back online.",
+	"<strong>{{count}} host</strong> did not respond to validation and may be offline. It will patch without validation once the host is back online._other": "<strong>{{count}} hosts</strong> did not respond to validation and may be offline. They will patch without validation once the hosts are back online.",
+	"<strong>{{count}} host is</strong> still validating and will be left out. Patch it from Runs & History once validation finishes._one": "<strong>{{count}} host is</strong> still validating and will be left out. Patch it from Runs & History once validation finishes.",
+	"<strong>{{count}} host is</strong> still validating and will be left out. Patch it from Runs & History once validation finishes._other": "<strong>{{count}} hosts are</strong> still validating and will be left out. Patch them from Runs & History once validation finishes.",
+	"<strong>{{count}} offline host has</strong> a pending validation for a different selection and will be left out. Cancel or delete that validation in Runs & History, then patch again._one": "<strong>{{count}} offline host has</strong> a pending validation for a different selection and will be left out. Cancel or delete that validation in Runs & History, then patch again.",
+	"<strong>{{count}} offline host has</strong> a pending validation for a different selection and will be left out. Cancel or delete that validation in Runs & History, then patch again._other": "<strong>{{count}} offline hosts have</strong> a pending validation for a different selection and will be left out. Cancel or delete that validation in Runs & History, then patch again."
 }

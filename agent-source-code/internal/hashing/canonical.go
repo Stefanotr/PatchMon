@@ -17,6 +17,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"golang.org/x/text/unicode/norm"
 	"patchmon-agent/pkg/models"
@@ -52,6 +53,9 @@ type PackageHashRow struct {
 	WUACategories     []string `json:"wuaCategories"`
 	WUASupportURL     string   `json:"wuaSupportUrl"`
 	WUARevisionNumber int32    `json:"wuaRevisionNumber"`
+	// omitempty on purpose: unpinned rows must encode exactly as before this field existed.
+	WingetPinned   bool `json:"wingetPinned,omitempty"`
+	WingetStoreApp bool `json:"wingetStoreApp,omitempty"`
 }
 
 // PackagesHash hashes the agent's package list. Pre-sorts by name and dedupes
@@ -80,6 +84,8 @@ func PackagesHash(pkgs []models.Package) (string, error) {
 			WUACategories:     cats,
 			WUASupportURL:     nfc(p.WUASupportURL),
 			WUARevisionNumber: p.WUARevisionNumber,
+			WingetPinned:      p.WingetPinned,
+			WingetStoreApp:    p.WingetStoreApp,
 		})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
@@ -234,6 +240,8 @@ type DockerContainerHashRow struct {
 	ImageID         string `json:"imageId"`
 	Status          string `json:"status"`
 	State           string `json:"state"`
+	ImageStale      bool   `json:"imageStale,omitempty"`
+	StartedAt       string `json:"startedAt,omitempty"`
 }
 
 // DockerImageHashRow mirrors the server's row.
@@ -279,6 +287,13 @@ type dockerHashEnvelope struct {
 	Updates    []DockerImageUpdateHashRow `json:"updates"`
 }
 
+func canonicalTime(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 // DockerHash hashes the agent's docker payload.
 func DockerHash(d *models.DockerData) (string, error) {
 	if d == nil {
@@ -295,6 +310,8 @@ func DockerHash(d *models.DockerData) (string, error) {
 			ImageID:         nfc(c.ImageID),
 			Status:          nfc(c.Status),
 			State:           nfc(c.State),
+			ImageStale:      c.ImageStale,
+			StartedAt:       canonicalTime(c.StartedAt),
 		})
 	}
 	sort.SliceStable(containers, func(i, j int) bool {

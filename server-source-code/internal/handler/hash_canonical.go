@@ -30,6 +30,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/PatchMon/PatchMon/server-source-code/internal/models"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/store"
@@ -76,6 +77,9 @@ type PackageHashRow struct {
 	WUACategories     []string `json:"wuaCategories"`
 	WUASupportURL     string   `json:"wuaSupportUrl"`
 	WUARevisionNumber int32    `json:"wuaRevisionNumber"`
+	// omitempty on purpose: unpinned rows must encode exactly as before this field existed.
+	WingetPinned   bool `json:"wingetPinned,omitempty"`
+	WingetStoreApp bool `json:"wingetStoreApp,omitempty"`
 }
 
 // CanonicalPackagesHash hashes the agent's package list. Pre-sorts by name and
@@ -110,6 +114,8 @@ func CanonicalPackagesHash(pkgs []store.ReportPackage) (string, error) {
 			WUACategories:     cats,
 			WUASupportURL:     nfc(p.WUASupportURL),
 			WUARevisionNumber: p.WUARevisionNumber,
+			WingetPinned:      p.WingetPinned,
+			WingetStoreApp:    p.WingetStoreApp,
 		})
 	}
 	// Sort by name. Stable so duplicates (same name) preserve agent order
@@ -300,6 +306,8 @@ type DockerContainerHashRow struct {
 	ImageID         string `json:"imageId"`
 	Status          string `json:"status"`
 	State           string `json:"state"`
+	ImageStale      bool   `json:"imageStale,omitempty"`
+	StartedAt       string `json:"startedAt,omitempty"`
 }
 
 // DockerImageHashRow is the stable identity of a docker image.
@@ -351,13 +359,15 @@ type DockerHashEnvelope struct {
 // shape before hashing. Field names match the agent's; JSON tags MUST match
 // agent-source-code/pkg/models/integrations.go exactly.
 type DockerWireContainer struct {
-	ContainerID     string `json:"container_id"`
-	Name            string `json:"name"`
-	ImageRepository string `json:"image_repository"`
-	ImageTag        string `json:"image_tag"`
-	ImageID         string `json:"image_id"`
-	Status          string `json:"status"`
-	State           string `json:"state"`
+	ContainerID     string     `json:"container_id"`
+	Name            string     `json:"name"`
+	ImageRepository string     `json:"image_repository"`
+	ImageTag        string     `json:"image_tag"`
+	ImageID         string     `json:"image_id"`
+	Status          string     `json:"status"`
+	State           string     `json:"state"`
+	ImageStale      bool       `json:"image_stale"`
+	StartedAt       *time.Time `json:"started_at,omitempty"`
 }
 
 // DockerWireImage mirrors the agent's models.DockerImage wire shape.
@@ -407,10 +417,14 @@ type DockerHashInput struct {
 	Updates    []DockerWireImageUpdate `json:"updates"`
 }
 
-// CanonicalDockerHash hashes the docker payload. Each list is sorted by its
-// stable id; volatile metadata (timestamps, port maps, labels, restart
-// counts, container counts) is excluded so transient state does not force
-// re-uploads. The next docker upload will refresh the metadata anyway.
+func dockerHashTime(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+// CanonicalDockerHash hashes the docker payload; omitempty keeps pre-2.1.4 agent hashes unchanged.
 func CanonicalDockerHash(in DockerHashInput) (string, error) {
 	containers := make([]DockerContainerHashRow, 0, len(in.Containers))
 	for i := range in.Containers {
@@ -423,6 +437,8 @@ func CanonicalDockerHash(in DockerHashInput) (string, error) {
 			ImageID:         nfc(c.ImageID),
 			Status:          nfc(c.Status),
 			State:           nfc(c.State),
+			ImageStale:      c.ImageStale,
+			StartedAt:       dockerHashTime(c.StartedAt),
 		})
 	}
 	sort.SliceStable(containers, func(i, j int) bool {

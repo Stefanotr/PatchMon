@@ -12,7 +12,7 @@ import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import AllowRemoteRestartOption from "../../components/AllowRemoteRestartOption";
 import ModalPortal from "../../components/ui/ModalPortal";
-import { adminHostsAPI, settingsAPI } from "../../utils/api";
+import { adminHostsAPI, formatDate, settingsAPI } from "../../utils/api";
 import { windowsScriptCall, withScriptArgs } from "../../utils/installCommand";
 import WaitingForConnection from "./WaitingForConnection";
 
@@ -341,7 +341,7 @@ const CredentialsModal = ({ host, isOpen, onClose, plaintextApiKey }) => {
 												</p>
 												<p className="text-xs text-warning-700 dark:text-warning-300 mt-1">
 													{t(
-														"The plaintext API key is only shown once when the host is created.",
+														"The plaintext API key is only shown once when the host is created. Regenerating replaces both the API ID and key, so any machine still using the old ones stops reporting until the agent is reinstalled.",
 													)}
 												</p>
 											</div>
@@ -416,6 +416,12 @@ const CredentialsModal = ({ host, isOpen, onClose, plaintextApiKey }) => {
 							<h4 className="text-xs md:text-sm font-medium text-secondary-900 dark:text-white mb-3">
 								{t("API Credentials")}
 							</h4>
+							{host.credentials_reissued_at && (
+								<p className="-mt-1 mb-3 text-xs text-secondary-500 dark:text-secondary-400">
+									Credentials re-issued by auto-enrolment on{" "}
+									{formatDate(host.credentials_reissued_at)}
+								</p>
+							)}
 							<div className="space-y-4">
 								<div>
 									<label

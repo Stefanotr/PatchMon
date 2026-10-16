@@ -11,6 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateScheduledPatchRun = `-- name: ActivateScheduledPatchRun :execrows
+UPDATE patch_runs SET status = 'queued', updated_at = NOW()
+WHERE id = $1 AND status = 'scheduled'
+`
+
+func (q *Queries) ActivateScheduledPatchRun(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, activateScheduledPatchRun, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const clearScheduledAt = `-- name: ClearScheduledAt :exec
 UPDATE patch_runs SET scheduled_at = NULL, updated_at = NOW() WHERE id = $1
 `
@@ -25,7 +38,7 @@ SELECT COUNT(*) FROM patch_runs
 WHERE ($1::text = '' OR host_id = $1)
   AND (
     $2::text = ''
-    OR ($2::text = 'active' AND status IN ('queued', 'running'))
+    OR ($2::text = 'active' AND status IN ('queued', 'pending_validation', 'running'))
     OR ($2::text <> 'active' AND status = $2)
   )
   AND ($3::text = '' OR patch_type = $3)
@@ -124,27 +137,29 @@ func (q *Queries) CreatePatchPolicyExclusion(ctx context.Context, arg CreatePatc
 }
 
 const createPatchRun = `-- name: CreatePatchRun :exec
-INSERT INTO patch_runs (id, host_id, job_id, patch_type, package_name, package_names, status, shell_output, triggered_by_user_id, dry_run, scheduled_at, policy_id, policy_name, policy_snapshot, validation_run_id, approved_by_user_id, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+INSERT INTO patch_runs (id, host_id, job_id, patch_type, package_name, package_names, status, shell_output, triggered_by_user_id, dry_run, scheduled_at, policy_id, policy_name, policy_snapshot, validation_run_id, approved_by_user_id, windows_include_updates, windows_include_apps, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
 `
 
 type CreatePatchRunParams struct {
-	ID                string           `json:"id"`
-	HostID            string           `json:"host_id"`
-	JobID             string           `json:"job_id"`
-	PatchType         string           `json:"patch_type"`
-	PackageName       *string          `json:"package_name"`
-	PackageNames      []byte           `json:"package_names"`
-	Status            string           `json:"status"`
-	ShellOutput       string           `json:"shell_output"`
-	TriggeredByUserID *string          `json:"triggered_by_user_id"`
-	DryRun            bool             `json:"dry_run"`
-	ScheduledAt       pgtype.Timestamp `json:"scheduled_at"`
-	PolicyID          *string          `json:"policy_id"`
-	PolicyName        *string          `json:"policy_name"`
-	PolicySnapshot    []byte           `json:"policy_snapshot"`
-	ValidationRunID   *string          `json:"validation_run_id"`
-	ApprovedByUserID  *string          `json:"approved_by_user_id"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
 }
 
 // patch_runs
@@ -166,6 +181,8 @@ func (q *Queries) CreatePatchRun(ctx context.Context, arg CreatePatchRunParams) 
 		arg.PolicySnapshot,
 		arg.ValidationRunID,
 		arg.ApprovedByUserID,
+		arg.WindowsIncludeUpdates,
+		arg.WindowsIncludeApps,
 	)
 	return err
 }
@@ -342,7 +359,7 @@ func (q *Queries) GetPatchPolicyByID(ctx context.Context, id string) (PatchPolic
 }
 
 const getPatchRunByID = `-- name: GetPatchRunByID :one
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username, au.username AS approved_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, h.package_manager AS host_package_manager, u.username AS triggered_by_username, au.username AS approved_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
@@ -351,32 +368,37 @@ WHERE pr.id = $1
 `
 
 type GetPatchRunByIDRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
-	ApprovedByUsername  *string          `json:"approved_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	HostPackageManager    *string          `json:"host_package_manager"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
+	ApprovedByUsername    *string          `json:"approved_by_username"`
 }
 
 func (q *Queries) GetPatchRunByID(ctx context.Context, id string) (GetPatchRunByIDRow, error) {
@@ -405,8 +427,13 @@ func (q *Queries) GetPatchRunByID(ctx context.Context, id string) (GetPatchRunBy
 		&i.ValidationRunID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RebootRequired,
+		&i.WindowsIncludeUpdates,
+		&i.WindowsIncludeApps,
 		&i.HostFriendlyName,
 		&i.HostHostname,
+		&i.HostOsType,
+		&i.HostPackageManager,
 		&i.TriggeredByUsername,
 		&i.ApprovedByUsername,
 	)
@@ -414,7 +441,7 @@ func (q *Queries) GetPatchRunByID(ctx context.Context, id string) (GetPatchRunBy
 }
 
 const getPatchRunByIDSimple = `-- name: GetPatchRunByIDSimple :one
-SELECT id, host_id, job_id, patch_type, package_name, package_names, status, shell_output, error_message, started_at, completed_at, scheduled_at, triggered_by_user_id, approved_by_user_id, dry_run, packages_affected, policy_id, policy_name, policy_snapshot, validation_run_id, created_at, updated_at FROM patch_runs WHERE id = $1
+SELECT id, host_id, job_id, patch_type, package_name, package_names, status, shell_output, error_message, started_at, completed_at, scheduled_at, triggered_by_user_id, approved_by_user_id, dry_run, packages_affected, policy_id, policy_name, policy_snapshot, validation_run_id, created_at, updated_at, reboot_required, windows_include_updates, windows_include_apps FROM patch_runs WHERE id = $1
 `
 
 func (q *Queries) GetPatchRunByIDSimple(ctx context.Context, id string) (PatchRun, error) {
@@ -443,45 +470,63 @@ func (q *Queries) GetPatchRunByIDSimple(ctx context.Context, id string) (PatchRu
 		&i.ValidationRunID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RebootRequired,
+		&i.WindowsIncludeUpdates,
+		&i.WindowsIncludeApps,
 	)
 	return i, err
 }
 
+const hostHasActivePatchRun = `-- name: HostHasActivePatchRun :one
+SELECT EXISTS(SELECT 1 FROM patch_runs WHERE host_id = $1 AND status IN ('queued', 'pending_validation', 'running'))
+`
+
+func (q *Queries) HostHasActivePatchRun(ctx context.Context, hostID string) (bool, error) {
+	row := q.db.QueryRow(ctx, hostHasActivePatchRun, hostID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listActivePatchRuns = `-- name: ListActivePatchRuns :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
-WHERE pr.status IN ('queued', 'running', 'pending_validation', 'pending_approval', 'validated') AND (pr.dry_run = false OR pr.dry_run IS NULL OR pr.status IN ('pending_validation', 'pending_approval', 'validated'))
+WHERE pr.status IN ('scheduled', 'queued', 'running', 'pending_validation', 'pending_approval', 'validated') AND (pr.dry_run = false OR pr.dry_run IS NULL OR pr.status IN ('pending_validation', 'pending_approval', 'validated'))
 ORDER BY pr.created_at ASC
 `
 
 type ListActivePatchRunsRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 func (q *Queries) ListActivePatchRuns(ctx context.Context) ([]ListActivePatchRunsRow, error) {
@@ -516,8 +561,12 @@ func (q *Queries) ListActivePatchRuns(ctx context.Context) ([]ListActivePatchRun
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -680,14 +729,14 @@ func (q *Queries) ListPatchPolicyExclusions(ctx context.Context, patchPolicyID s
 }
 
 const listPatchRuns = `-- name: ListPatchRuns :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
 WHERE ($1::text = '' OR pr.host_id = $1)
   AND (
     $2::text = ''
-    OR ($2::text = 'active' AND pr.status IN ('queued', 'running'))
+    OR ($2::text = 'active' AND pr.status IN ('queued', 'pending_validation', 'running'))
     OR ($2::text <> 'active' AND pr.status = $2)
   )
   AND ($3::text = '' OR pr.patch_type = $3)
@@ -704,36 +753,39 @@ type ListPatchRunsParams struct {
 }
 
 type ListPatchRunsRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 // The 'status' filter accepts an exact status value. The pseudo-value
-// 'active' matches any in-flight run (queued or running) so UI widgets
-// that aggregate those two states can link to a single filter.
+// 'active' matches the in-flight runs that block a host: queued, pending_validation, running.
 func (q *Queries) ListPatchRuns(ctx context.Context, arg ListPatchRunsParams) ([]ListPatchRunsRow, error) {
 	rows, err := q.db.Query(ctx, listPatchRuns,
 		arg.HostID,
@@ -772,8 +824,12 @@ func (q *Queries) ListPatchRuns(ctx context.Context, arg ListPatchRunsParams) ([
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -874,14 +930,14 @@ func (q *Queries) ListPatchRunsByStatus(ctx context.Context, hostIds []string) (
 }
 
 const listPatchRunsOrderByCompletedAt = `-- name: ListPatchRunsOrderByCompletedAt :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
 WHERE ($1::text = '' OR pr.host_id = $1)
   AND (
     $2::text = ''
-    OR ($2::text = 'active' AND pr.status IN ('queued', 'running'))
+    OR ($2::text = 'active' AND pr.status IN ('queued', 'pending_validation', 'running'))
     OR ($2::text <> 'active' AND pr.status = $2)
   )
   AND ($3::text = '' OR pr.patch_type = $3)
@@ -898,31 +954,35 @@ type ListPatchRunsOrderByCompletedAtParams struct {
 }
 
 type ListPatchRunsOrderByCompletedAtRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 func (q *Queries) ListPatchRunsOrderByCompletedAt(ctx context.Context, arg ListPatchRunsOrderByCompletedAtParams) ([]ListPatchRunsOrderByCompletedAtRow, error) {
@@ -963,8 +1023,12 @@ func (q *Queries) ListPatchRunsOrderByCompletedAt(ctx context.Context, arg ListP
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -978,14 +1042,14 @@ func (q *Queries) ListPatchRunsOrderByCompletedAt(ctx context.Context, arg ListP
 }
 
 const listPatchRunsOrderByCompletedAtAsc = `-- name: ListPatchRunsOrderByCompletedAtAsc :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
 WHERE ($1::text = '' OR pr.host_id = $1)
   AND (
     $2::text = ''
-    OR ($2::text = 'active' AND pr.status IN ('queued', 'running'))
+    OR ($2::text = 'active' AND pr.status IN ('queued', 'pending_validation', 'running'))
     OR ($2::text <> 'active' AND pr.status = $2)
   )
   AND ($3::text = '' OR pr.patch_type = $3)
@@ -1002,31 +1066,35 @@ type ListPatchRunsOrderByCompletedAtAscParams struct {
 }
 
 type ListPatchRunsOrderByCompletedAtAscRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 func (q *Queries) ListPatchRunsOrderByCompletedAtAsc(ctx context.Context, arg ListPatchRunsOrderByCompletedAtAscParams) ([]ListPatchRunsOrderByCompletedAtAscRow, error) {
@@ -1067,8 +1135,12 @@ func (q *Queries) ListPatchRunsOrderByCompletedAtAsc(ctx context.Context, arg Li
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -1082,14 +1154,14 @@ func (q *Queries) ListPatchRunsOrderByCompletedAtAsc(ctx context.Context, arg Li
 }
 
 const listPatchRunsOrderByCreatedAtAsc = `-- name: ListPatchRunsOrderByCreatedAtAsc :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
 WHERE ($1::text = '' OR pr.host_id = $1)
   AND (
     $2::text = ''
-    OR ($2::text = 'active' AND pr.status IN ('queued', 'running'))
+    OR ($2::text = 'active' AND pr.status IN ('queued', 'pending_validation', 'running'))
     OR ($2::text <> 'active' AND pr.status = $2)
   )
   AND ($3::text = '' OR pr.patch_type = $3)
@@ -1106,31 +1178,35 @@ type ListPatchRunsOrderByCreatedAtAscParams struct {
 }
 
 type ListPatchRunsOrderByCreatedAtAscRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 func (q *Queries) ListPatchRunsOrderByCreatedAtAsc(ctx context.Context, arg ListPatchRunsOrderByCreatedAtAscParams) ([]ListPatchRunsOrderByCreatedAtAscRow, error) {
@@ -1171,8 +1247,12 @@ func (q *Queries) ListPatchRunsOrderByCreatedAtAsc(ctx context.Context, arg List
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -1186,14 +1266,14 @@ func (q *Queries) ListPatchRunsOrderByCreatedAtAsc(ctx context.Context, arg List
 }
 
 const listPatchRunsOrderByStartedAt = `-- name: ListPatchRunsOrderByStartedAt :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
 WHERE ($1::text = '' OR pr.host_id = $1)
   AND (
     $2::text = ''
-    OR ($2::text = 'active' AND pr.status IN ('queued', 'running'))
+    OR ($2::text = 'active' AND pr.status IN ('queued', 'pending_validation', 'running'))
     OR ($2::text <> 'active' AND pr.status = $2)
   )
   AND ($3::text = '' OR pr.patch_type = $3)
@@ -1210,31 +1290,35 @@ type ListPatchRunsOrderByStartedAtParams struct {
 }
 
 type ListPatchRunsOrderByStartedAtRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 func (q *Queries) ListPatchRunsOrderByStartedAt(ctx context.Context, arg ListPatchRunsOrderByStartedAtParams) ([]ListPatchRunsOrderByStartedAtRow, error) {
@@ -1275,8 +1359,12 @@ func (q *Queries) ListPatchRunsOrderByStartedAt(ctx context.Context, arg ListPat
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -1290,14 +1378,14 @@ func (q *Queries) ListPatchRunsOrderByStartedAt(ctx context.Context, arg ListPat
 }
 
 const listPatchRunsOrderByStartedAtAsc = `-- name: ListPatchRunsOrderByStartedAtAsc :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
 WHERE ($1::text = '' OR pr.host_id = $1)
   AND (
     $2::text = ''
-    OR ($2::text = 'active' AND pr.status IN ('queued', 'running'))
+    OR ($2::text = 'active' AND pr.status IN ('queued', 'pending_validation', 'running'))
     OR ($2::text <> 'active' AND pr.status = $2)
   )
   AND ($3::text = '' OR pr.patch_type = $3)
@@ -1314,31 +1402,35 @@ type ListPatchRunsOrderByStartedAtAscParams struct {
 }
 
 type ListPatchRunsOrderByStartedAtAscRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 func (q *Queries) ListPatchRunsOrderByStartedAtAsc(ctx context.Context, arg ListPatchRunsOrderByStartedAtAscParams) ([]ListPatchRunsOrderByStartedAtAscRow, error) {
@@ -1379,8 +1471,12 @@ func (q *Queries) ListPatchRunsOrderByStartedAtAsc(ctx context.Context, arg List
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -1394,14 +1490,14 @@ func (q *Queries) ListPatchRunsOrderByStartedAtAsc(ctx context.Context, arg List
 }
 
 const listPatchRunsOrderByStatus = `-- name: ListPatchRunsOrderByStatus :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
 WHERE ($1::text = '' OR pr.host_id = $1)
   AND (
     $2::text = ''
-    OR ($2::text = 'active' AND pr.status IN ('queued', 'running'))
+    OR ($2::text = 'active' AND pr.status IN ('queued', 'pending_validation', 'running'))
     OR ($2::text <> 'active' AND pr.status = $2)
   )
   AND ($3::text = '' OR pr.patch_type = $3)
@@ -1418,31 +1514,35 @@ type ListPatchRunsOrderByStatusParams struct {
 }
 
 type ListPatchRunsOrderByStatusRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 func (q *Queries) ListPatchRunsOrderByStatus(ctx context.Context, arg ListPatchRunsOrderByStatusParams) ([]ListPatchRunsOrderByStatusRow, error) {
@@ -1483,8 +1583,12 @@ func (q *Queries) ListPatchRunsOrderByStatus(ctx context.Context, arg ListPatchR
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -1498,14 +1602,14 @@ func (q *Queries) ListPatchRunsOrderByStatus(ctx context.Context, arg ListPatchR
 }
 
 const listPatchRunsOrderByStatusDesc = `-- name: ListPatchRunsOrderByStatusDesc :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
 WHERE ($1::text = '' OR pr.host_id = $1)
   AND (
     $2::text = ''
-    OR ($2::text = 'active' AND pr.status IN ('queued', 'running'))
+    OR ($2::text = 'active' AND pr.status IN ('queued', 'pending_validation', 'running'))
     OR ($2::text <> 'active' AND pr.status = $2)
   )
   AND ($3::text = '' OR pr.patch_type = $3)
@@ -1522,31 +1626,35 @@ type ListPatchRunsOrderByStatusDescParams struct {
 }
 
 type ListPatchRunsOrderByStatusDescRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 func (q *Queries) ListPatchRunsOrderByStatusDesc(ctx context.Context, arg ListPatchRunsOrderByStatusDescParams) ([]ListPatchRunsOrderByStatusDescRow, error) {
@@ -1587,8 +1695,12 @@ func (q *Queries) ListPatchRunsOrderByStatusDesc(ctx context.Context, arg ListPa
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -1602,7 +1714,7 @@ func (q *Queries) ListPatchRunsOrderByStatusDesc(ctx context.Context, arg ListPa
 }
 
 const listRecentPatchRuns = `-- name: ListRecentPatchRuns :many
-SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, u.username AS triggered_by_username
+SELECT pr.id, pr.host_id, pr.job_id, pr.patch_type, pr.package_name, pr.package_names, pr.status, pr.shell_output, pr.error_message, pr.started_at, pr.completed_at, pr.scheduled_at, pr.triggered_by_user_id, pr.approved_by_user_id, pr.dry_run, pr.packages_affected, pr.policy_id, pr.policy_name, pr.policy_snapshot, pr.validation_run_id, pr.created_at, pr.updated_at, pr.reboot_required, pr.windows_include_updates, pr.windows_include_apps, h.friendly_name AS host_friendly_name, h.hostname AS host_hostname, h.os_type AS host_os_type, u.username AS triggered_by_username
 FROM patch_runs pr
 LEFT JOIN hosts h ON pr.host_id = h.id
 LEFT JOIN users u ON pr.triggered_by_user_id = u.id
@@ -1621,31 +1733,35 @@ type ListRecentPatchRunsParams struct {
 }
 
 type ListRecentPatchRunsRow struct {
-	ID                  string           `json:"id"`
-	HostID              string           `json:"host_id"`
-	JobID               string           `json:"job_id"`
-	PatchType           string           `json:"patch_type"`
-	PackageName         *string          `json:"package_name"`
-	PackageNames        []byte           `json:"package_names"`
-	Status              string           `json:"status"`
-	ShellOutput         string           `json:"shell_output"`
-	ErrorMessage        *string          `json:"error_message"`
-	StartedAt           pgtype.Timestamp `json:"started_at"`
-	CompletedAt         pgtype.Timestamp `json:"completed_at"`
-	ScheduledAt         pgtype.Timestamp `json:"scheduled_at"`
-	TriggeredByUserID   *string          `json:"triggered_by_user_id"`
-	ApprovedByUserID    *string          `json:"approved_by_user_id"`
-	DryRun              bool             `json:"dry_run"`
-	PackagesAffected    []byte           `json:"packages_affected"`
-	PolicyID            *string          `json:"policy_id"`
-	PolicyName          *string          `json:"policy_name"`
-	PolicySnapshot      []byte           `json:"policy_snapshot"`
-	ValidationRunID     *string          `json:"validation_run_id"`
-	CreatedAt           pgtype.Timestamp `json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
-	HostFriendlyName    *string          `json:"host_friendly_name"`
-	HostHostname        *string          `json:"host_hostname"`
-	TriggeredByUsername *string          `json:"triggered_by_username"`
+	ID                    string           `json:"id"`
+	HostID                string           `json:"host_id"`
+	JobID                 string           `json:"job_id"`
+	PatchType             string           `json:"patch_type"`
+	PackageName           *string          `json:"package_name"`
+	PackageNames          []byte           `json:"package_names"`
+	Status                string           `json:"status"`
+	ShellOutput           string           `json:"shell_output"`
+	ErrorMessage          *string          `json:"error_message"`
+	StartedAt             pgtype.Timestamp `json:"started_at"`
+	CompletedAt           pgtype.Timestamp `json:"completed_at"`
+	ScheduledAt           pgtype.Timestamp `json:"scheduled_at"`
+	TriggeredByUserID     *string          `json:"triggered_by_user_id"`
+	ApprovedByUserID      *string          `json:"approved_by_user_id"`
+	DryRun                bool             `json:"dry_run"`
+	PackagesAffected      []byte           `json:"packages_affected"`
+	PolicyID              *string          `json:"policy_id"`
+	PolicyName            *string          `json:"policy_name"`
+	PolicySnapshot        []byte           `json:"policy_snapshot"`
+	ValidationRunID       *string          `json:"validation_run_id"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	RebootRequired        *bool            `json:"reboot_required"`
+	WindowsIncludeUpdates *bool            `json:"windows_include_updates"`
+	WindowsIncludeApps    *bool            `json:"windows_include_apps"`
+	HostFriendlyName      *string          `json:"host_friendly_name"`
+	HostHostname          *string          `json:"host_hostname"`
+	HostOsType            *string          `json:"host_os_type"`
+	TriggeredByUsername   *string          `json:"triggered_by_username"`
 }
 
 func (q *Queries) ListRecentPatchRuns(ctx context.Context, arg ListRecentPatchRunsParams) ([]ListRecentPatchRunsRow, error) {
@@ -1680,8 +1796,12 @@ func (q *Queries) ListRecentPatchRuns(ctx context.Context, arg ListRecentPatchRu
 			&i.ValidationRunID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RebootRequired,
+			&i.WindowsIncludeUpdates,
+			&i.WindowsIncludeApps,
 			&i.HostFriendlyName,
 			&i.HostHostname,
+			&i.HostOsType,
 			&i.TriggeredByUsername,
 		); err != nil {
 			return nil, err
@@ -1716,6 +1836,19 @@ func (q *Queries) MarkPatchRunCancelledByUser(ctx context.Context, arg MarkPatch
 	return result.RowsAffected(), nil
 }
 
+const markPatchRunDispatched = `-- name: MarkPatchRunDispatched :execrows
+UPDATE patch_runs SET status = 'running', updated_at = NOW()
+WHERE id = $1 AND status IN ('queued', 'pending_validation')
+`
+
+func (q *Queries) MarkPatchRunDispatched(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, markPatchRunDispatched, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markPatchRunsAgentDisconnected = `-- name: MarkPatchRunsAgentDisconnected :execrows
 UPDATE patch_runs
 SET status = 'agent_disconnected', error_message = $1, completed_at = NOW(), updated_at = NOW()
@@ -1735,16 +1868,23 @@ func (q *Queries) MarkPatchRunsAgentDisconnected(ctx context.Context, arg MarkPa
 	return result.RowsAffected(), nil
 }
 
-const markPatchRunsTimedOut = `-- name: MarkPatchRunsTimedOut :execrows
+const markPatchRunsTimedOut = `-- name: MarkPatchRunsTimedOut :many
 UPDATE patch_runs
 SET status = 'timed_out', error_message = $1, completed_at = NOW(), updated_at = NOW()
-WHERE status = 'running'
-  AND updated_at < $2
+WHERE patch_runs.status = 'running'
+  AND patch_runs.updated_at < $2
+RETURNING id, host_id, (SELECT COALESCE(NULLIF(h.friendly_name, ''), h.hostname, '') FROM hosts h WHERE h.id = patch_runs.host_id)::text AS host_name
 `
 
 type MarkPatchRunsTimedOutParams struct {
 	ErrorMessage *string          `json:"error_message"`
 	StaleBefore  pgtype.Timestamp `json:"stale_before"`
+}
+
+type MarkPatchRunsTimedOutRow struct {
+	ID       string `json:"id"`
+	HostID   string `json:"host_id"`
+	HostName string `json:"host_name"`
 }
 
 // Stall sweep. The predicate is deliberately "no activity since", NOT "started
@@ -1754,12 +1894,64 @@ type MarkPatchRunsTimedOutParams struct {
 // genuinely wedged run does not. Using elapsed-since-start here would mark
 // every long run timed_out while it was still working and discard the real
 // outcome the agent later reports.
-func (q *Queries) MarkPatchRunsTimedOut(ctx context.Context, arg MarkPatchRunsTimedOutParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markPatchRunsTimedOut, arg.ErrorMessage, arg.StaleBefore)
+func (q *Queries) MarkPatchRunsTimedOut(ctx context.Context, arg MarkPatchRunsTimedOutParams) ([]MarkPatchRunsTimedOutRow, error) {
+	rows, err := q.db.Query(ctx, markPatchRunsTimedOut, arg.ErrorMessage, arg.StaleBefore)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []MarkPatchRunsTimedOutRow
+	for rows.Next() {
+		var i MarkPatchRunsTimedOutRow
+		if err := rows.Scan(&i.ID, &i.HostID, &i.HostName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markUndispatchedPatchRunsTimedOut = `-- name: MarkUndispatchedPatchRunsTimedOut :many
+UPDATE patch_runs
+SET status = 'timed_out', error_message = $1, completed_at = NOW(), updated_at = NOW()
+WHERE status IN ('scheduled', 'queued', 'pending_validation')
+  AND COALESCE(scheduled_at, created_at) < $2
+RETURNING id, host_id, (SELECT COALESCE(NULLIF(h.friendly_name, ''), h.hostname, '') FROM hosts h WHERE h.id = patch_runs.host_id)::text AS host_name
+`
+
+type MarkUndispatchedPatchRunsTimedOutParams struct {
+	ErrorMessage *string          `json:"error_message"`
+	DueBefore    pgtype.Timestamp `json:"due_before"`
+}
+
+type MarkUndispatchedPatchRunsTimedOutRow struct {
+	ID       string `json:"id"`
+	HostID   string `json:"host_id"`
+	HostName string `json:"host_name"`
+}
+
+// Keyed on when the run became due, not updated_at: the offline-agent retry bumps updated_at every 5 minutes.
+func (q *Queries) MarkUndispatchedPatchRunsTimedOut(ctx context.Context, arg MarkUndispatchedPatchRunsTimedOutParams) ([]MarkUndispatchedPatchRunsTimedOutRow, error) {
+	rows, err := q.db.Query(ctx, markUndispatchedPatchRunsTimedOut, arg.ErrorMessage, arg.DueBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MarkUndispatchedPatchRunsTimedOutRow
+	for rows.Next() {
+		var i MarkUndispatchedPatchRunsTimedOutRow
+		if err := rows.Scan(&i.ID, &i.HostID, &i.HostName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markValidationApproved = `-- name: MarkValidationApproved :execrows
@@ -1777,6 +1969,24 @@ type MarkValidationApprovedParams struct {
 // than going on to create a second patch run and enqueue a second task.
 func (q *Queries) MarkValidationApproved(ctx context.Context, arg MarkValidationApprovedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markValidationApproved, arg.ID, arg.ApprovedByUserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const requeuePatchRun = `-- name: RequeuePatchRun :execrows
+UPDATE patch_runs SET status = $2, updated_at = NOW()
+WHERE id = $1 AND status IN ('queued', 'pending_validation')
+`
+
+type RequeuePatchRunParams struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+func (q *Queries) RequeuePatchRun(ctx context.Context, arg RequeuePatchRunParams) (int64, error) {
+	result, err := q.db.Exec(ctx, requeuePatchRun, arg.ID, arg.Status)
 	if err != nil {
 		return 0, err
 	}
@@ -1802,6 +2012,38 @@ func (q *Queries) SetPatchRunPolicySnapshot(ctx context.Context, arg SetPatchRun
 		arg.PolicySnapshot,
 	)
 	return err
+}
+
+const setPatchRunRebootRequired = `-- name: SetPatchRunRebootRequired :exec
+UPDATE patch_runs SET reboot_required = $2, updated_at = NOW() WHERE id = $1
+`
+
+type SetPatchRunRebootRequiredParams struct {
+	ID             string `json:"id"`
+	RebootRequired *bool  `json:"reboot_required"`
+}
+
+func (q *Queries) SetPatchRunRebootRequired(ctx context.Context, arg SetPatchRunRebootRequiredParams) error {
+	_, err := q.db.Exec(ctx, setPatchRunRebootRequired, arg.ID, arg.RebootRequired)
+	return err
+}
+
+const skipScheduledPatchRun = `-- name: SkipScheduledPatchRun :execrows
+UPDATE patch_runs SET status = 'cancelled', error_message = $2, completed_at = NOW(), updated_at = NOW()
+WHERE id = $1 AND status = 'scheduled'
+`
+
+type SkipScheduledPatchRunParams struct {
+	ID           string  `json:"id"`
+	ErrorMessage *string `json:"error_message"`
+}
+
+func (q *Queries) SkipScheduledPatchRun(ctx context.Context, arg SkipScheduledPatchRunParams) (int64, error) {
+	result, err := q.db.Exec(ctx, skipScheduledPatchRun, arg.ID, arg.ErrorMessage)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updatePatchPolicy = `-- name: UpdatePatchPolicy :exec
@@ -1892,27 +2134,31 @@ func (q *Queries) UpdatePatchRunCancelledOutput(ctx context.Context, arg UpdateP
 	return result.RowsAffected(), nil
 }
 
-const updatePatchRunCompleted = `-- name: UpdatePatchRunCompleted :exec
-UPDATE patch_runs SET status = 'completed', shell_output = $2, completed_at = NOW(), updated_at = NOW()
-WHERE id = $1
+const updatePatchRunCompleted = `-- name: UpdatePatchRunCompleted :execrows
+UPDATE patch_runs SET status = 'completed', shell_output = $1, error_message = COALESCE($2::text, error_message), completed_at = NOW(), updated_at = NOW()
+WHERE id = $3
   AND status NOT IN ('cancelled','completed','failed','validated','dry_run_completed')
 `
 
 type UpdatePatchRunCompletedParams struct {
-	ID          string `json:"id"`
-	ShellOutput string `json:"shell_output"`
+	ShellOutput  string  `json:"shell_output"`
+	ErrorMessage *string `json:"error_message"`
+	ID           string  `json:"id"`
 }
 
 // REPLACE (not append) - agent streams progress chunks then sends final full output.
 // agent_disconnected and timed_out are intentionally NOT in the guard: both are
 // server-side "we gave up waiting" markers, so a recovering agent posting a late
 // genuine "completed" must be able to unwedge the row and deliver the real output.
-func (q *Queries) UpdatePatchRunCompleted(ctx context.Context, arg UpdatePatchRunCompletedParams) error {
-	_, err := q.db.Exec(ctx, updatePatchRunCompleted, arg.ID, arg.ShellOutput)
-	return err
+func (q *Queries) UpdatePatchRunCompleted(ctx context.Context, arg UpdatePatchRunCompletedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePatchRunCompleted, arg.ShellOutput, arg.ErrorMessage, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-const updatePatchRunFailed = `-- name: UpdatePatchRunFailed :exec
+const updatePatchRunFailed = `-- name: UpdatePatchRunFailed :execrows
 UPDATE patch_runs SET status = 'failed', shell_output = $2, error_message = $3, completed_at = NOW(), updated_at = NOW()
 WHERE id = $1
   AND status NOT IN ('cancelled','completed','failed','validated','dry_run_completed')
@@ -1927,9 +2173,12 @@ type UpdatePatchRunFailedParams struct {
 // REPLACE (not append) - agent streams progress chunks then sends final full output.
 // agent_disconnected and timed_out are intentionally NOT in the guard so a
 // recovering agent that posts a late "failed" can still unwedge the row.
-func (q *Queries) UpdatePatchRunFailed(ctx context.Context, arg UpdatePatchRunFailedParams) error {
-	_, err := q.db.Exec(ctx, updatePatchRunFailed, arg.ID, arg.ShellOutput, arg.ErrorMessage)
-	return err
+func (q *Queries) UpdatePatchRunFailed(ctx context.Context, arg UpdatePatchRunFailedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePatchRunFailed, arg.ID, arg.ShellOutput, arg.ErrorMessage)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updatePatchRunPackagesAffected = `-- name: UpdatePatchRunPackagesAffected :exec
@@ -1978,46 +2227,37 @@ const updatePatchRunStarted = `-- name: UpdatePatchRunStarted :exec
 UPDATE patch_runs SET status = 'running', started_at = NOW(), completed_at = NULL,
     shell_output = '', packages_affected = NULL, error_message = NULL, updated_at = NOW()
 WHERE id = $1
-  AND status NOT IN ('cancelled','timed_out','completed','failed','validated','dry_run_completed')
+  AND status IN ('queued','pending_validation','running','agent_disconnected')
 `
 
 // Clear dry-run output fields so real-run output starts fresh.
-// Status guard prevents an in-flight agent message from clobbering an
-// already-terminated run (cancelled/timed_out/etc.). agent_disconnected is
-// intentionally NOT in the guard so a recovering agent can unwedge the row.
+// Allow-list, not deny-list: agent credentials must not be able to start a
+// scheduled, pending_approval or approved run. agent_disconnected lets a recovering agent unwedge the row.
 func (q *Queries) UpdatePatchRunStarted(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, updatePatchRunStarted, id)
 	return err
 }
 
-const updatePatchRunStatus = `-- name: UpdatePatchRunStatus :exec
-UPDATE patch_runs SET status = $2, updated_at = NOW() WHERE id = $1
-`
-
-type UpdatePatchRunStatusParams struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-}
-
-func (q *Queries) UpdatePatchRunStatus(ctx context.Context, arg UpdatePatchRunStatusParams) error {
-	_, err := q.db.Exec(ctx, updatePatchRunStatus, arg.ID, arg.Status)
-	return err
-}
-
 const updatePatchRunValidated = `-- name: UpdatePatchRunValidated :exec
-UPDATE patch_runs SET status = 'validated', shell_output = $2, packages_affected = $3, completed_at = NOW(), updated_at = NOW() WHERE id = $1
+UPDATE patch_runs SET status = 'validated', shell_output = $1, packages_affected = $2, error_message = COALESCE($3::text, error_message), completed_at = NOW(), updated_at = NOW() WHERE id = $4
 `
 
 type UpdatePatchRunValidatedParams struct {
-	ID               string `json:"id"`
-	ShellOutput      string `json:"shell_output"`
-	PackagesAffected []byte `json:"packages_affected"`
+	ShellOutput      string  `json:"shell_output"`
+	PackagesAffected []byte  `json:"packages_affected"`
+	ErrorMessage     *string `json:"error_message"`
+	ID               string  `json:"id"`
 }
 
 // Agent streams progress chunks during the run, then sends the final authoritative
 // output on the terminal stage; REPLACE (not append) so the final record is never
 // a duplicate of the streamed progress.
 func (q *Queries) UpdatePatchRunValidated(ctx context.Context, arg UpdatePatchRunValidatedParams) error {
-	_, err := q.db.Exec(ctx, updatePatchRunValidated, arg.ID, arg.ShellOutput, arg.PackagesAffected)
+	_, err := q.db.Exec(ctx, updatePatchRunValidated,
+		arg.ShellOutput,
+		arg.PackagesAffected,
+		arg.ErrorMessage,
+		arg.ID,
+	)
 	return err
 }

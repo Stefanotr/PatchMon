@@ -110,6 +110,7 @@ func TestInstallScriptWritesTheSwitch(t *testing.T) {
 			"${SKIP_SSL_VERIFY:-false}", "false",
 			"${ALLOW_REMOTE_RESTART}", value,
 			"$(date)", "today",
+			"${HOST_ID_LINE}", `host_id: "00000000-0000-4000-8000-000000000000"`,
 		).Replace(heredoc[strings.Index(heredoc, "\n")+1:])
 		var cfg struct {
 			Integrations map[string]any `yaml:"integrations"`
@@ -160,7 +161,7 @@ func TestEnrollmentScriptsPassTheArgumentOn(t *testing.T) {
 			t.Errorf("%s without it: %s", name, got)
 		}
 	}
-	if !strings.Contains(string(DirectHostAutoEnrollScript), `| sh -s -- $INSTALL_ARGS`) {
+	if !strings.Contains(string(DirectHostAutoEnrollScript), `sh "$1" $INSTALL_ARGS </dev/null`) {
 		t.Error("direct-host enrollment does not pass the argument to the install script")
 	}
 	if strings.Count(string(ProxmoxAutoEnrollScript), "sh patchmon-install.sh $INSTALL_ARGS") != 2 {

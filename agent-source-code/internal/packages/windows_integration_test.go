@@ -3,11 +3,9 @@
 package packages
 
 import (
-	"context"
-	"errors"
 	"io"
-	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -87,7 +85,14 @@ func TestWingetCollectorLive(t *testing.T) {
 	requireWindowsIntegration(t)
 
 	done := make(chan []models.Package, 1)
-	go func() { done <- newTestWindowsManager().getPackagesFromWinget() }()
+	go func() {
+		rows := newTestWindowsManager().getPackagesFromWinget()
+		pkgs := make([]models.Package, len(rows))
+		for i, r := range rows {
+			pkgs[i] = r.pkg
+		}
+		done <- pkgs
+	}()
 
 	select {
 	case pkgs := <-done:
@@ -98,10 +103,35 @@ func TestWingetCollectorLive(t *testing.T) {
 	}
 }
 
+func TestResolveWingetLive(t *testing.T) {
+	requireWindowsIntegration(t)
+
+	exe, env, err := resolveWinget()
+	if err != nil {
+		t.Skipf("winget not resolvable on this host: %v", err)
+	}
+	if !strings.EqualFold(filepath.Dir(filepath.Dir(exe)), windowsAppsDir()) {
+		t.Errorf("winget resolved outside WindowsApps: %s", exe)
+	}
+	cmd, cancel := boundedCommand(collectorTimeout, exe, "--version")
+	defer cancel()
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("winget --version failed (0xC0000135 means VCLibs is not on PATH): %v\n%s", err, out)
+	}
+	t.Logf("winget %s at %s", strings.TrimSpace(string(out)), exe)
+}
+
 func TestWingetUpgradeMapLive(t *testing.T) {
 	requireWindowsIntegration(t)
 
-	upgrades := newTestWindowsManager().getWingetUpgradeAvailable()
+	m := newTestWindowsManager()
+	w, ok := m.resolveWingetCommand()
+	if !ok {
+		t.Skip("winget not resolvable on this host")
+	}
+	upgrades := m.getWingetUpgradeAvailable(w)
 	for name, version := range upgrades {
 		if name == "" {
 			t.Error("upgrade map contains an empty package name")
@@ -119,11 +149,33 @@ func TestWingetUpgradeMapLive(t *testing.T) {
 func TestWindowsUpdatesCollectorLive(t *testing.T) {
 	requireWindowsIntegration(t)
 
-	done := make(chan []models.Package, 1)
-	go func() { done <- newTestWindowsManager().getWindowsUpdates() }()
+	type collected struct {
+		pkgs   []models.Package
+		search wuSearch
+	}
+	done := make(chan collected, 1)
+	start := time.Now()
+	go func() {
+		pkgs, search := newTestWindowsManager().getWindowsUpdates()
+		done <- collected{pkgs, search}
+	}()
 
 	select {
-	case pkgs := <-done:
+	case c := <-done:
+		pkgs := c.pkgs
+		if c.search.status == wuSearchFailed {
+			if len(pkgs) != 0 {
+				t.Fatalf("a failed search must return no rows, got %d", len(pkgs))
+			}
+			if c.search.detail == "" {
+				t.Fatal("a failed search must say why")
+			}
+			requireSearchTimedOut(t, time.Since(start), c.search.detail)
+			t.Skipf("Windows Update search timed out on this runner (%s); reports keep the server's rows", c.search.detail)
+		}
+		if c.search.status == wuSearchCOMFailed {
+			t.Logf("Windows Update COM search failed (%s); checking the installed updates it still listed", c.search.detail)
+		}
 		assertPackagesWellFormed(t, pkgs)
 		missingGUID := 0
 		for i, p := range pkgs {
@@ -132,7 +184,7 @@ func TestWindowsUpdatesCollectorLive(t *testing.T) {
 			}
 			if p.WUAGuid == "" {
 				missingGUID++
-				t.Logf("update %d (%s) has no WUA GUID, so a patch run cannot target it", i, p.Name)
+				t.Logf("update %d (%s) has no WUA GUID, so the patch runner cannot target it", i, p.Name)
 			}
 		}
 		// Logged rather than failed: a hosted runner has a constrained Windows
@@ -149,91 +201,36 @@ func TestWindowsUpdatesCollectorLive(t *testing.T) {
 	}
 }
 
+// requireSearchTimedOut fails unless a failed search ran into its time limit: failing well
+// before it means the script or its output is broken, not that Windows Update is slow.
+func requireSearchTimedOut(t *testing.T, elapsed time.Duration, detail string) {
+	t.Helper()
+	if elapsed < networkCollectorTimeout-30*time.Second {
+		t.Fatalf("the Windows Update search failed after %s, long before its %s limit, so the script is broken: %s", elapsed.Round(time.Second), networkCollectorTimeout, detail)
+	}
+}
+
 func TestWSUSCheckLive(t *testing.T) {
 	requireWindowsIntegration(t)
 
 	t.Logf("isWSUSActive() = %v", newTestWindowsManager().isWSUSActive())
 }
 
-func newTestWindowsPatcher() *WindowsPatcher {
-	logger := logrus.New()
-	logger.SetOutput(io.Discard)
-	return NewWindowsPatcher(logger)
-}
-
-func TestPatcherRebootPendingLive(t *testing.T) {
-	requireWindowsIntegration(t)
-
-	pending, reason := newTestWindowsPatcher().RebootPending()
-	t.Logf("RebootPending() = %v, %q", pending, reason)
-}
-
-// The patch run's own Windows Update search is read-only, so it runs against
-// the real WUA here. It must parse, finish in time, and return the same kind
-// of GUIDs the collector reports.
-func TestPatcherScanWUALive(t *testing.T) {
-	requireWindowsIntegration(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
-	defer cancel()
-
-	scan, err := newTestWindowsPatcher().ScanWUA(ctx)
-	if ctx.Err() != nil {
-		t.Fatalf("Windows Update scan exceeded its deadline: %v", ctx.Err())
-	}
-	if err != nil {
-		// A hosted runner can have Windows Update locked down; a script error
-		// still surfaces as a PowerShell parse error in the message.
-		assertNoPowerShellParseError(t, err.Error())
-		t.Logf("Windows Update scan failed (acceptable on a locked-down runner): %v", err)
-		return
-	}
-	for i, u := range scan.Updates {
-		if !IsWUAGUID(u.GUID) {
-			t.Errorf("update %d (%s) has an invalid GUID %q", i, u.Title, u.GUID)
-		}
-	}
-	t.Logf("scan: %d pending, busy=%v, reboot_before=%v", len(scan.Updates), scan.InstallerBusy, scan.RebootBeforeInstall)
-}
-
-// Listing upgradable apps installs nothing, which is enough to prove the
-// winget.exe resolution and the listing script parse and execute.
-func TestPatcherListWinGetUpgradesLive(t *testing.T) {
-	requireWindowsIntegration(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-	defer cancel()
-
-	listing, err := newTestWindowsPatcher().ListWinGetUpgrades(ctx)
-	if ctx.Err() != nil {
-		t.Fatalf("winget listing exceeded its deadline: %v", ctx.Err())
-	}
-	if errors.Is(err, ErrWinGetNotInstalled) {
-		t.Skipf("winget is not installed on this runner: %v", err)
-	}
-	// The agent runs as SYSTEM, which can list Program Files\WindowsApps;
-	// another account may not be allowed to.
-	if errors.Is(err, fs.ErrPermission) {
-		t.Skipf("this account cannot look for winget.exe where the agent does: %v", err)
-	}
-	if err != nil {
-		assertNoPowerShellParseError(t, err.Error())
-		t.Fatalf("winget listing failed: %v", err)
-	}
-	if listing.Unreadable > 0 {
-		t.Errorf("%d line(s) of the live winget listing could not be read", listing.Unreadable)
-	}
-	if !validWinGetPath(listing.Path) {
-		t.Errorf("winget.exe resolved to %q, outside an App Installer package", listing.Path)
-	}
-	t.Logf("winget at %s: %d upgradable app(s)", listing.Path, len(listing.Apps))
-}
-
 // The full merge path, which is what serve actually calls.
 func TestGetPackagesLive(t *testing.T) {
 	requireWindowsIntegration(t)
 
-	pkgs := newTestWindowsManager().GetPackages()
+	start := time.Now()
+	pkgs, omitted := newTestWindowsManager().GetPackages()
+	if omitted {
+		for _, p := range pkgs {
+			if p.Category == "Windows Update" {
+				t.Fatalf("Windows Update rows were omitted but %q was still sent", p.Name)
+			}
+		}
+		requireSearchTimedOut(t, time.Since(start), "rows omitted")
+		t.Log("Windows Update search timed out on this runner, so its rows were omitted")
+	}
 	if len(pkgs) == 0 {
 		t.Fatal("GetPackages returned nothing; the registry collector alone should have populated it")
 	}

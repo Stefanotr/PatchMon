@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-func intPtr(n int) *int { return &n }
-
 func TestRebootRequestForRun(t *testing.T) {
 	now := time.Date(2026, 10, 9, 14, 0, 0, 0, time.UTC)
 

@@ -20,6 +20,7 @@ import (
 	"github.com/PatchMon/PatchMon/server-source-code/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/hibiken/asynq"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -150,6 +151,19 @@ func (h *HostsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, hostToResponse(host, groups, h.hosts.StaleCutoff(r.Context())))
 }
 
+func newPendingHost(friendlyName, machineID, apiID, apiKeyHash string) *models.Host {
+	return &models.Host{
+		MachineID:    &machineID,
+		FriendlyName: friendlyName,
+		OSType:       "unknown",
+		OSVersion:    "unknown",
+		Status:       "pending",
+		ApiID:        apiID,
+		ApiKey:       apiKeyHash,
+		AutoUpdate:   true,
+	}
+}
+
 // Create handles POST /hosts/create.
 func (h *HostsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -195,19 +209,11 @@ func (h *HostsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	machineID := "pending-" + uuid.New().String()
-	host := &models.Host{
-		MachineID:              &machineID,
-		FriendlyName:           req.FriendlyName,
-		OSType:                 "unknown",
-		OSVersion:              "unknown",
-		Status:                 "pending",
-		ApiID:                  apiID,
-		ApiKey:                 apiKeyHash,
-		DockerEnabled:          req.DockerEnabled != nil && *req.DockerEnabled,
-		ComplianceEnabled:      complianceEnabled,
-		ComplianceOnDemandOnly: complianceOnDemandOnly,
-		ExpectedPlatform:       req.ExpectedPlatform,
-	}
+	host := newPendingHost(req.FriendlyName, machineID, apiID, apiKeyHash)
+	host.DockerEnabled = req.DockerEnabled != nil && *req.DockerEnabled
+	host.ComplianceEnabled = complianceEnabled
+	host.ComplianceOnDemandOnly = complianceOnDemandOnly
+	host.ExpectedPlatform = req.ExpectedPlatform
 	if err := h.hosts.Create(r.Context(), host); err != nil {
 		Error(w, http.StatusInternalServerError, "Failed to create host")
 		return
@@ -538,6 +544,21 @@ func (h *HostsHandler) RegenerateCredentials(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// DismissIdentityConflict handles POST /hosts/:hostId/identity-conflict/dismiss.
+func (h *HostsHandler) DismissIdentityConflict(w http.ResponseWriter, r *http.Request) {
+	hostID := chi.URLParam(r, "hostId")
+	found, err := h.hosts.DismissIdentityConflict(r.Context(), hostID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "Failed to dismiss identity conflict")
+		return
+	}
+	if !found {
+		Error(w, http.StatusNotFound, "Host not found")
+		return
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"message": "Identity conflict dismissed", "host_id": hostID})
+}
+
 // FetchReport handles POST /hosts/:hostId/fetch-report.
 func (h *HostsHandler) FetchReport(w http.ResponseWriter, r *http.Request) {
 	if h.queueClient == nil {
@@ -679,16 +700,51 @@ func (h *HostsHandler) RefreshDocker(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DockerImageCheck handles POST /hosts/:hostId/docker-image-check.
+func (h *HostsHandler) DockerImageCheck(w http.ResponseWriter, r *http.Request) {
+	hostID := chi.URLParam(r, "hostId")
+	host, err := h.hosts.GetByID(r.Context(), hostID)
+	if err != nil || host == nil {
+		Error(w, http.StatusNotFound, "Host not found")
+		return
+	}
+	if h.registry == nil || !h.registry.IsConnected(host.ApiID) || h.registry.Get(host.ApiID).Scope != hostctx.TenantHostKey(r.Context()) {
+		Error(w, http.StatusConflict, "Agent is not connected, so the image update check cannot be started")
+		return
+	}
+	if err := h.registry.SendMessage(host.ApiID, websocket.TextMessage, dockerImageCheckCommand); err != nil {
+		slog.Warn("docker image check: send failed", "host_id", host.ID, "error", err)
+		Error(w, http.StatusServiceUnavailable, "Failed to send the image update check to the agent")
+		return
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Docker image update check requested",
+		"host": map[string]interface{}{
+			"id":           host.ID,
+			"friendlyName": host.FriendlyName,
+			"apiId":        host.ApiID,
+		},
+	})
+}
+
 // ForceAgentUpdate handles POST /hosts/:hostId/force-agent-update.
 func (h *HostsHandler) ForceAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	if h.queueClient == nil {
 		Error(w, http.StatusServiceUnavailable, "Queue service unavailable")
 		return
 	}
-	hostID := chi.URLParam(r, "hostId")
-	host, err := h.hosts.GetByID(r.Context(), hostID)
-	if err != nil || host == nil {
-		Error(w, http.StatusNotFound, "Host not found")
+	host, ok := loadHost(w, r, h.hosts, chi.URLParam(r, "hostId"))
+	if !ok {
+		return
+	}
+	active, err := h.hosts.HasActivePatchRun(r.Context(), host.ID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "Failed to check for an active patch run")
+		return
+	}
+	if active {
+		Error(w, http.StatusConflict, store.PatchRunInProgressMessage)
 		return
 	}
 	// One update at a time: a second request would race the first, and the
@@ -696,7 +752,7 @@ func (h *HostsHandler) ForceAgentUpdate(w http.ResponseWriter, r *http.Request) 
 	if h.db != nil {
 		open, err := store.NewAgentUpdateStore(h.db).Open(r.Context(), host.ApiID)
 		if err != nil {
-			slog.Warn("agent update: open update check failed", "host_id", hostID, "error", err)
+			slog.Warn("agent update: open update check failed", "host_id", host.ID, "error", err)
 		} else if open {
 			Error(w, http.StatusConflict, "An agent update is already in progress on this host")
 			return
@@ -1331,7 +1387,7 @@ func openscapNewlyEnabled(before *models.Host, complianceEnabled, openscapEnable
 }
 
 // openscapInstallSupported skips platforms the agent cannot install OpenSCAP on.
-// SUSE reports "unknown", so this must stay a deny-list.
+// Agents older than zypper support report "unknown" on SUSE, so this must stay a deny-list.
 func openscapInstallSupported(host *models.Host) bool {
 	if host.PackageManager == nil {
 		return true
@@ -1380,6 +1436,11 @@ func hostToResponse(h *models.Host, groups []models.HostGroup, staleCutoff time.
 		"package_manager": h.PackageManager, "primary_interface": h.PrimaryInterface,
 		"awaiting_post_patch_report_run_id": h.AwaitingPostPatchReportRunID,
 		"expected_platform":                 h.ExpectedPlatform,
+		"config_version":                    h.ConfigVersion,
+		"reported_host_id":                  h.ReportedHostID,
+		"host_id_mismatch":                  h.HostIDMismatch(),
+		"identity_conflict_at":              h.IdentityConflictAt,
+		"credentials_reissued_at":           h.CredentialsReissuedAt,
 	}
 	hg := make([]map[string]interface{}, len(groups))
 	for i, g := range groups {

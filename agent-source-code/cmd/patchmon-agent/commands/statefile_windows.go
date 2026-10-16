@@ -18,8 +18,7 @@ import (
 // LocalSystem, so a state file is trusted only when it is a regular file (not
 // a symlink or other reparse point) owned by LocalSystem or Administrators,
 // and it is created with a DACL granting access to those two alone. A user
-// can delete or plant a file at worst; neither is read as the agent's. The
-// update directory is checked with the same helper (updatedir_windows.go).
+// can delete or plant a file at worst; neither is read as the agent's.
 
 // stateFileSDDL is a protected DACL: full access for LocalSystem and
 // Administrators, nothing inherited from the directory.

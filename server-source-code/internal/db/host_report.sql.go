@@ -17,6 +17,7 @@ INSERT INTO host_packages (
     needs_update, is_security_update, source_repository_id,
     wua_guid, wua_kb, wua_severity, wua_categories,
     wua_description, wua_support_url, wua_revision_number,
+    winget_id, winget_pinned, winget_store_app, wua_browse_only, wua_update_type,
     last_checked
 )
 SELECT
@@ -31,6 +32,11 @@ SELECT
     NULLIF(wua_description, '')          AS wua_description,
     NULLIF(wua_support_url, '')          AS wua_support_url,
     NULLIF(wua_revision_number, 0)       AS wua_revision_number,
+    NULLIF(winget_id, '')                AS winget_id,
+    winget_pinned,
+    winget_store_app,
+    wua_browse_only,
+    NULLIF(wua_update_type, '')          AS wua_update_type,
     NOW()
 FROM jsonb_to_recordset($1::jsonb)
     AS t(
@@ -41,7 +47,8 @@ FROM jsonb_to_recordset($1::jsonb)
         wua_guid text, wua_kb text, wua_severity text,
         wua_categories jsonb,
         wua_description text, wua_support_url text,
-        wua_revision_number int
+        wua_revision_number int,
+        winget_id text, winget_pinned boolean, winget_store_app boolean, wua_browse_only boolean, wua_update_type text
     )
 ORDER BY package_id
 `
@@ -192,12 +199,46 @@ func (q *Queries) BulkUpsertPackages(ctx context.Context, payload []byte) ([]Bul
 	return items, nil
 }
 
+const countHostWindowsUpdateRows = `-- name: CountHostWindowsUpdateRows :one
+SELECT
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE hp.needs_update)::int AS needs_update,
+    COUNT(*) FILTER (WHERE hp.is_security_update)::int AS security
+FROM host_packages hp
+JOIN packages p ON p.id = hp.package_id
+WHERE hp.host_id = $1 AND p.category = 'Windows Update'
+`
+
+type CountHostWindowsUpdateRowsRow struct {
+	Total       int32 `json:"total"`
+	NeedsUpdate int32 `json:"needs_update"`
+	Security    int32 `json:"security"`
+}
+
+func (q *Queries) CountHostWindowsUpdateRows(ctx context.Context, hostID string) (CountHostWindowsUpdateRowsRow, error) {
+	row := q.db.QueryRow(ctx, countHostWindowsUpdateRows, hostID)
+	var i CountHostWindowsUpdateRowsRow
+	err := row.Scan(&i.Total, &i.NeedsUpdate, &i.Security)
+	return i, err
+}
+
 const deleteHostPackagesByHostID = `-- name: DeleteHostPackagesByHostID :exec
 DELETE FROM host_packages WHERE host_id = $1
 `
 
 func (q *Queries) DeleteHostPackagesByHostID(ctx context.Context, hostID string) error {
 	_, err := q.db.Exec(ctx, deleteHostPackagesByHostID, hostID)
+	return err
+}
+
+const deleteHostPackagesExceptWindowsUpdates = `-- name: DeleteHostPackagesExceptWindowsUpdates :exec
+DELETE FROM host_packages hp
+WHERE hp.host_id = $1
+  AND NOT EXISTS (SELECT 1 FROM packages p WHERE p.id = hp.package_id AND p.category = 'Windows Update')
+`
+
+func (q *Queries) DeleteHostPackagesExceptWindowsUpdates(ctx context.Context, hostID string) error {
+	_, err := q.db.Exec(ctx, deleteHostPackagesExceptWindowsUpdates, hostID)
 	return err
 }
 
@@ -327,21 +368,30 @@ UPDATE hosts SET
     ip = COALESCE($5::text, ip),
     architecture = COALESCE($6::text, architecture),
     agent_version = COALESCE($7::text, agent_version),
-    cpu_model = COALESCE($8::text, cpu_model),
-    cpu_cores = COALESCE($9::int, cpu_cores),
-    ram_installed = COALESCE($10::double precision, ram_installed),
-    swap_size = COALESCE($11::double precision, swap_size),
-    disk_details = COALESCE($12::jsonb, disk_details),
-    gateway_ip = COALESCE($13::text, gateway_ip),
-    dns_servers = COALESCE($14::jsonb, dns_servers),
-    network_interfaces = COALESCE($15::jsonb, network_interfaces),
-    kernel_version = COALESCE($16::text, kernel_version),
-    installed_kernel_version = COALESCE($17::text, installed_kernel_version),
-    selinux_status = COALESCE($18::text, selinux_status),
-    system_uptime = COALESCE($19::text, system_uptime),
-    boot_time = COALESCE($20::timestamptz, boot_time),
-    load_average = COALESCE($21::jsonb, load_average),
-    needs_reboot = COALESCE($22::boolean, needs_reboot),
+    -- An agent version without a config version is a pre-2.1.4 agent, which has none.
+    config_version = CASE
+        WHEN $8::text IS NOT NULL THEN $8::text
+        WHEN $7::text IS NOT NULL THEN NULL
+        ELSE config_version
+    END,
+    reported_host_id = COALESCE($9::text, reported_host_id),
+    cpu_model = COALESCE($10::text, cpu_model),
+    cpu_cores = COALESCE($11::int, cpu_cores),
+    ram_installed = COALESCE($12::double precision, ram_installed),
+    swap_size = COALESCE($13::double precision, swap_size),
+    disk_details = COALESCE($14::jsonb, disk_details),
+    gateway_ip = COALESCE($15::text, gateway_ip),
+    dns_servers = COALESCE($16::jsonb, dns_servers),
+    network_interfaces = COALESCE($17::jsonb, network_interfaces),
+    kernel_version = COALESCE($18::text, kernel_version),
+    installed_kernel_version = COALESCE($19::text, installed_kernel_version),
+    selinux_status = COALESCE($20::text, selinux_status),
+    system_uptime = COALESCE($21::text, system_uptime),
+    boot_time = COALESCE($22::timestamptz, boot_time),
+    load_average = COALESCE($23::jsonb, load_average),
+    -- A run that needed a restart pins needs_reboot until boot_time moves; 60s absorbs uptime jitter.
+    needs_reboot = COALESCE($24::boolean, needs_reboot) OR (patch_reboot_pending_boot_time IS NOT NULL
+            AND ABS(EXTRACT(EPOCH FROM (COALESCE($22::timestamptz, boot_time) - patch_reboot_pending_boot_time))) < 60),
     -- reboot_reason is only rewritten when this report also carries
     -- needs_reboot. A hash-gated partial report never carries either (the ping
     -- metrics path owns both fields), and reboot_reason has no COALESCE guard
@@ -350,19 +400,24 @@ UPDATE hosts SET
     -- Second arm: a report asserting needs_reboot without a reason must not
     -- blank a stored one; clearing the flag still clears both.
     reboot_reason = CASE
-        WHEN $22::boolean IS NULL THEN reboot_reason
-        WHEN $22::boolean IS TRUE
-             AND $23::text IS NULL THEN reboot_reason
-        ELSE $23::text
+        WHEN (patch_reboot_pending_boot_time IS NOT NULL
+                AND ABS(EXTRACT(EPOCH FROM (COALESCE($22::timestamptz, boot_time) - patch_reboot_pending_boot_time))) < 60)
+             AND NOT COALESCE($24::boolean, false) THEN 'Restart required to finish a patch run'
+        WHEN $24::boolean IS NULL THEN reboot_reason
+        WHEN $24::boolean IS TRUE
+             AND $25::text IS NULL THEN reboot_reason
+        ELSE $25::text
     END,
-    package_manager = COALESCE($24::text, package_manager),
-    packages_hash = COALESCE($25::text, packages_hash),
-    repos_hash = COALESCE($26::text, repos_hash),
-    interfaces_hash = COALESCE($27::text, interfaces_hash),
-    hostname_hash = COALESCE($28::text, hostname_hash),
-    last_full_report_at = COALESCE($29::timestamp, last_full_report_at),
-    awaiting_post_patch_report_run_id = NULL
-WHERE id = $30
+    package_manager = COALESCE($26::text, package_manager),
+    packages_hash = COALESCE($27::text, packages_hash),
+    repos_hash = COALESCE($28::text, repos_hash),
+    interfaces_hash = COALESCE($29::text, interfaces_hash),
+    hostname_hash = COALESCE($30::text, hostname_hash),
+    last_full_report_at = COALESCE($31::timestamp, last_full_report_at),
+    awaiting_post_patch_report_run_id = NULL,
+    patch_reboot_pending_boot_time = CASE WHEN (patch_reboot_pending_boot_time IS NOT NULL
+            AND ABS(EXTRACT(EPOCH FROM (COALESCE($22::timestamptz, boot_time) - patch_reboot_pending_boot_time))) < 60) THEN patch_reboot_pending_boot_time END
+WHERE id = $32
 `
 
 type UpdateHostFromReportParams struct {
@@ -373,6 +428,8 @@ type UpdateHostFromReportParams struct {
 	Ip                     *string            `json:"ip"`
 	Architecture           *string            `json:"architecture"`
 	AgentVersion           *string            `json:"agent_version"`
+	ConfigVersion          *string            `json:"config_version"`
+	ReportedHostID         *string            `json:"reported_host_id"`
 	CpuModel               *string            `json:"cpu_model"`
 	CpuCores               *int32             `json:"cpu_cores"`
 	RamInstalled           *float64           `json:"ram_installed"`
@@ -408,6 +465,8 @@ func (q *Queries) UpdateHostFromReport(ctx context.Context, arg UpdateHostFromRe
 		arg.Ip,
 		arg.Architecture,
 		arg.AgentVersion,
+		arg.ConfigVersion,
+		arg.ReportedHostID,
 		arg.CpuModel,
 		arg.CpuCores,
 		arg.RamInstalled,

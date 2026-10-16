@@ -15,8 +15,8 @@ type Host struct {
 	Status                       string     `db:"status"`
 	CreatedAt                    time.Time  `db:"created_at"`
 	UpdatedAt                    time.Time  `db:"updated_at"`
-	ApiID                        string     `db:"api_id"`
-	ApiKey                       string     `db:"api_key"`
+	ApiID                        string     `db:"api_id" json:"-"`
+	ApiKey                       string     `db:"api_key" json:"-"`
 	AgentVersion                 *string    `db:"agent_version"`
 	AutoUpdate                   bool       `db:"auto_update"`
 	CPUCores                     *int       `db:"cpu_cores"`
@@ -57,6 +57,26 @@ type Host struct {
 	DockerHash                   *string    `db:"docker_hash"`
 	ComplianceHash               *string    `db:"compliance_hash"`
 	LastFullReportAt             *time.Time `db:"last_full_report_at"`
+	ConfigVersion                *string    `db:"config_version"`
+	ReportedHostID               *string    `db:"reported_host_id"`
+	EnrolmentTokenID             *string    `db:"enrolment_token_id"`
+	CredentialsReissuedAt        *time.Time `db:"credentials_reissued_at"`
+	IdentityFingerprint          *string    `db:"identity_fingerprint"`
+	IdentityPrevFingerprint      *string    `db:"identity_prev_fingerprint"`
+	IdentityFingerprintChangedAt *time.Time `db:"identity_fingerprint_changed_at"`
+	IdentityConflictAt           *time.Time `db:"identity_conflict_at"`
+	EnrolmentMachineID           *string    `db:"enrolment_machine_id"`
+}
+
+// HostIDMismatch reports whether the agent last claimed a host_id other than
+// this row's ID.
+func (h *Host) HostIDMismatch() bool {
+	return h.ReportedHostID != nil && *h.ReportedHostID != "" && *h.ReportedHostID != h.ID
+}
+
+// HasReported reports whether any agent has ever reported for this host.
+func (h *Host) HasReported() bool {
+	return h.AgentVersion != nil || h.LastFullReportAt != nil || h.Status != "pending"
 }
 
 // NetworkInterface mirrors the agent's outbound NetworkInterface struct for
