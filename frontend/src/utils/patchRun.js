@@ -1,3 +1,5 @@
+import { tk } from "../i18n";
+
 // Extra-dependency derivation shared by the Runs list and the run detail page.
 // "Extra" means the affected set contains a name that was not requested, not
 // merely that it is larger: requesting ["foo","bar"] and resolving to
@@ -35,7 +37,7 @@ export const runMessageNotice = (run) => {
 			!message || /(cancel|stop)\w*\s+by\s+(the\s+)?user/i.test(message);
 		return {
 			tone: "info",
-			title: byUser ? "Stopped by user" : "Run cancelled",
+			title: byUser ? tk("Stopped by user") : tk("Run cancelled"),
 			detail: byUser ? null : message,
 		};
 	}
@@ -43,18 +45,18 @@ export const runMessageNotice = (run) => {
 	if (run?.status === "completed") {
 		return {
 			tone: "info",
-			title: "Completed with skipped items",
+			title: tk("Completed with skipped items"),
 			detail: message,
 		};
 	}
 	if (run?.status === "validated" || run?.status === "dry_run_completed") {
 		return {
 			tone: "info",
-			title: "Validated with skipped items",
+			title: tk("Validated with skipped items"),
 			detail: message,
 		};
 	}
-	return { tone: "error", title: "Run reported an error", detail: message };
+	return { tone: "error", title: tk("Run reported an error"), detail: message };
 };
 
 // Summary of the items a successful dry run will leave alone, or null. Prefers

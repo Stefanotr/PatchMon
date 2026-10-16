@@ -57,7 +57,7 @@ const PatchingRunOutput = ({ runId }) => {
 					role="status"
 					className="mb-2 text-sm text-secondary-700 dark:text-secondary-200 bg-secondary-50 dark:bg-secondary-700/40 border border-secondary-200 dark:border-secondary-600 p-2 rounded"
 				>
-					<p className="font-medium">{notice.title}</p>
+					<p className="font-medium">{t(notice.title)}</p>
 					{notice.detail && (
 						<p className="text-xs mt-0.5 break-words">{notice.detail}</p>
 					)}
