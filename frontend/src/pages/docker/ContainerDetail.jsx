@@ -7,12 +7,17 @@ import {
 	RefreshCw,
 	Server,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
-import UpdateStatusBadge from "../../components/docker/UpdateStatusBadge";
+import UpdateStatusBadge, {
+	ContainerState,
+	SourceName,
+} from "../../components/docker/UpdateStatusBadge";
 import api, { formatRelativeTime } from "../../utils/api";
-import { getSourceDisplayName, shortImageId } from "../../utils/docker";
+import { shortImageId } from "../../utils/docker";
 
 const ContainerDetail = () => {
+	const { t } = useTranslation();
 	const { id } = useParams();
 
 	const { data, isLoading, error } = useQuery({
@@ -43,11 +48,12 @@ const ContainerDetail = () => {
 						<AlertTriangle className="h-5 w-5 text-danger-400" />
 						<div className="ml-3">
 							<h3 className="text-sm font-medium text-danger-800 dark:text-danger-200">
-								Container not found
+								{t("Container not found")}
 							</h3>
 							<p className="mt-2 text-sm text-danger-700 dark:text-danger-300">
-								The container you're looking for doesn't exist or has been
-								removed.
+								{t(
+									"The container you're looking for doesn't exist or has been removed.",
+								)}
 							</p>
 						</div>
 					</div>
@@ -57,7 +63,7 @@ const ContainerDetail = () => {
 					className="mt-4 inline-flex items-center text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Docker
+					{t("Back to Docker")}
 				</Link>
 			</div>
 		);
@@ -80,7 +86,7 @@ const ContainerDetail = () => {
 					"bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200"
 				}`}
 			>
-				{status}
+				<ContainerState state={status} />
 			</span>
 		);
 	};
@@ -94,7 +100,7 @@ const ContainerDetail = () => {
 					className="inline-flex items-center text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 mb-4"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Docker
+					{t("Back to Docker")}
 				</Link>
 				<div className="flex items-center">
 					<Container className="h-8 w-8 text-secondary-400 mr-3" />
@@ -106,7 +112,9 @@ const ContainerDetail = () => {
 							{getStatusBadge(container.status)}
 						</div>
 						<p className="mt-1 text-sm text-secondary-600 dark:text-white">
-							Container ID: {container.container_id.substring(0, 12)}
+							{t("Container ID: {{id}}", {
+								id: container.container_id.substring(0, 12),
+							})}
 						</p>
 					</div>
 				</div>
@@ -121,7 +129,7 @@ const ContainerDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Update Status
+								{t("Update Status")}
 							</p>
 							<div className="mt-1">
 								<UpdateStatusBadge
@@ -140,7 +148,9 @@ const ContainerDetail = () => {
 							<Server className="h-5 w-5 text-purple-600 mr-2" />
 						</div>
 						<div className="w-0 flex-1">
-							<p className="text-sm text-secondary-500 dark:text-white">Host</p>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								{t("Host")}
+							</p>
 							<Link
 								to={`/hosts/${container.host?.id}`}
 								className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 truncate block"
@@ -158,10 +168,10 @@ const ContainerDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								State
+								{t("State")}
 							</p>
 							<p className="text-sm font-medium text-secondary-900 dark:text-white">
-								{container.state || container.status}
+								<ContainerState state={container.state || container.status} />
 							</p>
 						</div>
 					</div>
@@ -174,7 +184,7 @@ const ContainerDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Last Checked
+								{t("Last Checked")}
 							</p>
 							<p className="text-sm font-medium text-secondary-900 dark:text-white">
 								{formatRelativeTime(container.last_checked)}
@@ -190,14 +200,14 @@ const ContainerDetail = () => {
 				<div className="card">
 					<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 						<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-							Container Information
+							{t("Container Information")}
 						</h3>
 					</div>
 					<div className="px-6 py-5">
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Container ID
+									{t("Container ID")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white font-mono break-all">
 									{container.container_id}
@@ -205,7 +215,7 @@ const ContainerDetail = () => {
 							</div>
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Image Tag
+									{t("Image Tag")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 									{container.image_tag}
@@ -213,7 +223,7 @@ const ContainerDetail = () => {
 							</div>
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Created
+									{t("Created")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 									{formatRelativeTime(container.created_at)}
@@ -222,7 +232,7 @@ const ContainerDetail = () => {
 							{container.started_at && (
 								<div>
 									<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-										Started
+										{t("Started")}
 									</dt>
 									<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 										{formatRelativeTime(container.started_at)}
@@ -235,7 +245,7 @@ const ContainerDetail = () => {
 							{container.restart_count != null && (
 								<div>
 									<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-										Restart Count
+										{t("Restart Count")}
 									</dt>
 									<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 										{container.restart_count}
@@ -245,7 +255,7 @@ const ContainerDetail = () => {
 							{container.ports && Object.keys(container.ports).length > 0 && (
 								<div className="sm:col-span-2">
 									<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-										Port Mappings
+										{t("Port Mappings")}
 									</dt>
 									<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 										<div className="flex flex-wrap gap-2">
@@ -270,14 +280,14 @@ const ContainerDetail = () => {
 					<div className="card">
 						<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 							<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-								Image Information
+								{t("Image Information")}
 							</h3>
 						</div>
 						<div className="px-6 py-5">
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
 								<div>
 									<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-										Repository
+										{t("Repository")}
 									</dt>
 									<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 										<Link
@@ -291,7 +301,7 @@ const ContainerDetail = () => {
 								</div>
 								<div>
 									<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-										Tag
+										{t("Tag")}
 									</dt>
 									<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 										{container.docker_images.tag}
@@ -299,30 +309,31 @@ const ContainerDetail = () => {
 								</div>
 								<div>
 									<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-										Source
+										{t("Source")}
 									</dt>
 									<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
-										{getSourceDisplayName(container.docker_images.source)}
+										<SourceName source={container.docker_images.source} />
 									</dd>
 								</div>
 								{container.docker_images.size_bytes && (
 									<div>
 										<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-											Size
+											{t("Size")}
 										</dt>
 										<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
-											{(
-												Number(container.docker_images.size_bytes) /
-												1024 /
-												1024
-											).toFixed(2)}{" "}
-											MB
+											{t("{{size}} MB", {
+												size: (
+													Number(container.docker_images.size_bytes) /
+													1024 /
+													1024
+												).toFixed(2),
+											})}
 										</dd>
 									</div>
 								)}
 								<div>
 									<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-										Image ID
+										{t("Image ID")}
 									</dt>
 									<dd className="mt-1 text-xs text-secondary-900 dark:text-white font-mono break-all">
 										{shortImageId(container.docker_images.image_id)}
@@ -330,7 +341,7 @@ const ContainerDetail = () => {
 								</div>
 								<div>
 									<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-										Created
+										{t("Created")}
 									</dt>
 									<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 										{formatRelativeTime(container.docker_images.created_at)}
@@ -347,7 +358,7 @@ const ContainerDetail = () => {
 				<div className="card">
 					<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 						<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-							Similar Containers (Same Image)
+							{t("Similar Containers (Same Image)")}
 						</h3>
 					</div>
 					<div className="px-6 py-5">
@@ -367,7 +378,7 @@ const ContainerDetail = () => {
 												{similar.name}
 											</Link>
 											<p className="text-sm text-secondary-500 dark:text-white">
-												{similar.status}
+												<ContainerState state={similar.status} />
 											</p>
 										</div>
 									</div>

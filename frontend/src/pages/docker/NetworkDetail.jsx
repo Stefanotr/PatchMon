@@ -11,12 +11,14 @@ import {
 	Tag,
 	XCircle,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import api, { formatRelativeTime } from "../../utils/api";
 
 const isSet = (value) => Boolean(value) && !String(value).startsWith("invalid");
 
 const NetworkDetail = () => {
+	const { t } = useTranslation();
 	const { id } = useParams();
 
 	const { data, isLoading, error } = useQuery({
@@ -47,11 +49,12 @@ const NetworkDetail = () => {
 						<AlertTriangle className="h-5 w-5 text-red-400" />
 						<div className="ml-3">
 							<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-								Network not found
+								{t("Network not found")}
 							</h3>
 							<p className="mt-2 text-sm text-red-700 dark:text-red-300">
-								The network you're looking for doesn't exist or has been
-								removed.
+								{t(
+									"The network you're looking for doesn't exist or has been removed.",
+								)}
 							</p>
 						</div>
 					</div>
@@ -61,13 +64,17 @@ const NetworkDetail = () => {
 					className="mt-4 inline-flex items-center text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Docker
+					{t("Back to Docker")}
 				</Link>
 			</div>
 		);
 	}
 
-	const BooleanBadge = ({ value, trueLabel = "Yes", falseLabel = "No" }) => {
+	const BooleanBadge = ({
+		value,
+		trueLabel = t("Yes"),
+		falseLabel = t("No"),
+	}) => {
 		return value ? (
 			<span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
 				<CheckCircle className="h-3 w-3 mr-1" />
@@ -90,7 +97,7 @@ const NetworkDetail = () => {
 					className="inline-flex items-center text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 mb-4"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Docker
+					{t("Back to Docker")}
 				</Link>
 				<div className="flex items-center">
 					<Network className="h-8 w-8 text-secondary-400 mr-3" />
@@ -99,7 +106,9 @@ const NetworkDetail = () => {
 							{network.name}
 						</h1>
 						<p className="mt-1 text-sm text-secondary-600 dark:text-white">
-							Network ID: {network.network_id.substring(0, 12)}
+							{t("Network ID: {{id}}", {
+								id: network.network_id.substring(0, 12),
+							})}
 						</p>
 					</div>
 				</div>
@@ -114,7 +123,7 @@ const NetworkDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Driver
+								{t("Driver")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{network.driver}
@@ -130,7 +139,7 @@ const NetworkDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Scope
+								{t("Scope")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{network.scope}
@@ -146,7 +155,7 @@ const NetworkDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Containers
+								{t("Containers")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{network.container_count || 0}
@@ -162,7 +171,7 @@ const NetworkDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Last Checked
+								{t("Last Checked")}
 							</p>
 							<p className="text-sm font-medium text-secondary-900 dark:text-white">
 								{formatRelativeTime(network.last_checked)}
@@ -176,14 +185,14 @@ const NetworkDetail = () => {
 			<div className="card">
 				<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 					<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-						Network Information
+						{t("Network Information")}
 					</h3>
 				</div>
 				<div className="px-6 py-5">
 					<dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Network ID
+								{t("Network ID")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white font-mono break-all">
 								{network.network_id}
@@ -191,7 +200,7 @@ const NetworkDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Name
+								{t("Name")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{network.name}
@@ -199,7 +208,7 @@ const NetworkDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Driver
+								{t("Driver")}
 							</dt>
 							<dd className="mt-1">
 								<span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
@@ -209,7 +218,7 @@ const NetworkDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Scope
+								{t("Scope")}
 							</dt>
 							<dd className="mt-1">
 								<span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
@@ -219,7 +228,7 @@ const NetworkDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Containers Attached
+								{t("Containers Attached")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{network.container_count || 0}
@@ -227,7 +236,7 @@ const NetworkDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								IPv6 Enabled
+								{t("IPv6 Enabled")}
 							</dt>
 							<dd className="mt-1">
 								<BooleanBadge value={network.ipv6_enabled} />
@@ -235,7 +244,7 @@ const NetworkDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Internal
+								{t("Internal")}
 							</dt>
 							<dd className="mt-1">
 								<BooleanBadge value={network.internal} />
@@ -243,7 +252,7 @@ const NetworkDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Attachable
+								{t("Attachable")}
 							</dt>
 							<dd className="mt-1">
 								<BooleanBadge value={network.attachable} />
@@ -251,7 +260,7 @@ const NetworkDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Ingress
+								{t("Ingress")}
 							</dt>
 							<dd className="mt-1">
 								<BooleanBadge value={network.ingress} />
@@ -259,7 +268,7 @@ const NetworkDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Config Only
+								{t("Config Only")}
 							</dt>
 							<dd className="mt-1">
 								<BooleanBadge value={network.config_only} />
@@ -268,7 +277,7 @@ const NetworkDetail = () => {
 						{network.created_at && (
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Created
+									{t("Created")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 									{formatRelativeTime(network.created_at)}
@@ -277,7 +286,7 @@ const NetworkDetail = () => {
 						)}
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Last Checked
+								{t("Last Checked")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{formatRelativeTime(network.last_checked)}
@@ -292,17 +301,17 @@ const NetworkDetail = () => {
 				<div className="card">
 					<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 						<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-							IPAM Configuration
+							{t("IPAM Configuration")}
 						</h3>
 						<p className="mt-1 text-sm text-secondary-500 dark:text-white">
-							IP Address Management settings
+							{t("IP Address Management settings")}
 						</p>
 					</div>
 					<div className="px-6 py-5">
 						{network.ipam.driver && (
 							<div className="mb-4">
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white mb-1">
-									Driver
+									{t("Driver")}
 								</dt>
 								<dd>
 									<span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
@@ -314,7 +323,7 @@ const NetworkDetail = () => {
 						{network.ipam.config && network.ipam.config.length > 0 && (
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white mb-3">
-									Subnet Configuration
+									{t("Subnet Configuration")}
 								</dt>
 								<div className="space-y-4">
 									{network.ipam.config.map((config, index) => (
@@ -326,7 +335,7 @@ const NetworkDetail = () => {
 												{isSet(config.subnet) && (
 													<div>
 														<dt className="text-xs font-medium text-secondary-500 dark:text-white">
-															Subnet
+															{t("Subnet")}
 														</dt>
 														<dd className="mt-1 text-sm text-secondary-900 dark:text-white font-mono">
 															{config.subnet}
@@ -336,7 +345,7 @@ const NetworkDetail = () => {
 												{isSet(config.gateway) && (
 													<div>
 														<dt className="text-xs font-medium text-secondary-500 dark:text-white">
-															Gateway
+															{t("Gateway")}
 														</dt>
 														<dd className="mt-1 text-sm text-secondary-900 dark:text-white font-mono">
 															{config.gateway}
@@ -346,7 +355,7 @@ const NetworkDetail = () => {
 												{isSet(config.ip_range) && (
 													<div>
 														<dt className="text-xs font-medium text-secondary-500 dark:text-white">
-															IP Range
+															{t("IP Range")}
 														</dt>
 														<dd className="mt-1 text-sm text-secondary-900 dark:text-white font-mono">
 															{config.ip_range}
@@ -357,7 +366,7 @@ const NetworkDetail = () => {
 													Object.keys(config.aux_addresses).length > 0 && (
 														<div className="sm:col-span-2">
 															<dt className="text-xs font-medium text-secondary-500 dark:text-white mb-2">
-																Auxiliary Addresses
+																{t("Auxiliary Addresses")}
 															</dt>
 															<dd className="space-y-1">
 																{Object.entries(config.aux_addresses).map(
@@ -388,7 +397,7 @@ const NetworkDetail = () => {
 							Object.keys(network.ipam.options).length > 0 && (
 								<div className="mt-4">
 									<dt className="text-sm font-medium text-secondary-500 dark:text-white mb-2">
-										IPAM Options
+										{t("IPAM Options")}
 									</dt>
 									<dd className="space-y-1">
 										{Object.entries(network.ipam.options).map(
@@ -419,14 +428,14 @@ const NetworkDetail = () => {
 					<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 						<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white flex items-center">
 							<Server className="h-5 w-5 mr-2" />
-							Host Information
+							{t("Host Information")}
 						</h3>
 					</div>
 					<div className="px-6 py-5">
 						<dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Hostname
+									{t("Hostname")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 									<Link
@@ -439,11 +448,11 @@ const NetworkDetail = () => {
 							</div>
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Operating System
+									{t("Operating System")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 									{[host.os_type, host.os_version].filter(Boolean).join(" ") ||
-										"Unknown"}
+										t("Unknown")}
 								</dd>
 							</div>
 						</dl>
@@ -457,7 +466,7 @@ const NetworkDetail = () => {
 					<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 						<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white flex items-center">
 							<Tag className="h-5 w-5 mr-2" />
-							Labels
+							{t("Labels")}
 						</h3>
 					</div>
 					<div className="px-6 py-5">

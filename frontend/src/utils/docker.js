@@ -2,6 +2,11 @@
  * Docker-related utility functions for the frontend
  */
 
+import { tk } from "../i18n";
+
+// Display texts are marked with tk() and rendered with t(): product names are
+// left as they are, and t() returns any other value unchanged.
+
 const DOCKER_HUB_HOSTS = new Set([
 	"docker.io",
 	"index.docker.io",
@@ -125,9 +130,9 @@ export function getSourceDisplayName(source) {
 		redhat: "Red Hat",
 		azure: "Azure",
 		aws: "AWS ECR",
-		private: "Private Registry",
-		local: "Local",
-		unknown: "Unknown",
+		private: tk("Private Registry"),
+		local: tk("Local"),
+		unknown: tk("Unknown"),
 	};
 
 	return sourceNames[source] || source;
@@ -145,76 +150,89 @@ export function shortDigest(digest) {
 }
 
 export const UPDATE_STATUS_FILTERS = [
-	{ value: "all", label: "All statuses" },
-	{ value: "update_available", label: "Update available" },
-	{ value: "recreate_needed", label: "Recreate needed" },
-	{ value: "up_to_date", label: "Up to date" },
-	{ value: "unknown", label: "Unknown" },
-	{ value: "not_checked", label: "Not checked" },
+	{ value: "all", label: tk("All statuses") },
+	{ value: "update_available", label: tk("Update available") },
+	{ value: "recreate_needed", label: tk("Recreate needed") },
+	{ value: "up_to_date", label: tk("Up to date") },
+	{ value: "unknown", label: tk("Unknown") },
+	{ value: "not_checked", label: tk("Not checked") },
 ];
 
 const CHECK_REASONS = {
-	rate_limited:
+	rate_limited: tk(
 		"The registry rate limited the check. It will be retried on the next run.",
-	auth_failed: "The registry rejected the credentials configured on the host.",
-	tag_not_found: "The tag no longer exists in the registry.",
-	unreachable: "The registry could not be reached from the host.",
-	unsupported_auth:
+	),
+	auth_failed: tk(
+		"The registry rejected the credentials configured on the host.",
+	),
+	tag_not_found: tk("The tag no longer exists in the registry."),
+	unreachable: tk("The registry could not be reached from the host."),
+	unsupported_auth: tk(
 		"The registry asked for an authentication method the agent does not support.",
-	insecure_registry_disallowed:
+	),
+	insecure_registry_disallowed: tk(
 		"The registry is served over plain HTTP and is not marked insecure in the Docker daemon.",
-	no_digest: "The registry did not return a digest for this tag.",
+	),
+	no_digest: tk("The registry did not return a digest for this tag."),
 };
 
 export function describeCheckReason(reason) {
-	return CHECK_REASONS[reason] || "The update check did not complete.";
+	return CHECK_REASONS[reason] || tk("The update check did not complete.");
 }
 
 const STATUS_META = {
 	update_available: {
-		label: "Update available",
+		label: tk("Update available"),
 		className: "badge-warning",
 		tooltip: () =>
-			"The registry has a different image for this tag than the one on the host.",
+			tk(
+				"The registry has a different image for this tag than the one on the host.",
+			),
 	},
 	recreate_needed: {
-		label: "Recreate needed",
+		label: tk("Recreate needed"),
 		className: "badge-primary",
 		tooltip: () =>
-			"A newer image is already pulled on this host; recreate the container to use it",
+			tk(
+				"A newer image is already pulled on this host; recreate the container to use it",
+			),
 	},
 	up_to_date: {
-		label: "Up to date",
+		label: tk("Up to date"),
 		className: "badge-success",
 		tooltip: ({ checkedAt, formatTime }) =>
 			checkedAt ? `Checked ${formatTime(checkedAt)}` : "",
 	},
 	unknown: {
-		label: "Unknown",
+		label: tk("Unknown"),
 		className: "badge-secondary",
 		tooltip: ({ reason }) => describeCheckReason(reason),
 	},
 	local_build: {
-		label: "Local build",
+		label: tk("Local build"),
 		className: "badge-secondary",
 		tooltip: () =>
-			"Built on the host, so there is no registry image to compare against.",
+			tk(
+				"Built on the host, so there is no registry image to compare against.",
+			),
 	},
 	pinned: {
-		label: "Pinned digest",
+		label: tk("Pinned digest"),
 		className: "badge-secondary",
 		tooltip: () =>
-			"Referenced by digest, so the image cannot change under this reference.",
+			tk(
+				"Referenced by digest, so the image cannot change under this reference.",
+			),
 	},
 	skipped: {
-		label: "Untagged",
+		label: tk("Untagged"),
 		className: "badge-secondary",
-		tooltip: () => "The image has no tag to check against a registry.",
+		tooltip: () => tk("The image has no tag to check against a registry."),
 	},
 	not_checked: {
-		label: "Not checked",
+		label: tk("Not checked"),
 		className: "badge-secondary",
-		tooltip: () => "No update check has been reported for this image yet.",
+		tooltip: () => tk("No update check has been reported for this image yet."),
 	},
 };
 
