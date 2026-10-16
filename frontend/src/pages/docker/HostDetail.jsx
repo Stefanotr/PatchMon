@@ -9,12 +9,16 @@ import {
 	Search,
 	Server,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
-import UpdateStatusBadge from "../../components/docker/UpdateStatusBadge";
+import UpdateStatusBadge, {
+	ContainerState,
+	SourceName,
+} from "../../components/docker/UpdateStatusBadge";
 import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../contexts/ToastContext";
 import api, { adminHostsAPI, formatError } from "../../utils/api";
-import { getSourceDisplayName, shortImageId } from "../../utils/docker";
+import { shortImageId } from "../../utils/docker";
 
 const thClass =
 	"px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap";
@@ -23,6 +27,7 @@ const linkClass =
 	"font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300";
 
 const HostDetail = () => {
+	const { t } = useTranslation();
 	const { id } = useParams();
 	const { canManageHosts } = useAuth();
 	const toast = useToast();
@@ -40,11 +45,13 @@ const HostDetail = () => {
 		mutationFn: () => adminHostsAPI.checkDockerImages(id),
 		onSuccess: () => {
 			toast.success(
-				"Update check requested. Results appear once the agent reports back.",
+				t(
+					"Update check requested. Results appear once the agent reports back.",
+				),
 			);
 		},
 		onError: (err) => {
-			toast.error(formatError(err) || "Failed to request an update check");
+			toast.error(formatError(err) || t("Failed to request an update check"));
 		},
 	});
 
@@ -69,7 +76,7 @@ const HostDetail = () => {
 						<AlertTriangle className="h-5 w-5 text-danger-400" />
 						<div className="ml-3">
 							<h3 className="text-sm font-medium text-danger-800 dark:text-danger-200">
-								Host not found
+								{t("Host not found")}
 							</h3>
 						</div>
 					</div>
@@ -79,7 +86,7 @@ const HostDetail = () => {
 					className="mt-4 inline-flex items-center text-primary-600 hover:text-primary-900"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Docker
+					{t("Back to Docker")}
 				</Link>
 			</div>
 		);
@@ -93,7 +100,7 @@ const HostDetail = () => {
 					className="inline-flex items-center text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 mb-4"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Docker
+					{t("Back to Docker")}
 				</Link>
 				<div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
 					<div className="flex items-center">
@@ -120,14 +127,14 @@ const HostDetail = () => {
 								) : (
 									<Search className="h-4 w-4" />
 								)}
-								Check for updates
+								{t("Check for updates")}
 							</button>
 						)}
 						<Link
 							to={`/hosts/${id}`}
 							className="inline-flex items-center min-h-[44px] text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
 						>
-							View Full Host Details
+							{t("View Full Host Details")}
 							<ExternalLink className="ml-2 h-4 w-4" />
 						</Link>
 					</div>
@@ -143,7 +150,7 @@ const HostDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Total Containers
+								{t("Total Containers")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{stats?.totalContainers || 0}
@@ -159,7 +166,7 @@ const HostDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Running
+								{t("Running")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{stats?.runningContainers || 0}
@@ -175,7 +182,7 @@ const HostDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Stopped
+								{t("Stopped")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{stats?.stoppedContainers || 0}
@@ -191,7 +198,7 @@ const HostDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Images
+								{t("Images")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{stats?.totalImages || images.length}
@@ -205,14 +212,14 @@ const HostDetail = () => {
 			<div className="card">
 				<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 					<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-						Host Information
+						{t("Host Information")}
 					</h3>
 				</div>
 				<div className="px-6 py-5 space-y-6">
 					<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Friendly Name
+								{t("Friendly Name")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{host.friendly_name}
@@ -220,7 +227,7 @@ const HostDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Hostname
+								{t("Hostname")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{host.hostname}
@@ -228,7 +235,7 @@ const HostDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								IP Address
+								{t("IP Address")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{host.ip}
@@ -236,7 +243,7 @@ const HostDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								OS
+								{t("OS")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{host.os_type} {host.os_version}
@@ -250,7 +257,7 @@ const HostDetail = () => {
 			<div className="card">
 				<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 					<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-						Containers ({containers.length})
+						{t("Containers ({{count}})", { count: containers.length })}
 					</h3>
 				</div>
 				<div className="md:hidden p-4 space-y-3">
@@ -264,7 +271,7 @@ const HostDetail = () => {
 									{container.name}
 								</Link>
 								<span className="badge-secondary w-fit">
-									{container.status}
+									<ContainerState state={container.status} />
 								</span>
 							</div>
 							<p
@@ -282,19 +289,19 @@ const HostDetail = () => {
 						<thead className="bg-secondary-50 dark:bg-secondary-700">
 							<tr>
 								<th scope="col" className={thClass}>
-									Container Name
+									{t("Container Name")}
 								</th>
 								<th scope="col" className={thClass}>
-									Image
+									{t("Image")}
 								</th>
 								<th scope="col" className={thClass}>
-									Status
+									{t("Status")}
 								</th>
 								<th scope="col" className={thClass}>
-									Update Status
+									{t("Update Status")}
 								</th>
 								<th scope="col" className={thClass}>
-									Actions
+									{t("Actions")}
 								</th>
 							</tr>
 						</thead>
@@ -319,7 +326,9 @@ const HostDetail = () => {
 										{container.image_name}:{container.image_tag}
 									</td>
 									<td className={tdClass}>
-										<span className="badge-secondary">{container.status}</span>
+										<span className="badge-secondary">
+											<ContainerState state={container.status} />
+										</span>
 									</td>
 									<td className={tdClass}>
 										<UpdateStatusBadge status={container.update_status} />
@@ -329,7 +338,7 @@ const HostDetail = () => {
 											to={`/docker/containers/${container.id}`}
 											className={`${linkClass} inline-flex items-center`}
 										>
-											View
+											{t("View")}
 											<ExternalLink className="ml-1 h-4 w-4" />
 										</Link>
 									</td>
@@ -344,7 +353,7 @@ const HostDetail = () => {
 			<div className="card">
 				<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 					<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-						Images ({images.length})
+						{t("Images ({{count}})", { count: images.length })}
 					</h3>
 				</div>
 				<div className="md:hidden p-4 space-y-3">
@@ -372,22 +381,22 @@ const HostDetail = () => {
 						<thead className="bg-secondary-50 dark:bg-secondary-700">
 							<tr>
 								<th scope="col" className={thClass}>
-									Repository
+									{t("Repository")}
 								</th>
 								<th scope="col" className={thClass}>
-									Tag
+									{t("Tag")}
 								</th>
 								<th scope="col" className={thClass}>
-									Image ID
+									{t("Image ID")}
 								</th>
 								<th scope="col" className={thClass}>
-									Source
+									{t("Source")}
 								</th>
 								<th scope="col" className={thClass}>
-									Update Status
+									{t("Update Status")}
 								</th>
 								<th scope="col" className={thClass}>
-									Actions
+									{t("Actions")}
 								</th>
 							</tr>
 						</thead>
@@ -425,7 +434,7 @@ const HostDetail = () => {
 									<td
 										className={`${tdClass} text-secondary-500 dark:text-white`}
 									>
-										{getSourceDisplayName(image.source)}
+										<SourceName source={image.source} />
 									</td>
 									<td className={tdClass}>
 										<UpdateStatusBadge
@@ -439,7 +448,7 @@ const HostDetail = () => {
 											to={`/docker/images/${image.id}`}
 											className={`${linkClass} inline-flex items-center`}
 										>
-											View
+											{t("View")}
 											<ExternalLink className="ml-1 h-4 w-4" />
 										</Link>
 									</td>

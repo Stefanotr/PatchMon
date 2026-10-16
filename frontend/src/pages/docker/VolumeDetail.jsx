@@ -8,10 +8,13 @@ import {
 	Server,
 	Tag,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
+import { tk } from "../../i18n";
 import api, { formatRelativeTime } from "../../utils/api";
 
 const VolumeDetail = () => {
+	const { t } = useTranslation();
 	const { id } = useParams();
 
 	const { data, isLoading, error } = useQuery({
@@ -42,10 +45,12 @@ const VolumeDetail = () => {
 						<AlertTriangle className="h-5 w-5 text-red-400" />
 						<div className="ml-3">
 							<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-								Volume not found
+								{t("Volume not found")}
 							</h3>
 							<p className="mt-2 text-sm text-red-700 dark:text-red-300">
-								The volume you're looking for doesn't exist or has been removed.
+								{t(
+									"The volume you're looking for doesn't exist or has been removed.",
+								)}
 							</p>
 						</div>
 					</div>
@@ -55,18 +60,25 @@ const VolumeDetail = () => {
 					className="mt-4 inline-flex items-center text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Docker
+					{t("Back to Docker")}
 				</Link>
 			</div>
 		);
 	}
 
 	const formatBytes = (bytes) => {
-		if (bytes === null || bytes === undefined) return "N/A";
-		const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-		if (bytes === 0) return "0 Bytes";
+		if (bytes === null || bytes === undefined) return t("N/A");
+		// One whole string per unit: French writes Ko, Mo...
+		const sizes = [
+			tk("{{size}} Bytes"),
+			tk("{{size}} KB"),
+			tk("{{size}} MB"),
+			tk("{{size}} GB"),
+			tk("{{size}} TB"),
+		];
+		if (bytes === 0) return t(sizes[0], { size: 0 });
 		const i = Math.floor(Math.log(bytes) / Math.log(1024));
-		return `${Math.round((bytes / 1024 ** i) * 100) / 100} ${sizes[i]}`;
+		return t(sizes[i], { size: Math.round((bytes / 1024 ** i) * 100) / 100 });
 	};
 
 	return (
@@ -78,7 +90,7 @@ const VolumeDetail = () => {
 					className="inline-flex items-center text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 mb-4"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Docker
+					{t("Back to Docker")}
 				</Link>
 				<div className="flex items-center">
 					<HardDrive className="h-8 w-8 text-secondary-400 mr-3" />
@@ -87,7 +99,7 @@ const VolumeDetail = () => {
 							{volume.name}
 						</h1>
 						<p className="mt-1 text-sm text-secondary-600 dark:text-white">
-							Volume ID: {volume.volume_id}
+							{t("Volume ID: {{id}}", { id: volume.volume_id })}
 						</p>
 					</div>
 				</div>
@@ -102,7 +114,7 @@ const VolumeDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Driver
+								{t("Driver")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{volume.driver}
@@ -117,7 +129,9 @@ const VolumeDetail = () => {
 							<Database className="h-5 w-5 text-purple-600 mr-2" />
 						</div>
 						<div className="w-0 flex-1">
-							<p className="text-sm text-secondary-500 dark:text-white">Size</p>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								{t("Size")}
+							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{formatBytes(volume.size_bytes)}
 							</p>
@@ -132,7 +146,7 @@ const VolumeDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Containers
+								{t("Containers")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{volume.ref_count || 0}
@@ -148,7 +162,7 @@ const VolumeDetail = () => {
 						</div>
 						<div className="w-0 flex-1">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Last Checked
+								{t("Last Checked")}
 							</p>
 							<p className="text-sm font-medium text-secondary-900 dark:text-white">
 								{formatRelativeTime(volume.last_checked)}
@@ -162,14 +176,14 @@ const VolumeDetail = () => {
 			<div className="card">
 				<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 					<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-						Volume Information
+						{t("Volume Information")}
 					</h3>
 				</div>
 				<div className="px-6 py-5">
 					<dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Volume ID
+								{t("Volume ID")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white font-mono">
 								{volume.volume_id}
@@ -177,7 +191,7 @@ const VolumeDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Name
+								{t("Name")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{volume.name}
@@ -185,7 +199,7 @@ const VolumeDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Driver
+								{t("Driver")}
 							</dt>
 							<dd className="mt-1">
 								<span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
@@ -195,7 +209,7 @@ const VolumeDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Scope
+								{t("Scope")}
 							</dt>
 							<dd className="mt-1">
 								<span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
@@ -205,7 +219,7 @@ const VolumeDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Size
+								{t("Size")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{formatBytes(volume.size_bytes)}
@@ -213,7 +227,7 @@ const VolumeDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Containers Using
+								{t("Containers Using")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{volume.ref_count || 0}
@@ -222,7 +236,7 @@ const VolumeDetail = () => {
 						{volume.mountpoint && (
 							<div className="sm:col-span-2">
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Mount Point
+									{t("Mount Point")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white font-mono break-all">
 									{volume.mountpoint}
@@ -232,7 +246,7 @@ const VolumeDetail = () => {
 						{volume.renderer && (
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Renderer
+									{t("Renderer")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 									{volume.renderer}
@@ -241,7 +255,7 @@ const VolumeDetail = () => {
 						)}
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Created
+								{t("Created")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{formatRelativeTime(volume.created_at)}
@@ -249,7 +263,7 @@ const VolumeDetail = () => {
 						</div>
 						<div>
 							<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-								Last Checked
+								{t("Last Checked")}
 							</dt>
 							<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 								{formatRelativeTime(volume.last_checked)}
@@ -265,14 +279,14 @@ const VolumeDetail = () => {
 					<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 						<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white flex items-center">
 							<Server className="h-5 w-5 mr-2" />
-							Host Information
+							{t("Host Information")}
 						</h3>
 					</div>
 					<div className="px-6 py-5">
 						<dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Hostname
+									{t("Hostname")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 									<Link
@@ -285,11 +299,11 @@ const VolumeDetail = () => {
 							</div>
 							<div>
 								<dt className="text-sm font-medium text-secondary-500 dark:text-white">
-									Operating System
+									{t("Operating System")}
 								</dt>
 								<dd className="mt-1 text-sm text-secondary-900 dark:text-white">
 									{[host.os_type, host.os_version].filter(Boolean).join(" ") ||
-										"Unknown"}
+										t("Unknown")}
 								</dd>
 							</div>
 						</dl>
@@ -303,7 +317,7 @@ const VolumeDetail = () => {
 					<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 						<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white flex items-center">
 							<Tag className="h-5 w-5 mr-2" />
-							Labels
+							{t("Labels")}
 						</h3>
 					</div>
 					<div className="px-6 py-5">
@@ -331,7 +345,7 @@ const VolumeDetail = () => {
 				<div className="card">
 					<div className="px-6 py-5 border-b border-secondary-200 dark:border-secondary-700">
 						<h3 className="text-lg leading-6 font-medium text-secondary-900 dark:text-white">
-							Volume Options
+							{t("Volume Options")}
 						</h3>
 					</div>
 					<div className="px-6 py-5">
