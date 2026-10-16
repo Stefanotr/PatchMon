@@ -1,5 +1,6 @@
 import { Package } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 const COLLAPSE_THRESHOLD = 2;
@@ -9,6 +10,7 @@ const COLLAPSE_THRESHOLD = 2;
  * "firstPackage + N more" with expandable full list. Each package links to its detail page.
  */
 export function PackageNameList({ packages, className = "", showIcon = true }) {
+	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState(false);
 
 	if (!packages || packages.length === 0) return null;
@@ -32,7 +34,7 @@ export function PackageNameList({ packages, className = "", showIcon = true }) {
 						onClick={() => setExpanded(true)}
 						className="text-primary-600 dark:text-primary-400 hover:underline font-medium"
 					>
-						+ {restCount} more
+						{t("+ {{count}} more", { count: restCount })}
 					</button>
 				</>
 			) : (
@@ -62,13 +64,14 @@ export function PackageNameList({ packages, className = "", showIcon = true }) {
  * - patch_package (N>1)  → "<first> +N more" (full list in tooltip)
  */
 export function CompactPackageSummary({ run, className = "" }) {
+	const { t } = useTranslation();
 	if (run.patch_type !== "patch_package") {
 		return (
 			<span
 				className={`inline-flex items-center gap-1.5 text-sm text-secondary-900 dark:text-white min-w-0 ${className}`}
 			>
 				<Package className="h-4 w-4 text-secondary-400 dark:text-secondary-500 shrink-0" />
-				<span className="truncate">Patch all</span>
+				<span className="truncate">{t("Patch all")}</span>
 			</span>
 		);
 	}
@@ -110,7 +113,7 @@ export function CompactPackageSummary({ run, className = "" }) {
 			</Link>
 			{restCount > 0 && (
 				<span className="text-xs font-medium text-secondary-500 dark:text-secondary-400 shrink-0">
-					+{restCount} more
+					{t("+{{count}} more", { count: restCount })}
 				</span>
 			)}
 		</span>
@@ -122,8 +125,9 @@ export function CompactPackageSummary({ run, className = "" }) {
  * expandable dependencies. Uses "first + N more" when many packages.
  */
 export function PackageListDisplay({ run }) {
+	const { t } = useTranslation();
 	if (run.patch_type !== "patch_package") {
-		return "Patch all";
+		return t("Patch all");
 	}
 
 	const requested =
@@ -147,7 +151,7 @@ export function PackageListDisplay({ run }) {
 			<PackageNameList packages={requested} />
 			{extraDeps.length > 0 && (
 				<span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 flex-wrap">
-					(+ {extraDeps.length} dep{extraDeps.length !== 1 ? "s" : ""}:{" "}
+					{t("(+ {{count}} dep:", { count: extraDeps.length })}{" "}
 					<PackageNameList packages={extraDeps} showIcon={false} />)
 				</span>
 			)}
