@@ -1993,6 +1993,8 @@ Two things must be allowed, one on each side:
   - **With the agent**: `sudo patchmon-agent config remote-restart on` (or `off`), `patchmon-agent.exe config remote-restart on` in an administrator PowerShell. Handy for a configuration management tool.
   - **By hand**: edit the file as above.
 
+  PatchMon shows the right command for each host: on a host that refuses remote restarts, **Allow restarts** next to the greyed **Restart** button of the Host Detail page opens it for the host's operating system (Linux with systemd, Alpine with OpenRC, FreeBSD, Windows PowerShell), ready to copy. The **Required** badge of the Hosts list and the warning of the patch wizard lead to it too. The command sets the switch, then restarts the agent service so that PatchMon sees the change: do not run it while a patch run is in progress on the host.
+
   The agent reads the setting from the file each time a restart is asked for, so a change applies at once; PatchMon shows it once the agent reconnects (restart the agent service to show it now).
 
   The setting is off by default and the server cannot change it, like `ssh-proxy-enabled`: whoever administers the host decides whether PatchMon may restart it. Leave it off on hosts that must never be restarted remotely (domain controllers, hypervisors). While it is off, restart commands are refused and the restart a patch run asks for is skipped; cancelling a restart PatchMon scheduled stays possible.
