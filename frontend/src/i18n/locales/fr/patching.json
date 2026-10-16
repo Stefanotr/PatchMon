@@ -135,5 +135,6 @@
 	"(+ {{count}} dep:_one": "(+ {{count}} dépendance\u00a0:",
 	"(+ {{count}} dep:_other": "(+ {{count}} dépendances\u00a0:",
 	"Stopped by user": "Arrêtée par l'utilisateur",
-	"Completed with skipped items": "Terminée avec des éléments ignorés"
+	"Completed with skipped items": "Terminée avec des éléments ignorés",
+	"A restart is required to finish installing updates.": "Un redémarrage est nécessaire pour terminer l'installation des mises à jour."
 }

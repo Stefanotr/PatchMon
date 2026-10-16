@@ -808,7 +808,7 @@ const RunDetail = () => {
 						<div className="rounded-lg bg-warning-50 dark:bg-warning-900/30 border border-warning-200 dark:border-warning-600 p-4 flex items-start gap-3">
 							<RotateCcw className="h-5 w-5 text-warning-600 dark:text-warning-400 mt-0.5 flex-shrink-0" />
 							<p className="text-sm font-medium text-warning-800 dark:text-warning-200">
-								{RESTART_REQUIRED_BANNER}
+								{t(RESTART_REQUIRED_BANNER)}
 							</p>
 						</div>
 					)}

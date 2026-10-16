@@ -1,3 +1,4 @@
+import { tk } from "../i18n";
 import {
 	isPacmanHost,
 	PACMAN_SELECTED_PATCH_UNSUPPORTED,
@@ -47,14 +48,17 @@ export const patchErrorMessage = (err, fallback = "Request failed") => {
 	return `${base} (${list})`;
 };
 
-export const FEATURE_UPGRADE_WARNING =
-	"Feature upgrades download several GB, can take over an hour and need one or more restarts to finish.";
+export const FEATURE_UPGRADE_WARNING = tk(
+	"Feature upgrades download several GB, can take over an hour and need one or more restarts to finish.",
+);
 
-export const RESTART_NOT_AUTOMATIC =
-	"The host may need a restart afterwards. PatchMon does not restart it.";
+export const RESTART_NOT_AUTOMATIC = tk(
+	"The host may need a restart afterwards. PatchMon does not restart it.",
+);
 
-export const RESTART_REQUIRED_BANNER =
-	"A restart is required to finish installing updates.";
+export const RESTART_REQUIRED_BANNER = tk(
+	"A restart is required to finish installing updates.",
+);
 
 export const DEFAULT_WINDOWS_SCOPE = Object.freeze({
 	updates: true,
@@ -62,9 +66,9 @@ export const DEFAULT_WINDOWS_SCOPE = Object.freeze({
 });
 
 export const RESTART_REQUIRED_BADGE = Object.freeze({
-	label: "Restart required",
+	label: tk("Restart required"),
 	className: "badge-warning",
-	title: "Installed, but the host must restart to finish installing it",
+	title: tk("Installed, but the host must restart to finish installing it"),
 });
 
 export const isPendingRestart = (row) =>
@@ -205,15 +209,21 @@ export const isWindowsScopeValid = (scope) => !!(scope?.updates || scope?.apps);
 export const windowsPatchAllSummary = (scope) => {
 	const s = scope || DEFAULT_WINDOWS_SCOPE;
 	if (s.updates && s.apps) {
-		return "Installs all pending Windows updates, except optional, driver and feature upgrades, and upgrades the apps winget can update.";
+		return tk(
+			"Installs all pending Windows updates, except optional, driver and feature upgrades, and upgrades the apps winget can update.",
+		);
 	}
 	if (s.updates) {
-		return "Installs all pending Windows updates, except optional, driver and feature upgrades.";
+		return tk(
+			"Installs all pending Windows updates, except optional, driver and feature upgrades.",
+		);
 	}
 	if (s.apps) {
-		return "Upgrades the apps winget can update.";
+		return tk("Upgrades the apps winget can update.");
 	}
-	return "Nothing selected. Choose Windows Updates, Applications (winget), or both.";
+	return tk(
+		"Nothing selected. Choose Windows Updates, Applications (winget), or both.",
+	);
 };
 
 // Splits package-host pairs into ones the wizard may patch and ones it must

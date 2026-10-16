@@ -425,9 +425,9 @@ const PackageDetail = () => {
 					) : (packageData.host_packages || []).some(isPendingRestart) ? (
 						<span
 							className={RESTART_REQUIRED_BADGE.className}
-							title={RESTART_REQUIRED_BADGE.title}
+							title={t(RESTART_REQUIRED_BADGE.title)}
 						>
-							{RESTART_REQUIRED_BADGE.label}
+							{t(RESTART_REQUIRED_BADGE.label)}
 						</span>
 					) : (
 						<span className="badge-success">{t("Up to Date")}</span>

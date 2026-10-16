@@ -88,5 +88,7 @@
 	"View run": "Voir l'exécution",
 	"Patch all only": "Tout patcher uniquement",
 	"This package is not in the package inventory. For example, Windows updates leave the inventory once they are installed.": "Ce paquet n'est pas dans l'inventaire des paquets. Par exemple, les mises à jour Windows quittent l'inventaire une fois installées.",
-	"Source:": "Source\u00a0:"
+	"Source:": "Source\u00a0:",
+	"Restart required": "Redémarrage requis",
+	"Installed, but the host must restart to finish installing it": "Installé, mais l'hôte doit redémarrer pour terminer l'installation"
 }

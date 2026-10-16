@@ -1232,9 +1232,9 @@ const Packages = () => {
 																) ? (
 																	<span
 																		className={`${RESTART_REQUIRED_BADGE.className} text-xs`}
-																		title={RESTART_REQUIRED_BADGE.title}
+																		title={t(RESTART_REQUIRED_BADGE.title)}
 																	>
-																		{RESTART_REQUIRED_BADGE.label}
+																		{t(RESTART_REQUIRED_BADGE.label)}
 																	</span>
 																) : (
 																	<span className="badge-success text-xs">

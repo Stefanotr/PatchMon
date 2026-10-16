@@ -1453,8 +1453,8 @@ export default function PatchWizard({
 				))}
 			</div>
 			<p className="text-xs text-secondary-600 dark:text-secondary-400">
-				{windowsPatchAllSummary(windowsScope)}
-				{scopeValid && !canRestart ? ` ${RESTART_NOT_AUTOMATIC}` : ""}
+				{t(windowsPatchAllSummary(windowsScope))}
+				{scopeValid && !canRestart ? ` ${t(RESTART_NOT_AUTOMATIC)}` : ""}
 			</p>
 		</div>
 	);
@@ -2285,7 +2285,7 @@ export default function PatchWizard({
 									{restartChoice.mode !== "never" && (
 										<p className="mt-2 text-[11px] text-secondary-500 dark:text-secondary-400">
 											{t(
-												"The agent restarts the host once the run is over, never after a dry run or a stopped run, nor after a failed run on Linux. Signed-in users are warned; applications are closed when the countdown ends. Ignored if you submit the run for approval: the approver chooses then.",
+												"The agent restarts the host once the run is over, never after a dry run, a stopped run or a failed run. Signed-in users are warned; applications are closed when the countdown ends. Ignored if you submit the run for approval: the approver chooses then.",
 											)}
 										</p>
 									)}
@@ -2540,7 +2540,7 @@ export default function PatchWizard({
 								>
 									<AlertTriangle className="h-4 w-4 text-warning-600 dark:text-warning-400 mt-0.5 shrink-0" />
 									<p className="text-sm text-warning-700 dark:text-warning-300">
-										{FEATURE_UPGRADE_WARNING}
+										{t(FEATURE_UPGRADE_WARNING)}
 									</p>
 								</div>
 							)}
@@ -2675,7 +2675,7 @@ export default function PatchWizard({
 										{hostIsPatchAll ? (
 											<div className="px-4 py-3 bg-white dark:bg-secondary-800 text-sm text-secondary-700 dark:text-secondary-300">
 												{runWindowsScope
-													? `${windowsPatchAllSummary(runWindowsScope)}${canRestart ? "" : ` ${RESTART_NOT_AUTOMATIC}`}`
+													? `${t(windowsPatchAllSummary(runWindowsScope))}${canRestart ? "" : ` ${t(RESTART_NOT_AUTOMATIC)}`}`
 													: t(
 															"All pending system package updates on this host will be installed.",
 														)}
@@ -2922,7 +2922,7 @@ export default function PatchWizard({
 											disabled={!scopeValid}
 											className="btn-outline text-sm disabled:opacity-50 disabled:cursor-not-allowed"
 										>
-											Skip validation
+											{t("Skip validation")}
 										</button>
 									)}
 								{validationDone && !isValidating && (
