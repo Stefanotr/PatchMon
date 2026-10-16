@@ -25,6 +25,7 @@ import {
 	XCircle,
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import {
 	Link,
 	useLocation,
@@ -50,24 +51,29 @@ import { useAuth } from "../contexts/AuthContext";
 import { useConfirm } from "../contexts/ConfirmContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
+import { tk } from "../i18n";
 import { adminHostsAPI, formatDate, hostGroupsAPI } from "../utils/api";
 import { patchingAPI } from "../utils/patchingApi";
 import { hasExtraDependencies } from "../utils/patchRun";
 
 const PATCHING_TABS = [
-	{ id: "overview", label: "Overview", icon: LayoutDashboard },
-	{ id: "runs", label: "Runs & History", icon: History },
-	{ id: "policies", label: "Policies", icon: Shield },
+	{ id: "overview", label: tk("Overview"), icon: LayoutDashboard },
+	{ id: "runs", label: tk("Runs & History"), icon: History },
+	{ id: "policies", label: tk("Policies"), icon: Shield },
 ];
 
-const ValidatedBadge = () => (
-	<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-		<AlertTriangle className="h-3 w-3" />
-		Extra deps
-	</span>
-);
+const ValidatedBadge = () => {
+	const { t } = useTranslation();
+	return (
+		<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+			<AlertTriangle className="h-3 w-3" />
+			{t("Extra deps")}
+		</span>
+	);
+};
 
 const Patching = () => {
+	const { t } = useTranslation();
 	const [searchParams] = useSearchParams();
 	const location = useLocation();
 	const navigate = useNavigate();
@@ -335,7 +341,7 @@ const Patching = () => {
 	if (error) {
 		return (
 			<div className="p-4 bg-red-900/50 border border-red-700 rounded-lg">
-				<p className="text-red-200">Failed to load patching dashboard</p>
+				<p className="text-red-200">{t("Failed to load patching dashboard")}</p>
 			</div>
 		);
 	}
@@ -346,10 +352,10 @@ const Patching = () => {
 		<div className="space-y-6">
 			<div>
 				<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
-					Patching
+					{t("Patching")}
 				</h1>
 				<p className="text-sm text-secondary-600 dark:text-white mt-1">
-					View and manage patch runs across hosts
+					{t("View and manage patch runs across hosts")}
 				</p>
 			</div>
 
@@ -358,13 +364,13 @@ const Patching = () => {
 					type="button"
 					onClick={() => navigate("/patching?tab=runs")}
 					className="card p-4 hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow text-left"
-					title="View all runs"
+					title={t("View all runs")}
 				>
 					<div className="flex items-center">
 						<ListChecks className="h-5 w-5 text-primary-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Total runs
+								{t("Total runs")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{summary.total_runs ?? 0}
@@ -376,13 +382,13 @@ const Patching = () => {
 					type="button"
 					onClick={() => navigate("/patching?tab=runs&status=active")}
 					className="card p-4 hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow text-left"
-					title="View queued and running runs"
+					title={t("View queued and running runs")}
 				>
 					<div className="flex items-center">
 						<Clock className="h-5 w-5 text-blue-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Queued / Running
+								{t("Queued / Running")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{(summary.queued ?? 0) + (summary.running ?? 0)}
@@ -394,13 +400,13 @@ const Patching = () => {
 					type="button"
 					onClick={() => navigate("/patching?tab=runs&status=completed")}
 					className="card p-4 hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow text-left"
-					title="View completed runs"
+					title={t("View completed runs")}
 				>
 					<div className="flex items-center">
 						<CheckCircle className="h-5 w-5 text-green-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Completed
+								{t("Completed")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{summary.completed ?? 0}
@@ -412,13 +418,13 @@ const Patching = () => {
 					type="button"
 					onClick={() => navigate("/patching?tab=runs&status=failed")}
 					className="card p-4 hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow text-left"
-					title="View failed runs"
+					title={t("View failed runs")}
 				>
 					<div className="flex items-center">
 						<XCircle className="h-5 w-5 text-red-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Failed
+								{t("Failed")}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{summary.failed ?? 0}
@@ -435,10 +441,10 @@ const Patching = () => {
 						<Shield className="h-5 w-5 text-secondary-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Patch policies
+								{t("Patch policies")}
 							</p>
 							<p className="text-sm font-medium text-primary-600 dark:text-primary-400">
-								Manage policies
+								{t("Manage policies")}
 							</p>
 						</div>
 					</div>
@@ -449,7 +455,7 @@ const Patching = () => {
 			<div className="border-b border-secondary-200 dark:border-secondary-600 overflow-x-auto scrollbar-hide">
 				<nav
 					className="-mb-px flex space-x-4 sm:space-x-8 px-4"
-					aria-label="Tabs"
+					aria-label={t("Tabs")}
 				>
 					{PATCHING_TABS.map((tab) => {
 						const Icon = tab.icon;
@@ -466,7 +472,7 @@ const Patching = () => {
 								} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2`}
 							>
 								<Icon className="h-4 w-4" />
-								<span>{tab.label}</span>
+								<span>{t(tab.label)}</span>
 								{isPoliciesLocked && (
 									<TierBadge tier={getRequiredTier("patching_policies")} />
 								)}
@@ -563,26 +569,26 @@ const Patching = () => {
 /* ───────────────────── Runs & History Tab ───────────────────── */
 
 const STATUS_OPTIONS = [
-	{ value: "", label: "All statuses" },
-	{ value: "active", label: "Active (queued + running)" },
-	{ value: "queued", label: "Queued" },
-	{ value: "pending_validation", label: "Pending validation" },
-	{ value: "pending_approval", label: "Pending approval" },
-	{ value: "validated", label: "Validated (awaiting approval)" },
-	{ value: "approved", label: "Approved" },
-	{ value: "scheduled", label: "Scheduled" },
-	{ value: "running", label: "Running" },
-	{ value: "completed", label: "Completed" },
-	{ value: "failed", label: "Failed" },
-	{ value: "cancelled", label: "Cancelled" },
-	{ value: "timed_out", label: "Timed out" },
-	{ value: "agent_disconnected", label: "Agent disconnected" },
+	{ value: "", label: tk("All statuses") },
+	{ value: "active", label: tk("Active (queued + running)") },
+	{ value: "queued", label: tk("Queued") },
+	{ value: "pending_validation", label: tk("Pending validation") },
+	{ value: "pending_approval", label: tk("Pending approval") },
+	{ value: "validated", label: tk("Validated (awaiting approval)") },
+	{ value: "approved", label: tk("Approved") },
+	{ value: "scheduled", label: tk("Scheduled") },
+	{ value: "running", label: tk("Running") },
+	{ value: "completed", label: tk("Completed") },
+	{ value: "failed", label: tk("Failed") },
+	{ value: "cancelled", label: tk("Cancelled") },
+	{ value: "timed_out", label: tk("Timed out") },
+	{ value: "agent_disconnected", label: tk("Agent disconnected") },
 ];
 
 const TYPE_OPTIONS = [
-	{ value: "", label: "All types" },
-	{ value: "patch_all", label: "Patch all" },
-	{ value: "patch_package", label: "Patch package" },
+	{ value: "", label: tk("All types") },
+	{ value: "patch_all", label: tk("Patch all") },
+	{ value: "patch_package", label: tk("Patch package") },
 ];
 
 /**
@@ -597,6 +603,7 @@ function RunRowActions({
 	approvingId,
 	size = "sm",
 }) {
+	const { t } = useTranslation();
 	const isMobile = size === "md";
 	const baseBtn = isMobile
 		? "inline-flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-md min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -612,26 +619,26 @@ function RunRowActions({
 						onClick={() => onRetry(run.id)}
 						disabled={retryingId === run.id}
 						className={`${baseBtn} border border-secondary-300 dark:border-secondary-600 text-secondary-700 dark:text-secondary-200 hover:bg-secondary-100 dark:hover:bg-secondary-700`}
-						title="Re-queue validation (host may have been offline)"
+						title={t("Re-queue validation (host may have been offline)")}
 					>
 						<RefreshCw
 							className={`${iconSize} ${retryingId === run.id ? "animate-spin" : ""}`}
 						/>
-						Retry
+						{t("Retry")}
 					</button>
 					<button
 						type="button"
 						onClick={() => onApprove(run.id)}
 						disabled={approvingId === run.id}
 						className={`${baseBtn} bg-amber-600 hover:bg-amber-700 text-white`}
-						title="Skip validation and patch immediately"
+						title={t("Skip validation and patch immediately")}
 					>
 						{approvingId === run.id ? (
 							<RefreshCw className={`${iconSize} animate-spin`} />
 						) : (
 							<PlayCircle className={iconSize} />
 						)}
-						Skip & Patch
+						{t("Skip & Patch")}
 					</button>
 				</>
 			)}
@@ -641,14 +648,14 @@ function RunRowActions({
 					onClick={() => onApprove(run.id)}
 					disabled={approvingId === run.id}
 					className={`${baseBtn} bg-primary-600 hover:bg-primary-700 text-white`}
-					title="Approve and queue this run for execution"
+					title={t("Approve and queue this run for execution")}
 				>
 					{approvingId === run.id ? (
 						<RefreshCw className={`${iconSize} animate-spin`} />
 					) : (
 						<PlayCircle className={iconSize} />
 					)}
-					Approve
+					{t("Approve")}
 				</button>
 			)}
 			{run.status === "validated" && (
@@ -657,14 +664,14 @@ function RunRowActions({
 					onClick={() => onApprove(run.id)}
 					disabled={approvingId === run.id}
 					className={`${baseBtn} bg-primary-600 hover:bg-primary-700 text-white`}
-					title="Approve this validated run to proceed with patching"
+					title={t("Approve this validated run to proceed with patching")}
 				>
 					{approvingId === run.id ? (
 						<RefreshCw className={`${iconSize} animate-spin`} />
 					) : (
 						<PlayCircle className={iconSize} />
 					)}
-					Approve
+					{t("Approve")}
 				</button>
 			)}
 			<Link
@@ -675,7 +682,7 @@ function RunRowActions({
 						: "text-primary-600 dark:text-primary-400 hover:underline text-sm px-2"
 				}
 			>
-				View
+				{t("View")}
 			</Link>
 		</>
 	);
@@ -717,6 +724,7 @@ function RunsTab({
 	bulkApproveResult,
 	setBulkApproveResult,
 }) {
+	const { t } = useTranslation();
 	const totalRuns = runsPagination.total || 0;
 	const totalPages = Math.max(runsPagination.pages || 0, 1);
 	const rangeStart = totalRuns === 0 ? 0 : (runsPage - 1) * runsLimit + 1;
@@ -733,8 +741,9 @@ function RunsTab({
 						{selectedRunIds.size > 0 && (
 							<>
 								<span className="text-sm text-secondary-600 dark:text-white/80 flex-shrink-0">
-									{selectedRunIds.size} run
-									{selectedRunIds.size !== 1 ? "s" : ""} selected for delete
+									{t("{{count}} run selected for delete", {
+										count: selectedRunIds.size,
+									})}
 								</span>
 								<button
 									type="button"
@@ -744,17 +753,19 @@ function RunsTab({
 								>
 									<Trash2 className="h-4 w-4 flex-shrink-0" />
 									<span className="hidden sm:inline">
-										Delete {selectedRunIds.size} selected
+										{t("Delete {{count}} selected", {
+											count: selectedRunIds.size,
+										})}
 									</span>
-									<span className="sm:hidden">Delete</span>
+									<span className="sm:hidden">{t("Delete")}</span>
 								</button>
 								<button
 									type="button"
 									onClick={() => setSelectedRunIds(new Set())}
 									className="text-xs sm:text-sm text-secondary-500 hover:text-secondary-700 dark:text-white/70 dark:hover:text-white min-h-[44px] px-2"
 								>
-									<span className="hidden sm:inline">Clear delete</span>
-									<span className="sm:hidden">Clear</span>
+									<span className="hidden sm:inline">{t("Clear delete")}</span>
+									<span className="sm:hidden">{t("Clear")}</span>
 								</button>
 							</>
 						)}
@@ -767,9 +778,9 @@ function RunsTab({
 						{selectedApproveIds.size > 0 && (
 							<>
 								<span className="text-sm text-secondary-600 dark:text-white/80 flex-shrink-0">
-									{selectedApproveIds.size} run
-									{selectedApproveIds.size !== 1 ? "s" : ""} selected for
-									approve
+									{t("{{count}} run selected for approve", {
+										count: selectedApproveIds.size,
+									})}
 								</span>
 								<button
 									type="button"
@@ -783,11 +794,16 @@ function RunsTab({
 										<CheckCircle className="h-4 w-4 flex-shrink-0" />
 									)}
 									<span className="hidden sm:inline">
-										{bulkApproving ? "Approving…" : "Approve"}{" "}
-										{selectedApproveIds.size} selected
+										{bulkApproving
+											? t("Approving… {{count}} selected", {
+													count: selectedApproveIds.size,
+												})
+											: t("Approve {{count}} selected", {
+													count: selectedApproveIds.size,
+												})}
 									</span>
 									<span className="sm:hidden">
-										{bulkApproving ? "…" : "Approve"}
+										{bulkApproving ? "…" : t("Approve")}
 									</span>
 								</button>
 								<button
@@ -796,8 +812,8 @@ function RunsTab({
 									disabled={bulkApproving}
 									className="text-xs sm:text-sm text-secondary-500 hover:text-secondary-700 dark:text-white/70 dark:hover:text-white min-h-[44px] px-2"
 								>
-									<span className="hidden sm:inline">Clear approve</span>
-									<span className="sm:hidden">Clear</span>
+									<span className="hidden sm:inline">{t("Clear approve")}</span>
+									<span className="sm:hidden">{t("Clear")}</span>
 								</button>
 							</>
 						)}
@@ -815,17 +831,19 @@ function RunsTab({
 							<AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
 						)}
 						<span className="text-secondary-800 dark:text-secondary-200">
-							Approved {bulkApproveResult.ok}
 							{bulkApproveResult.failed > 0
-								? `, ${bulkApproveResult.failed} failed`
-								: ""}
+								? t("Approved {{ok}}, {{failed}} failed", {
+										ok: bulkApproveResult.ok,
+										failed: bulkApproveResult.failed,
+									})
+								: t("Approved {{ok}}", { ok: bulkApproveResult.ok })}
 						</span>
 					</div>
 					<button
 						type="button"
 						onClick={() => setBulkApproveResult(null)}
 						className="text-secondary-500 hover:text-secondary-700 dark:text-white/70 dark:hover:text-white"
-						aria-label="Dismiss"
+						aria-label={t("Dismiss")}
 					>
 						<X className="h-4 w-4" />
 					</button>
@@ -842,7 +860,7 @@ function RunsTab({
 								htmlFor="patching-runs-filter-status"
 								className="block text-xs font-medium text-secondary-500 dark:text-white/80 mb-1 uppercase tracking-wider"
 							>
-								Status
+								{t("Status")}
 							</label>
 							<div className="relative">
 								<select
@@ -856,7 +874,7 @@ function RunsTab({
 								>
 									{STATUS_OPTIONS.map((opt) => (
 										<option key={opt.value} value={opt.value}>
-											{opt.label}
+											{t(opt.label)}
 										</option>
 									))}
 								</select>
@@ -868,7 +886,7 @@ function RunsTab({
 								htmlFor="patching-runs-filter-type"
 								className="block text-xs font-medium text-secondary-500 dark:text-white/80 mb-1 uppercase tracking-wider"
 							>
-								Type
+								{t("Type")}
 							</label>
 							<div className="relative">
 								<select
@@ -882,7 +900,7 @@ function RunsTab({
 								>
 									{TYPE_OPTIONS.map((opt) => (
 										<option key={opt.value} value={opt.value}>
-											{opt.label}
+											{t(opt.label)}
 										</option>
 									))}
 								</select>
@@ -900,7 +918,7 @@ function RunsTab({
 									}}
 									className="btn-outline min-h-[44px] sm:min-h-0 text-sm"
 								>
-									Clear filters
+									{t("Clear filters")}
 								</button>
 							</div>
 						)}
@@ -914,21 +932,24 @@ function RunsTab({
 							<div className="text-center py-8">
 								<Search className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 								<p className="text-secondary-500 dark:text-white">
-									No runs match your filters
+									{t("No runs match your filters")}
 								</p>
 								<p className="text-sm text-secondary-400 dark:text-white mt-2">
-									Try adjusting the status or type filter to see more results
+									{t(
+										"Try adjusting the status or type filter to see more results",
+									)}
 								</p>
 							</div>
 						) : (
 							<div className="text-center py-8">
 								<History className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 								<p className="text-secondary-500 dark:text-white">
-									No patch runs yet
+									{t("No patch runs yet")}
 								</p>
 								<p className="text-sm text-secondary-400 dark:text-white mt-2">
-									Patch runs triggered from the Overview tab or from host detail
-									pages will appear here
+									{t(
+										"Patch runs triggered from the Overview tab or from host detail pages will appear here",
+									)}
 								</p>
 							</div>
 						)}
@@ -974,8 +995,8 @@ function RunsTab({
 														type="button"
 														onClick={() => handleToggleSelect(run.id)}
 														className="min-w-[44px] min-h-[44px] flex items-center justify-center"
-														title="Select for delete"
-														aria-label="Select for delete"
+														title={t("Select for delete")}
+														aria-label={t("Select for delete")}
 													>
 														{isSelectedForDelete ? (
 															<CheckSquare className="h-5 w-5 text-danger-600" />
@@ -989,8 +1010,8 @@ function RunsTab({
 														type="button"
 														onClick={() => handleToggleApproveSelect(run.id)}
 														className="min-w-[44px] min-h-[44px] flex items-center justify-center"
-														title="Select for approve"
-														aria-label="Select for approve"
+														title={t("Select for approve")}
+														aria-label={t("Select for approve")}
 													>
 														{isSelectedForApprove ? (
 															<CheckSquare className="h-5 w-5 text-primary-600" />
@@ -1010,7 +1031,7 @@ function RunsTab({
 										<div className="grid grid-cols-2 gap-2 text-xs text-secondary-500 dark:text-secondary-400 pt-2 border-t border-secondary-200 dark:border-secondary-600">
 											<div className="min-w-0">
 												<div className="uppercase tracking-wider text-[10px] mb-0.5">
-													Initiated by
+													{t("Initiated by")}
 												</div>
 												<div className="flex items-center gap-1 text-secondary-700 dark:text-white truncate">
 													{run.triggered_by_username ? (
@@ -1027,7 +1048,7 @@ function RunsTab({
 											</div>
 											<div className="min-w-0">
 												<div className="uppercase tracking-wider text-[10px] mb-0.5">
-													Started
+													{t("Started")}
 												</div>
 												<div className="text-secondary-700 dark:text-white truncate">
 													{formatDate(run.created_at)}
@@ -1036,7 +1057,7 @@ function RunsTab({
 											{run.completed_at && (
 												<div className="min-w-0 col-span-2">
 													<div className="uppercase tracking-wider text-[10px] mb-0.5">
-														Completed
+														{t("Completed")}
 													</div>
 													<div className="text-secondary-700 dark:text-white truncate">
 														{formatDate(run.completed_at)}
@@ -1074,8 +1095,8 @@ function RunsTab({
 													type="button"
 													onClick={handleToggleSelectAll}
 													className="flex items-center text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-200"
-													title="Select all deletable runs"
-													aria-label="Select all deletable runs"
+													title={t("Select all deletable runs")}
+													aria-label={t("Select all deletable runs")}
 												>
 													{allDeletableSelected ? (
 														<CheckSquare className="h-4 w-4 text-danger-600" />
@@ -1094,8 +1115,8 @@ function RunsTab({
 													type="button"
 													onClick={handleToggleApproveSelectAll}
 													className="flex items-center text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-200"
-													title="Select all approvable runs"
-													aria-label="Select all approvable runs"
+													title={t("Select all approvable runs")}
+													aria-label={t("Select all approvable runs")}
 												>
 													{allApprovableSelected ? (
 														<CheckSquare className="h-4 w-4 text-primary-600" />
@@ -1109,43 +1130,43 @@ function RunsTab({
 											scope="col"
 											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 										>
-											Host
+											{t("Host")}
 										</th>
 										<th
 											scope="col"
 											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 										>
-											Type
+											{t("Type")}
 										</th>
 										<th
 											scope="col"
 											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
-											Status
+											{t("Status")}
 										</th>
 										<th
 											scope="col"
 											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
-											Initiated by
+											{t("Initiated by")}
 										</th>
 										<th
 											scope="col"
 											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
-											Started
+											{t("Started")}
 										</th>
 										<th
 											scope="col"
 											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
-											Completed
+											{t("Completed")}
 										</th>
 										<th
 											scope="col"
 											className="px-3 sm:px-4 py-2 text-right text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
-											Actions
+											{t("Actions")}
 										</th>
 									</tr>
 								</thead>
@@ -1177,8 +1198,8 @@ function RunsTab({
 															type="button"
 															onClick={() => handleToggleSelect(run.id)}
 															className="flex items-center text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-200"
-															title="Select for delete"
-															aria-label="Select for delete"
+															title={t("Select for delete")}
+															aria-label={t("Select for delete")}
 														>
 															{isSelectedForDelete ? (
 																<CheckSquare className="h-4 w-4 text-danger-600" />
@@ -1194,8 +1215,8 @@ function RunsTab({
 															type="button"
 															onClick={() => handleToggleApproveSelect(run.id)}
 															className="flex items-center text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-200"
-															title="Select for approve"
-															aria-label="Select for approve"
+															title={t("Select for approve")}
+															aria-label={t("Select for approve")}
 														>
 															{isSelectedForApprove ? (
 																<CheckSquare className="h-4 w-4 text-primary-600" />
@@ -1272,7 +1293,7 @@ function RunsTab({
 									htmlFor="patching-runs-page-size"
 									className="text-sm text-secondary-700 dark:text-white"
 								>
-									Rows per page:
+									{t("Rows per page:")}
 								</label>
 								<select
 									id="patching-runs-page-size"
@@ -1290,7 +1311,11 @@ function RunsTab({
 								</select>
 							</div>
 							<span className="text-sm text-secondary-700 dark:text-white">
-								{rangeStart}-{rangeEnd} of {totalRuns}
+								{t("{{start}}-{{end}} of {{total}}", {
+									start: rangeStart,
+									end: rangeEnd,
+									total: totalRuns,
+								})}
 							</span>
 						</div>
 						<div className="flex items-center gap-2">
@@ -1299,19 +1324,22 @@ function RunsTab({
 								disabled={runsPage <= 1}
 								onClick={() => setRunsPage((p) => Math.max(1, p - 1))}
 								className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-600 text-secondary-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-								aria-label="Previous page"
+								aria-label={t("Previous page")}
 							>
 								<ChevronLeft className="h-4 w-4" />
 							</button>
 							<span className="text-sm text-secondary-700 dark:text-white">
-								Page {runsPage} of {totalPages}
+								{t("Page {{page}} of {{totalPages}}", {
+									page: runsPage,
+									totalPages,
+								})}
 							</span>
 							<button
 								type="button"
 								disabled={runsPage >= totalPages}
 								onClick={() => setRunsPage((p) => p + 1)}
 								className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-600 text-secondary-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-								aria-label="Next page"
+								aria-label={t("Next page")}
 							>
 								<ChevronRight className="h-4 w-4" />
 							</button>
@@ -1326,12 +1354,13 @@ function RunsTab({
 /* ───────────────────── Policies Tab ───────────────────── */
 
 const delay_type_labels = {
-	immediate: "Immediate",
-	delayed: "Delayed",
-	fixed_time: "Fixed time",
+	immediate: tk("Immediate"),
+	delayed: tk("Delayed"),
+	fixed_time: tk("Fixed time"),
 };
 
 function PoliciesTab() {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const toast = useToast();
 	const confirm = useConfirm();
@@ -1373,7 +1402,7 @@ function PoliciesTab() {
 			queryClient.invalidateQueries({ queryKey: ["patching-policies"] });
 			setShowModal(false);
 			resetForm();
-			toast.success("Policy created");
+			toast.success(t("Policy created"));
 		},
 		onError: (err) => toast.error(err.response?.data?.error || err.message),
 	});
@@ -1384,7 +1413,7 @@ function PoliciesTab() {
 			queryClient.invalidateQueries({ queryKey: ["patching-policies"] });
 			setShowModal(false);
 			setEditingPolicy(null);
-			toast.success("Policy updated");
+			toast.success(t("Policy updated"));
 		},
 		onError: (err) => toast.error(err.response?.data?.error || err.message),
 	});
@@ -1393,7 +1422,7 @@ function PoliciesTab() {
 		mutationFn: (id) => patchingAPI.deletePolicy(id),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["patching-policies"] });
-			toast.success("Policy deleted");
+			toast.success(t("Policy deleted"));
 		},
 		onError: (err) => toast.error(err.response?.data?.error || err.message),
 	});
@@ -1444,13 +1473,20 @@ function PoliciesTab() {
 	};
 
 	const formatSchedule = (policy) => {
-		const label =
-			delay_type_labels[policy.patch_delay_type] || policy.patch_delay_type;
+		const known = delay_type_labels[policy.patch_delay_type];
+		const label = known ? t(known) : policy.patch_delay_type;
 		if (policy.patch_delay_type === "delayed" && policy.delay_minutes != null) {
-			return `${label} (${policy.delay_minutes} min)`;
+			return t("{{label}} ({{minutes}} min)", {
+				label,
+				minutes: policy.delay_minutes,
+			});
 		}
 		if (policy.patch_delay_type === "fixed_time" && policy.fixed_time_utc) {
-			return `${label} at ${policy.fixed_time_utc} (${orgTimezone})`;
+			return t("{{label}} at {{time}} ({{timezone}})", {
+				label,
+				time: policy.fixed_time_utc,
+				timezone: orgTimezone,
+			});
 		}
 		return label;
 	};
@@ -1459,8 +1495,9 @@ function PoliciesTab() {
 		<div className="mt-4 space-y-4">
 			<div className="flex items-center justify-between">
 				<p className="text-sm text-secondary-600 dark:text-secondary-400">
-					Patch policies control when patches run. Assign policies to hosts or
-					host groups.
+					{t(
+						"Patch policies control when patches run. Assign policies to hosts or host groups.",
+					)}
 				</p>
 				<button
 					type="button"
@@ -1468,16 +1505,18 @@ function PoliciesTab() {
 					className="btn-primary flex items-center gap-2"
 				>
 					<Plus className="h-4 w-4" />
-					Create policy
+					{t("Create policy")}
 				</button>
 			</div>
 
 			<div className="card p-4 md:p-6">
 				{isLoading ? (
-					<div className="p-8 text-center text-secondary-500">Loading...</div>
+					<div className="p-8 text-center text-secondary-500">
+						{t("Loading...")}
+					</div>
 				) : policies.length === 0 ? (
 					<div className="p-8 text-center text-secondary-500">
-						No policies yet. Create one to control when patches run.
+						{t("No policies yet. Create one to control when patches run.")}
 					</div>
 				) : (
 					<div className="overflow-x-auto">
@@ -1488,31 +1527,31 @@ function PoliciesTab() {
 										scope="col"
 										className="px-4 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 									>
-										Name
+										{t("Name")}
 									</th>
 									<th
 										scope="col"
 										className="px-4 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 									>
-										Description
+										{t("Description")}
 									</th>
 									<th
 										scope="col"
 										className="px-4 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 									>
-										Schedule
+										{t("Schedule")}
 									</th>
 									<th
 										scope="col"
 										className="px-4 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 									>
-										Assignments
+										{t("Assignments")}
 									</th>
 									<th
 										scope="col"
 										className="px-4 py-3 text-right text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 									>
-										Actions
+										{t("Actions")}
 									</th>
 								</tr>
 							</thead>
@@ -1543,8 +1582,10 @@ function PoliciesTab() {
 													className="text-primary-600 dark:text-primary-400 hover:underline"
 												>
 													{expandedPolicyId === policy.id
-														? "Hide"
-														: `${policy._count?.assignments ?? 0} assignment(s)`}
+														? t("Hide")
+														: t("{{count}} assignment(s)", {
+																count: policy._count?.assignments ?? 0,
+															})}
 												</button>
 											</td>
 											<td className="px-4 py-3 whitespace-nowrap text-right">
@@ -1553,7 +1594,7 @@ function PoliciesTab() {
 														type="button"
 														onClick={() => openEdit(policy)}
 														className="p-1.5 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700 text-secondary-600 dark:text-secondary-300"
-														title="Edit"
+														title={t("Edit")}
 													>
 														<Edit className="h-4 w-4" />
 													</button>
@@ -1562,15 +1603,18 @@ function PoliciesTab() {
 														onClick={async () => {
 															if (
 																await confirm({
-																	title: "Delete policy",
-																	message: `Delete the patching policy "${policy.name}"?`,
-																	confirmLabel: "Delete policy",
+																	title: t("Delete policy"),
+																	message: t(
+																		'Delete the patching policy "{{name}}"?',
+																		{ name: policy.name },
+																	),
+																	confirmLabel: t("Delete policy"),
 																})
 															)
 																deleteMutation.mutate(policy.id);
 														}}
 														className="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600"
-														title="Delete"
+														title={t("Delete")}
 													>
 														<Trash2 className="h-4 w-4" />
 													</button>
@@ -1608,12 +1652,13 @@ function PoliciesTab() {
 						<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
 							<div className="flex items-center justify-between p-4 border-b border-secondary-200 dark:border-secondary-600">
 								<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
-									{editingPolicy ? "Edit policy" : "Create policy"}
+									{editingPolicy ? t("Edit policy") : t("Create policy")}
 								</h3>
 								<button
 									type="button"
 									onClick={() => setShowModal(false)}
 									className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700"
+									aria-label={t("Close")}
 								>
 									<X className="h-5 w-5" />
 								</button>
@@ -1621,7 +1666,7 @@ function PoliciesTab() {
 							<form onSubmit={handleSubmit} className="p-4 space-y-4">
 								<div>
 									<label className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
-										Name
+										{t("Name")}
 									</label>
 									<input
 										type="text"
@@ -1635,7 +1680,7 @@ function PoliciesTab() {
 								</div>
 								<div>
 									<label className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
-										Description (optional)
+										{t("Description (optional)")}
 									</label>
 									<input
 										type="text"
@@ -1651,7 +1696,7 @@ function PoliciesTab() {
 								</div>
 								<div>
 									<label className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
-										Patch delay
+										{t("Patch delay")}
 									</label>
 									<select
 										value={form.patch_delay_type}
@@ -1663,19 +1708,19 @@ function PoliciesTab() {
 										}
 										className="w-full rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white px-3 py-2"
 									>
-										<option value="immediate">Immediate</option>
+										<option value="immediate">{t("Immediate")}</option>
 										<option value="delayed">
-											Delayed (run after N minutes)
+											{t("Delayed (run after N minutes)")}
 										</option>
 										<option value="fixed_time">
-											Fixed time (e.g. 3:00 AM)
+											{t("Fixed time (e.g. 3:00 AM)")}
 										</option>
 									</select>
 								</div>
 								{form.patch_delay_type === "delayed" && (
 									<div>
 										<label className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
-											Delay (minutes)
+											{t("Delay (minutes)")}
 										</label>
 										<input
 											type="number"
@@ -1694,7 +1739,7 @@ function PoliciesTab() {
 								{form.patch_delay_type === "fixed_time" && (
 									<div>
 										<label className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
-											Time (HH:MM)
+											{t("Time (HH:MM)")}
 										</label>
 										<input
 											type="text"
@@ -1709,9 +1754,11 @@ function PoliciesTab() {
 											className="w-full rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white px-3 py-2"
 										/>
 										<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
-											Local time in the organization timezone (
-											<span className="font-medium">{orgTimezone}</span>).
-											Change it under Settings &rarr; General.
+											<Trans
+												i18nKey="Local time in the organization timezone (<tz>{{timezone}}</tz>). Change it under Settings → General."
+												values={{ timezone: orgTimezone }}
+												components={{ tz: <span className="font-medium" /> }}
+											/>
 										</p>
 									</div>
 								)}
@@ -1721,7 +1768,7 @@ function PoliciesTab() {
 										onClick={() => setShowModal(false)}
 										className="btn-outline"
 									>
-										Cancel
+										{t("Cancel")}
 									</button>
 									<button
 										type="submit"
@@ -1730,7 +1777,9 @@ function PoliciesTab() {
 											createMutation.isPending || updateMutation.isPending
 										}
 									>
-										{editingPolicy ? "Update" : "Create"}
+										{editingPolicy
+											? t("Update", { context: "action" })
+											: t("Create")}
 									</button>
 								</div>
 							</form>
@@ -1745,6 +1794,7 @@ function PoliciesTab() {
 /* ───────────────── Policy Assignments (inline) ───────────────── */
 
 function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const toast = useToast();
 	const [addTargetType, setAddTargetType] = useState("host");
@@ -1774,7 +1824,7 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 			});
 			setAddTargetId("");
 			onUpdate?.();
-			toast.success("Assignment added");
+			toast.success(t("Assignment added"));
 		},
 		onError: (err) => toast.error(err.response?.data?.error || err.message),
 	});
@@ -1788,7 +1838,7 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 				queryKey: ["patching-policy", policy.id],
 			});
 			onUpdate?.();
-			toast.success("Assignment removed");
+			toast.success(t("Assignment removed"));
 		},
 		onError: (err) => toast.error(err.response?.data?.error || err.message),
 	});
@@ -1802,7 +1852,7 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 			});
 			setAddExclusionHostId("");
 			onUpdate?.();
-			toast.success("Exclusion added");
+			toast.success(t("Exclusion added"));
 		},
 		onError: (err) => toast.error(err.response?.data?.error || err.message),
 	});
@@ -1815,7 +1865,7 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 				queryKey: ["patching-policy", policy.id],
 			});
 			onUpdate?.();
-			toast.success("Exclusion removed");
+			toast.success(t("Exclusion removed"));
 		},
 		onError: (err) => toast.error(err.response?.data?.error || err.message),
 	});
@@ -1858,11 +1908,11 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 			<div className="space-y-3">
 				<div className="flex items-center gap-2 text-sm font-medium text-secondary-700 dark:text-secondary-300">
 					<Users className="h-4 w-4" />
-					Applied to
+					{t("Applied to")}
 				</div>
 				{assignments.length === 0 ? (
 					<p className="text-sm text-secondary-500">
-						No assignments. Add a host or host group.
+						{t("No assignments. Add a host or host group.")}
 					</p>
 				) : (
 					<ul className="flex flex-wrap gap-2">
@@ -1881,6 +1931,7 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 									type="button"
 									onClick={() => removeAssignmentMutation.mutate(a.id)}
 									className="ml-1 text-secondary-500 hover:text-red-600"
+									aria-label={t("Remove")}
 								>
 									<X className="h-3 w-3" />
 								</button>
@@ -1897,8 +1948,8 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 						}}
 						className="rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white text-sm px-2 py-1"
 					>
-						<option value="host">Host</option>
-						<option value="host_group">Host group</option>
+						<option value="host">{t("Host")}</option>
+						<option value="host_group">{t("Host group")}</option>
 					</select>
 					<select
 						value={addTargetId}
@@ -1906,7 +1957,9 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 						className="rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white text-sm px-2 py-1 min-w-[160px]"
 					>
 						<option value="">
-							Select {addTargetType === "host" ? "host" : "group"}...
+							{addTargetType === "host"
+								? t("Select host...")
+								: t("Select group...")}
 						</option>
 						{addTargetType === "host"
 							? hosts.map((h) => (
@@ -1926,16 +1979,18 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 						disabled={!addTargetId || addAssignmentMutation.isPending}
 						className="btn-outline text-sm py-1"
 					>
-						Add
+						{t("Add")}
 					</button>
 				</div>
 
 				<div className="flex items-center gap-2 text-sm font-medium text-secondary-700 dark:text-secondary-300 pt-2 border-t border-secondary-200 dark:border-secondary-600">
 					<Clock className="h-4 w-4" />
-					Exclusions (hosts excluded from this policy when applied via group)
+					{t(
+						"Exclusions (hosts excluded from this policy when applied via group)",
+					)}
 				</div>
 				{exclusions.length === 0 ? (
-					<p className="text-sm text-secondary-500">No exclusions.</p>
+					<p className="text-sm text-secondary-500">{t("No exclusions.")}</p>
 				) : (
 					<ul className="flex flex-wrap gap-2">
 						{exclusions.map((exc) => (
@@ -1948,6 +2003,7 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 									type="button"
 									onClick={() => removeExclusionMutation.mutate(exc.host_id)}
 									className="ml-1 text-amber-700 dark:text-amber-400 hover:text-red-600"
+									aria-label={t("Remove")}
 								>
 									<X className="h-3 w-3" />
 								</button>
@@ -1957,15 +2013,17 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 				)}
 				{policyPending ? (
 					<p className="text-sm text-secondary-500 dark:text-secondary-400">
-						Loading assignments...
+						{t("Loading assignments...")}
 					</p>
 				) : policyError ? (
 					<p className="text-sm text-danger-600 dark:text-danger-400">
-						Could not load this policy's assignments.
+						{t("Could not load this policy's assignments.")}
 					</p>
 				) : assignedGroupIds.size === 0 ? (
 					<p className="text-sm text-secondary-500 dark:text-secondary-400">
-						Assign a host group to this policy before excluding hosts from it.
+						{t(
+							"Assign a host group to this policy before excluding hosts from it.",
+						)}
 					</p>
 				) : (
 					<div className="flex flex-wrap items-center gap-2">
@@ -1977,8 +2035,8 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 						>
 							<option value="">
 								{excludableHosts.length === 0
-									? "No hosts left to exclude"
-									: "Select host to exclude..."}
+									? t("No hosts left to exclude")
+									: t("Select host to exclude...")}
 							</option>
 							{excludableHosts.map((h) => (
 								<option key={h.id} value={h.id}>
@@ -1994,7 +2052,7 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 							disabled={!addExclusionHostId || addExclusionMutation.isPending}
 							className="btn-outline text-sm py-1 disabled:opacity-50 disabled:cursor-not-allowed"
 						>
-							Exclude host
+							{t("Exclude host")}
 						</button>
 					</div>
 				)}
