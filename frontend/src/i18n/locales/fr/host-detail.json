@@ -279,5 +279,8 @@
 	"Enable Host Only": "Activer uniquement l'hôte",
 	"Enabling...": "Activation...",
 	"Enable Both": "Activer les deux",
-	"Restart_action": "Redémarrer"
+	"Restart_action": "Redémarrer",
+	"Install pending Windows updates and winget app upgrades on this host": "Installer les mises à jour Windows en attente et les mises à niveau d'applications winget sur cet hôte",
+	"Manage integrations": "Gérer les intégrations",
+	"Config Version": "Version de la configuration"
 }

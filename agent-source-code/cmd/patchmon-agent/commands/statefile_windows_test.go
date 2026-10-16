@@ -60,3 +60,10 @@ func TestTrustedStateFileLive(t *testing.T) {
 		}
 	}
 }
+
+// runningAsSystem reports whether the test runs as LocalSystem, as the
+// agent's service does.
+func runningAsSystem() bool {
+	u, err := windows.GetCurrentProcessToken().GetTokenUser()
+	return err == nil && u.User.Sid.IsWellKnown(windows.WinLocalSystemSid)
+}

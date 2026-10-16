@@ -2,7 +2,6 @@
 package system
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,12 +15,18 @@ import (
 	"patchmon-agent/internal/winexec"
 )
 
+// libzypp touches this after installing a kernel or a package flagged as needing a reboot.
+var zyppRebootFlag = "/run/reboot-needed"
+
 // CheckRebootRequired checks if the system requires a reboot
 // Returns (needsReboot bool, reason string)
 func (d *Detector) CheckRebootRequired() (bool, string) {
 	// Windows: check registry keys and CBS reboot-pending (per UsoClient/WUA docs)
 	if runtime.GOOS == "windows" {
 		return d.checkWindowsRebootRequired()
+	}
+	if isAlpine() {
+		return d.checkAlpineRebootRequired()
 	}
 
 	runningKernel := d.getRunningKernel()
@@ -32,6 +37,14 @@ func (d *Detector) CheckRebootRequired() (bool, string) {
 	if _, err := os.Stat("/var/run/reboot-required"); err == nil {
 		d.logger.Debug("Reboot required: /var/run/reboot-required file exists")
 		reason := "Reboot flag file exists (/var/run/reboot-required)"
+		if kernelStale {
+			reason += fmt.Sprintf(" | Running kernel: %s, Installed kernel: %s", runningKernel, latestKernel)
+		}
+		return true, reason
+	}
+
+	if _, err := os.Stat(zyppRebootFlag); err == nil {
+		reason := "Reboot flag file exists (" + zyppRebootFlag + ")"
 		if kernelStale {
 			reason += fmt.Sprintf(" | Running kernel: %s, Installed kernel: %s", runningKernel, latestKernel)
 		}
@@ -98,7 +111,7 @@ if ($reasons.Count -gt 0) {
   Write-Output "REBOOT_NOT_REQUIRED"
 }
 `
-	cmd := winexec.PowerShell(context.Background(), "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
+	cmd := exec.Command(winexec.PowerShellPath(), "-NoProfile", "-NonInteractive", "-Command", winexec.Script(psScript))
 	output, err := cmd.Output()
 	if err != nil {
 		d.logger.WithError(err).Debug("Windows reboot check failed")
@@ -153,6 +166,9 @@ func (d *Detector) getRunningKernel() string {
 
 // GetLatestInstalledKernel gets the latest installed kernel version (public method)
 func (d *Detector) GetLatestInstalledKernel() string {
+	if runtime.GOOS != "windows" && isAlpine() {
+		return d.alpineLatestInstalledKernel()
+	}
 	return d.latestInstalledKernel(d.getRunningKernel())
 }
 
@@ -194,6 +210,8 @@ func (d *Detector) latestInstalledKernel(runningKernel string) string {
 // neither is an upgrade of the other, so a 2712 host must only ever be compared
 // against 2712 kernels. If nothing matches the running flavour the whole set is
 // considered, which keeps behaviour sane when the running kernel is unknown.
+// An unlabelled running kernel, such as the Pi Zero's 6.1.21+, matches only
+// unlabelled candidates while any exist.
 func (d *Detector) selectLatestKernel(candidates []string, flavour string) string {
 	usable := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -206,21 +224,18 @@ func (d *Detector) selectLatestKernel(candidates []string, flavour string) strin
 		return ""
 	}
 
-	matching := usable
-	if flavour != "" {
-		matching = make([]string, 0, len(usable))
-		for _, candidate := range usable {
-			if kernelFlavour(candidate) == flavour {
-				matching = append(matching, candidate)
-			}
+	matching := make([]string, 0, len(usable))
+	for _, candidate := range usable {
+		if kernelFlavour(candidate) == flavour {
+			matching = append(matching, candidate)
 		}
-		if len(matching) == 0 {
-			d.logger.WithFields(logutil.SanitizeMap(map[string]interface{}{
-				"flavour":    flavour,
-				"candidates": usable,
-			})).Debug("No installed kernel matches the running line, comparing against all")
-			matching = usable
-		}
+	}
+	if len(matching) == 0 {
+		d.logger.WithFields(logutil.SanitizeMap(map[string]interface{}{
+			"flavour":    flavour,
+			"candidates": usable,
+		})).Debug("No installed kernel matches the running line, comparing against all")
+		matching = usable
 	}
 
 	sort.Slice(matching, func(i, j int) bool {
@@ -260,7 +275,7 @@ func (d *Detector) collectKernelsFromBoot() []string {
 // an unversioned image such as Arch's /boot/vmlinuz-linux, where no version can be
 // recovered from the boot directory at all.
 func (d *Detector) collectKernelsFromModules() []string {
-	entries, err := os.ReadDir("/lib/modules")
+	entries, err := os.ReadDir(kernelModulesDir)
 	if err != nil {
 		d.logger.WithError(err).Debug("Failed to read /lib/modules directory")
 		return nil
@@ -276,6 +291,8 @@ func (d *Detector) collectKernelsFromModules() []string {
 	return kernels
 }
 
+var piVariantRe = regexp.MustCompile(`^v\d+l?$`)
+
 // kernelCoreRe matches a leading numeric MAJOR.MINOR version.
 var kernelCoreRe = regexp.MustCompile(`^\d+\.\d+`)
 
@@ -287,18 +304,23 @@ func hasVersionCore(release string) bool {
 }
 
 // kernelFlavour returns a key identifying which kernel line a release belongs
-// to: amd64, pve, generic, rpt-rpi for the Pi 5 build, arch or zen.
+// to: amd64, pve, generic, rpt-rpi for the Pi 5 build, rpt-rpi-v8, arch or zen.
 //
 // It keeps the components that name the line and discards those that only carry
 // a revision, so that releases from one line always agree. Purely numeric
 // components are revisions (the 1 in deb13.1, the pkgrel in arch1-1), and a
 // trailing number on a label marks a point release (el9_4 and el9_5 are both
-// el), so both are dropped. A release with no labels at all yields an empty
-// flavour, which means the running line is unknown and every candidate counts.
+// el), so both are dropped. Raspberry Pi variant labels (v6, v7, v7l, v8) are
+// kept whole, because those builds are installed side by side and none is an
+// upgrade of another. A release with no labels at all yields an empty flavour.
 func kernelFlavour(release string) string {
 	var labels []string
 	for _, part := range parseKernelVersion(release) {
 		if _, err := strconv.Atoi(part); err == nil {
+			continue
+		}
+		if piVariantRe.MatchString(part) {
+			labels = append(labels, part)
 			continue
 		}
 		labels = append(labels, strings.TrimRight(part, "0123456789_"))
@@ -426,33 +448,7 @@ func (d *Detector) collectKernelsFromDpkg() []string {
 		return nil
 	}
 
-	var kernels []string
-	metaPackages := make(map[string]bool)
-
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-
-		// Look for installed kernel image packages
-		if fields[0] == "ii" && strings.HasPrefix(fields[1], "linux-image-") {
-			pkgName := fields[1]
-			version := strings.TrimPrefix(pkgName, "linux-image-")
-			// Ubuntu ships linux-image-unsigned-<release>-<flavour> alongside
-			// the signed build; both name the same kernel.
-			version = strings.TrimPrefix(version, "unsigned-")
-
-			if isKernelMetaPackage(version) {
-				metaPackages[pkgName] = true
-			} else {
-				// This is an actual kernel package with version
-				kernels = append(kernels, version)
-			}
-		}
-	}
-
+	kernels, metaPackages := parseDpkgKernelList(string(output))
 	if len(kernels) > 0 {
 		return kernels
 	}
@@ -465,6 +461,41 @@ func (d *Detector) collectKernelsFromDpkg() []string {
 	}
 
 	return kernels
+}
+
+// parseDpkgKernelList extracts installed kernel releases and kernel
+// meta-package names from dpkg -l output.
+func parseDpkgKernelList(output string) ([]string, map[string]bool) {
+	var kernels []string
+	metaPackages := make(map[string]bool)
+
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+
+		// Look for installed kernel image packages
+		if fields[0] == "ii" && strings.HasPrefix(fields[1], "linux-image-") {
+			pkgName := fields[1]
+			version := strings.TrimPrefix(pkgName, "linux-image-")
+			// Ubuntu ships linux-image-unsigned-<release>-<flavour> alongside
+			// the signed build; both name the same kernel.
+			version = strings.TrimPrefix(version, "unsigned-")
+			if i := strings.IndexByte(version, ':'); i != -1 {
+				version = version[:i]
+			}
+
+			if isKernelMetaPackage(version) {
+				metaPackages[pkgName] = true
+			} else {
+				// This is an actual kernel package with version
+				kernels = append(kernels, version)
+			}
+		}
+	}
+
+	return kernels, metaPackages
 }
 
 // isKernelMetaPackage identifies meta-packages (generic, virtual, lowlatency,

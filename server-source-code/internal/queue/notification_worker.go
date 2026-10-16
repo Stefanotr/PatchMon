@@ -21,12 +21,17 @@ import (
 	"github.com/PatchMon/PatchMon/server-source-code/internal/database"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/db"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/mailer"
+	"github.com/PatchMon/PatchMon/server-source-code/internal/netguard"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/notifications"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/util"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 )
+
+// outboundClient is a var so tests can swap in a client without the SSRF dial
+// guard; production uses netguard.GuardedClient.
+var outboundClient = netguard.GuardedClient
 
 // NotificationDeliverHandler sends webhook or email notifications.
 type NotificationDeliverHandler struct {
@@ -42,10 +47,10 @@ func NewNotificationDeliverHandler(defaultDB *database.DB, poolCache *hostctx.Po
 	return &NotificationDeliverHandler{defaultDB: defaultDB, poolCache: poolCache, enc: enc, rdb: rdb, log: log}
 }
 
-func (h *NotificationDeliverHandler) resolveDB(ctx context.Context, payload []byte) (context.Context, *database.DB) {
+func (h *NotificationDeliverHandler) resolveDB(ctx context.Context, payload []byte) (context.Context, *database.DB, error) {
 	var p notifications.NotificationDeliverPayload
 	if len(payload) == 0 || json.Unmarshal(payload, &p) != nil {
-		return ctx, h.defaultDB
+		return ctx, h.defaultDB, nil
 	}
 	return resolveDBForHost(ctx, p.Host, h.defaultDB, h.poolCache)
 }
@@ -57,13 +62,16 @@ func (h *NotificationDeliverHandler) ProcessTask(ctx context.Context, t *asynq.T
 		return err
 	}
 	// If this was a delayed notification, check if it's been cancelled by a counterpart event.
-	if p.Delayed && p.CancelKey != "" && notifications.IsDelayedCancelled(h.rdb, p.Host, p.CancelKey) {
+	if p.Delayed && p.CancelKey != "" && notifications.IsDelayedCancelled(h.rdb, p.Host, p.CancelKey, p.EmittedAt) {
 		if h.log != nil {
 			h.log.Debug("notification_deliver: cancelled by counterpart event", "event_type", p.EventType, "cancel_key", p.CancelKey)
 		}
 		return nil
 	}
-	ctx, d := h.resolveDB(ctx, t.Payload())
+	ctx, d, err := h.resolveDB(ctx, t.Payload())
+	if err != nil {
+		return err
+	}
 	dest, err := d.Queries.GetNotificationDestinationByID(ctx, p.DestinationID)
 	if err != nil || !dest.Enabled {
 		return nil
@@ -279,6 +287,19 @@ func nocMetaStrSlice(m map[string]interface{}, key string) []string {
 	return nil
 }
 
+func nocImageUpdateList(m map[string]interface{}) string {
+	images := nocMetaStrSlice(m, "images")
+	if len(images) == 0 {
+		return ""
+	}
+	list := strings.Join(images, ", ")
+	var total int
+	if _, err := fmt.Sscanf(nocMetaStr(m, "update_count"), "%d", &total); err == nil && total > len(images) {
+		list += fmt.Sprintf(" and %d more", total-len(images))
+	}
+	return list
+}
+
 // severityEmoji returns a short icon for NOC-visible severity.
 func severityEmoji(sev string) string {
 	switch strings.ToLower(strings.TrimSpace(sev)) {
@@ -391,6 +412,10 @@ func buildNOCFields(p notifications.NotificationDeliverPayload) []map[string]int
 	case p.EventType == "host_recovered":
 		addField("Host", nocMetaStr(m, "host_name"), true)
 		addField("Status", "🟢 AGENT RECOVERED", true)
+
+	case p.EventType == "container_image_update_available":
+		addField("Host", nocMetaStr(m, "host_name"), true)
+		addField("Images", nocImageUpdateList(m), false)
 
 	case p.EventType == "server_update" || p.EventType == "agent_update":
 		addField("Current Version", nocMetaStr(m, "current_version"), true)
@@ -536,6 +561,10 @@ func buildSlackNOCFields(p notifications.NotificationDeliverPayload) string {
 	case p.EventType == "host_recovered":
 		addLine("Host", nocMetaStr(m, "host_name"))
 		addLine("Status", "🟢 AGENT RECOVERED")
+
+	case p.EventType == "container_image_update_available":
+		addLine("Host", nocMetaStr(m, "host_name"))
+		addLine("Images", nocImageUpdateList(m))
 
 	case p.EventType == "server_update" || p.EventType == "agent_update":
 		addLine("Current Version", nocMetaStr(m, "current_version"))
@@ -707,7 +736,7 @@ type emailConfig struct {
 	// mailer.ResolveMode pick the effective policy.
 	UseTLS  *bool  `json:"use_tls"`
 	TLSMode string `json:"tls_mode"`
-	// AllowInsecureAuth permits PLAIN auth over cleartext. Only meaningful
+	// AllowInsecureAuth permits PLAIN or LOGIN auth over cleartext. Only meaningful
 	// with tls_mode=none; see mailer.Config.AllowInsecureAuth.
 	AllowInsecureAuth bool `json:"allow_insecure_auth"`
 }
@@ -778,7 +807,7 @@ func (h *NotificationDeliverHandler) sendWebhook(ctx context.Context, plain stri
 		sig := hex.EncodeToString(mac.Sum(nil))
 		req.Header.Set("X-PatchMon-Signature", "sha256="+sig)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := outboundClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -849,6 +878,10 @@ func buildEmailHTML(p notifications.NotificationDeliverPayload) string {
 
 	case p.EventType == "host_recovered":
 		addRow("Host", nocMetaStr(m, "host_name"))
+
+	case p.EventType == "container_image_update_available":
+		addRow("Host", nocMetaStr(m, "host_name"))
+		addRow("Images", nocImageUpdateList(m))
 
 	case p.EventType == "server_update" || p.EventType == "agent_update":
 		addRow("Current Version", nocMetaStr(m, "current_version"))
@@ -1024,6 +1057,9 @@ func buildNtfyMessage(p notifications.NotificationDeliverPayload) string {
 	case p.EventType == "host_recovered":
 		addLine("Host", nocMetaStr(m, "host_name"))
 		addLine("Status", "AGENT RECOVERED")
+	case p.EventType == "container_image_update_available":
+		addLine("Host", nocMetaStr(m, "host_name"))
+		addLine("Images", nocImageUpdateList(m))
 	case p.EventType == "server_update" || p.EventType == "agent_update":
 		addLine("Current version", nocMetaStr(m, "current_version"))
 		addLine("Available version", nocMetaStr(m, "latest_version"))
@@ -1107,7 +1143,7 @@ func (h *NotificationDeliverHandler) sendNtfy(ctx context.Context, plain string,
 		req.SetBasicAuth(cfg.Username, cfg.Password)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := outboundClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

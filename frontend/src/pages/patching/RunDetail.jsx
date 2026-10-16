@@ -4,8 +4,10 @@ import {
 	ArrowLeft,
 	CheckCircle2,
 	Copy,
+	Info,
 	PlayCircle,
 	RefreshCw,
+	RotateCcw,
 	Server,
 	Shield,
 	Square,
@@ -21,6 +23,7 @@ import {
 	PackageNameList,
 } from "../../components/PackageListDisplay";
 import { PatchRunStatusBadge } from "../../components/PatchRunStatusBadge";
+import RunItemsCard from "../../components/patching/RunItemsCard";
 import ModalPortal from "../../components/ui/ModalPortal";
 import { useToast } from "../../contexts/ToastContext";
 import { formatDate } from "../../utils/api";
@@ -29,7 +32,8 @@ import {
 	describeReboot,
 	patchingAPI,
 } from "../../utils/patchingApi";
-import { hasExtraDependencies } from "../../utils/patchRun";
+import { hasExtraDependencies, runMessageNotice } from "../../utils/patchRun";
+import { RESTART_REQUIRED_BANNER } from "../../utils/windowsPatching";
 
 // Statuses where we should open the live WebSocket stream and show the Stop
 // Run affordance. Everything else is already terminal or still scheduled.
@@ -168,6 +172,8 @@ const RunDetail = () => {
 			if (newRunId && newRunId !== id && isImmediate) {
 				navigate(`/patching/runs/${newRunId}`);
 			}
+		} catch (err) {
+			toast.error(err?.response?.data?.error || "Failed to approve patch run");
 		} finally {
 			setApprovingId(null);
 		}
@@ -223,6 +229,9 @@ const RunDetail = () => {
 			const status = data?.status;
 			if (status === "queued" || status === "pending_validation") {
 				return 3000;
+			}
+			if (status === "scheduled") {
+				return 30000;
 			}
 			if (status === "running") {
 				return isStreamOpen ? 5000 : 3000;
@@ -425,6 +434,7 @@ const RunDetail = () => {
 		!TERMINAL_STATUSES.has(run.status);
 
 	const hasExtraDeps = hasExtraDependencies(run);
+	const notice = runMessageNotice(run);
 
 	const hasPolicy = Boolean(run.policy_name || run.policy_snapshot);
 	const rebootDetail = describeReboot(run.policy_snapshot?.reboot);
@@ -617,11 +627,12 @@ const RunDetail = () => {
 								</SummaryRow>
 							</div>
 
-							{run.status === "queued" && run.scheduled_at && (
-								<SummaryRow label={t("Scheduled for")}>
-									{formatDate(run.scheduled_at)}
-								</SummaryRow>
-							)}
+							{(run.status === "queued" || run.status === "scheduled") &&
+								run.scheduled_at && (
+									<SummaryRow label={t("Scheduled for")}>
+										{formatDate(run.scheduled_at)}
+									</SummaryRow>
+								)}
 
 							{/* Link to related run (validation ↔ patch) */}
 							{run.validation_run_id && (
@@ -685,6 +696,7 @@ const RunDetail = () => {
 									<div className="max-h-48 overflow-auto pr-1 text-sm text-secondary-700 dark:text-secondary-300">
 										<PackageNameList
 											packages={run.packages_affected}
+											packageIds={run.package_ids}
 											showIcon={false}
 										/>
 									</div>
@@ -757,21 +769,51 @@ const RunDetail = () => {
 					)}
 
 					{/* Error panel (§16.1) */}
-					{run.error_message && (
+					{notice?.tone === "error" && (
 						<div className="bg-danger-50 border border-danger-200 rounded-md p-4 dark:bg-danger-900/30 dark:border-danger-700">
 							<div className="flex">
 								<AlertTriangle className="h-5 w-5 text-danger-400 flex-shrink-0" />
 								<div className="ml-3 min-w-0 flex-1">
 									<h3 className="text-sm font-medium text-danger-800 dark:text-danger-200">
-										{t("Run reported an error")}
+										{t(notice.title)}
 									</h3>
 									<pre className="mt-2 text-xs text-danger-700 dark:text-danger-300 font-mono whitespace-pre-wrap break-words">
-										{run.error_message}
+										{notice.detail}
 									</pre>
 								</div>
 							</div>
 						</div>
 					)}
+
+					{notice?.tone === "info" && (
+						<div
+							role="status"
+							className="rounded-lg bg-secondary-50 dark:bg-secondary-700/40 border border-secondary-200 dark:border-secondary-600 p-4 flex items-start gap-3"
+						>
+							<Info className="h-5 w-5 text-secondary-500 dark:text-secondary-300 mt-0.5 flex-shrink-0" />
+							<div className="min-w-0">
+								<p className="text-sm font-medium text-secondary-800 dark:text-secondary-100">
+									{t(notice.title)}
+								</p>
+								{notice.detail && (
+									<p className="text-xs text-secondary-600 dark:text-secondary-300 mt-0.5 break-words">
+										{notice.detail}
+									</p>
+								)}
+							</div>
+						</div>
+					)}
+
+					{run.reboot_required === true && (
+						<div className="rounded-lg bg-warning-50 dark:bg-warning-900/30 border border-warning-200 dark:border-warning-600 p-4 flex items-start gap-3">
+							<RotateCcw className="h-5 w-5 text-warning-600 dark:text-warning-400 mt-0.5 flex-shrink-0" />
+							<p className="text-sm font-medium text-warning-800 dark:text-warning-200">
+								{t(RESTART_REQUIRED_BANNER)}
+							</p>
+						</div>
+					)}
+
+					<RunItemsCard items={run.items} />
 
 					{/* Shell output (§3.4 content card + terminal chrome) */}
 					<div className="card p-4 sm:p-6 flex flex-col">
@@ -788,17 +830,21 @@ const RunDetail = () => {
 								)}
 							</div>
 							<div className="flex items-center gap-2">
-								{run.status !== "running" && run.status !== "queued" && (
-									<button
-										type="button"
-										onClick={handleCopyOutput}
-										className="btn-outline inline-flex items-center gap-1.5 min-h-[44px]"
-										title={t("Copy shell output")}
-									>
-										<Copy className="h-4 w-4" />
-										<span className="hidden sm:inline">{t("Copy output")}</span>
-									</button>
-								)}
+								{run.status !== "running" &&
+									run.status !== "queued" &&
+									run.status !== "scheduled" && (
+										<button
+											type="button"
+											onClick={handleCopyOutput}
+											className="btn-outline inline-flex items-center gap-1.5 min-h-[44px]"
+											title={t("Copy shell output")}
+										>
+											<Copy className="h-4 w-4" />
+											<span className="hidden sm:inline">
+												{t("Copy output")}
+											</span>
+										</button>
+									)}
 							</div>
 						</div>
 						<div className="flex-1 min-h-0 rounded-lg border border-secondary-700 dark:border-secondary-600 bg-[#0d1117] dark:bg-black overflow-hidden shadow-inner">

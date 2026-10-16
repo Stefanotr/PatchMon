@@ -4,8 +4,6 @@ import (
 	"context"
 	"os/exec"
 	"time"
-
-	"patchmon-agent/internal/winexec"
 )
 
 // A blocked package manager (dnf waiting on the RPM lock, freebsd-update on a
@@ -24,15 +22,6 @@ const (
 func boundedCommand(timeout time.Duration, name string, args ...string) (*exec.Cmd, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.WaitDelay = commandKillDelay
-	return cmd, cancel
-}
-
-// boundedPowerShell is boundedCommand for a PowerShell script, started by
-// absolute path (winexec.PowerShell).
-func boundedPowerShell(timeout time.Duration, script string) (*exec.Cmd, context.CancelFunc) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	cmd := winexec.PowerShell(ctx, "-NoProfile", "-NonInteractive", "-Command", winexec.Script(script))
 	cmd.WaitDelay = commandKillDelay
 	return cmd, cancel
 }

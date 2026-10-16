@@ -12,7 +12,6 @@ import (
 
 	"patchmon-agent/internal/config"
 	"patchmon-agent/internal/logutil"
-	"patchmon-agent/internal/packages"
 	"patchmon-agent/internal/reboot"
 )
 
@@ -43,10 +42,10 @@ const (
 	// time did not happen (aborted on the host, or the clock moved), so it
 	// no longer holds runs back.
 	pendingRestartGrace = 15 * time.Minute
-	// runOverrun is how far past its time limit a run can go: the last
-	// Windows install still gets its minimum time, then the final status
-	// and the post-patch report go out.
-	runOverrun = windowsMinItemTimeout + 5*time.Minute
+	// runOverrun is how far past its time limit a run can go: a Windows
+	// install in progress is never cut off, then the final status and the
+	// post-patch report go out.
+	runOverrun = 15 * time.Minute
 )
 
 // Limits for a restart or cancel command, whose answer the server waits 20
@@ -376,6 +375,37 @@ type skippedRestart struct{ reason string }
 
 func (s skippedRestart) Error() string { return s.reason }
 
+// restartAfterRun applies a real run's restart option once the run is over,
+// on every platform. A stopped or failed run is never restarted; otherwise
+// needed reports whether the host has a restart pending, and why. It returns
+// the error of a wanted restart that could not be scheduled.
+func restartAfterRun(out io.Writer, runID string, opts reboot.Options, stopped bool, runErr error, needed func() (bool, string)) error {
+	if !opts.Enabled() {
+		return nil
+	}
+	blocked := ""
+	switch {
+	case stopped:
+		blocked = "the run was stopped"
+	case runErr != nil:
+		blocked = "the run failed; restart by hand once the failure is fixed"
+	}
+	isNeeded := false
+	if blocked == "" {
+		var reason string
+		isNeeded, reason = needed()
+		switch {
+		case isNeeded && reason != "":
+			_, _ = fmt.Fprintf(out, "Restart required: yes (%s)\n", reason)
+		case isNeeded:
+			_, _ = fmt.Fprintln(out, "Restart required: yes")
+		default:
+			_, _ = fmt.Fprintln(out, "Restart required: no")
+		}
+	}
+	return scheduleRestart(out, runID, opts, isNeeded, blocked, scheduleHostRestart)
+}
+
 // scheduleRestart applies a run's restart option once the run is over and
 // writes what it did to out. needed says whether the host reports a pending
 // restart; blocked says why the run must not restart it ("" when it may).
@@ -431,7 +461,7 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 	}
 	at, err := opts.When(now)
 	if err != nil {
-		_, _ = fmt.Fprintf(out, "Restart: not scheduled, %s\n", packages.OneLine(err.Error()))
+		_, _ = fmt.Fprintf(out, "Restart: not scheduled, %s\n", oneLine(err.Error()))
 		report = func() { reportRunRestart(runID, time.Time{}, err) }
 		return fmt.Errorf("restart not scheduled: %w", err)
 	}
@@ -440,7 +470,7 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 		skip(fmt.Sprintf("Restart: not scheduled, %s (not by this run)", reboot.ErrAlreadyScheduled), reboot.ErrAlreadyScheduled.Error())
 		return nil
 	case err != nil:
-		_, _ = fmt.Fprintf(out, "Restart: could not be scheduled: %s\n", packages.OneLine(err.Error()))
+		_, _ = fmt.Fprintf(out, "Restart: could not be scheduled: %s\n", oneLine(err.Error()))
 		report = func() { reportRunRestart(runID, time.Time{}, err) }
 		return fmt.Errorf("restart could not be scheduled: %w", err)
 	}
@@ -563,9 +593,9 @@ func runRestartReply(runID string, at time.Time, err error) restartReply {
 	var skipped skippedRestart
 	switch {
 	case errors.As(err, &skipped):
-		r.Skipped, r.Error = true, packages.OneLine(skipped.reason)
+		r.Skipped, r.Error = true, oneLine(skipped.reason)
 	case err != nil:
-		r.Error = packages.OneLine(err.Error())
+		r.Error = oneLine(err.Error())
 	default:
 		r.OK, r.RebootAt = true, at.UTC().Format(time.RFC3339)
 	}
@@ -617,7 +647,7 @@ func restartCommandReply(opts reboot.Options) restartReply {
 		at, err := restartCommand(ctx, opts)
 		if err != nil {
 			logger.WithError(err).Warn("Restart command refused")
-			reply.Error = packages.OneLine(err.Error())
+			reply.Error = oneLine(err.Error())
 		} else {
 			logger.WithField("at", formatRestartTime(at)).Info("Restart scheduled on server request")
 			reply.OK, reply.RebootAt = true, at.UTC().Format(time.RFC3339)
@@ -640,10 +670,10 @@ func cancelCommandReply() restartReply {
 			reply.Error = err.Error()
 		case errors.Is(err, reboot.ErrOwnerUnconfirmed):
 			logger.WithError(err).Warn("Restart cancel refused: the pending restart is not confirmed as PatchMon's")
-			reply.Error = packages.OneLine(err.Error())
+			reply.Error = oneLine(err.Error())
 		case err != nil:
 			logger.WithError(err).Warn("Restart cancel failed")
-			reply.Error = packages.OneLine(err.Error())
+			reply.Error = oneLine(err.Error())
 		default:
 			logger.Info("Scheduled restart cancelled on server request")
 			reply.OK = true

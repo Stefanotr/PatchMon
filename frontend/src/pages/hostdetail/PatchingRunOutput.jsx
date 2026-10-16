@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { patchingAPI } from "../../utils/patchingApi";
+import { runMessageNotice } from "../../utils/patchRun";
 
 const PatchingRunOutput = ({ runId }) => {
 	const { t } = useTranslation();
@@ -16,6 +17,7 @@ const PatchingRunOutput = ({ runId }) => {
 		refetchInterval: (query) => {
 			const status = query.state.data?.status;
 			if (status === "queued" || status === "running") return 3000;
+			if (status === "scheduled") return 30000;
 			return false;
 		},
 	});
@@ -41,12 +43,25 @@ const PatchingRunOutput = ({ runId }) => {
 			? run.shell_output.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
 			: t("(No output yet)");
 
+	const notice = runMessageNotice(run);
+
 	return (
 		<div className="py-4">
-			{run.error_message && (
-				<p className="mb-2 text-sm text-red-600 dark:text-red-400 font-mono bg-red-50 dark:bg-red-900/20 p-2 rounded">
-					{run.error_message}
+			{notice?.tone === "error" && (
+				<p className="mb-2 text-sm text-danger-600 dark:text-danger-400 font-mono bg-danger-50 dark:bg-danger-900/20 p-2 rounded whitespace-pre-wrap break-words">
+					{notice.detail}
 				</p>
+			)}
+			{notice?.tone === "info" && (
+				<div
+					role="status"
+					className="mb-2 text-sm text-secondary-700 dark:text-secondary-200 bg-secondary-50 dark:bg-secondary-700/40 border border-secondary-200 dark:border-secondary-600 p-2 rounded"
+				>
+					<p className="font-medium">{t(notice.title)}</p>
+					{notice.detail && (
+						<p className="text-xs mt-0.5 break-words">{notice.detail}</p>
+					)}
+				</div>
 			)}
 			<div className="rounded-lg border border-secondary-700 dark:border-secondary-600 bg-[#0d1117] dark:bg-black overflow-hidden shadow-inner">
 				<pre

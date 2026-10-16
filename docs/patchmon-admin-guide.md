@@ -148,7 +148,7 @@ PatchMon is licensed under [AGPLv3](https://github.com/PatchMon/PatchMon/blob/ma
 
 PatchMon 2.0 moves most day-to-day tuning out of the container's `.env` and into the **Settings** area of the web UI. From here you manage users and roles, host groups, agent update cadence, server-level toggles, branding, integrations, and authentication providers. Settings are stored in the database and the server re-reads them on every request (with a brief in-memory cache for hot paths), so most changes take effect without restarting the container.
 
-> **Env vars beat DB values.** When the same setting is present both as an environment variable and as a Settings UI value, the environment variable wins. The UI shows a small yellow "env" badge on values that are being overridden by `.env`, so you can tell at a glance why your change "didn't save". See PatchMon Environment Variables Reference for the full priority model.
+> **Env vars beat DB values.** When the same setting is present both as an environment variable and as a Settings UI value, the environment variable wins. The Environment page shows a yellow ".env" source badge on those variables, marks them **Set in .env**, and does not let you edit them there, because a database value would be ignored. See PatchMon Environment Variables Reference for the full priority model.
 
 This page is the map of the Settings area: what each page does, which permission unlocks it, and which deeper chapter to read if you need more detail.
 
@@ -220,7 +220,7 @@ The Roles editor is where custom roles are authored. A role is a named bundle of
 - `can_manage_hosts`, `can_manage_users`, `can_manage_settings`, `can_manage_alerts`, `can_manage_notifications`, `can_manage_compliance`, `can_manage_patching`, `can_restart_hosts`, `can_manage_automation`, `can_manage_docker`
 - `can_use_remote_access` (SSH terminal and RDP)
 
-The built-in roles (`superadmin`, `admin`, `user`, `readonly`) are immutable; the editor lets you create and edit additional roles alongside them and assign any user to any custom role.
+The `superadmin`, `admin` and `user` roles cannot be edited. The other two built-in roles, `host_manager` and `readonly`, can be edited like custom roles but cannot be deleted. The editor lets you create and edit additional roles alongside them and assign users to them, within the limits described under role escalation protection below.
 
 #### My Profile
 
@@ -235,7 +235,7 @@ Your own account settings. Every authenticated user has access. Covers:
 - **Dashboard preferences**: light/dark mode, card layout, default landing tab
 - **Language**: English or French. Without a choice, the browser's language applies; the sign-in page has the same selector. The choice is kept in the browser, not in the account, and switching reloads the page. French covers the navigation, sign-in, dashboard, hosts, host detail, patch wizard and restart dialogs; other screens are still in English, and text sent by the server or the agents (package names, error messages, reboot reasons) stays as it comes.
 
-Password policy rules are live: you cannot save a password that fails the server's policy. See PatchMon Environment Variables Reference: Password Policy.
+Password policy rules are live: you cannot save a password that fails the server's policy. Spaces at the start or end of a password are ignored, both when it is set and when you sign in, and the policy is checked on the password without them. See PatchMon Environment Variables Reference: Password Policy.
 
 #### Discord Auth
 
@@ -245,11 +245,18 @@ Configure a Discord application as a sign-in provider. Each user can link their 
 
 Discord Auth is intentionally less feature-rich than OIDC SSO. There is no group-to-role mapping, no enforced-SSO mode, and no user auto-provisioning. Use it for communities and small teams; use OIDC SSO for everything else.
 
+When **Disable local auth** is on in **OIDC / SSO**, Discord sign-in is turned off as well, so SSO is the only way in. The Discord button is hidden, and Discord logins are refused before any account is created. Users can still link a Discord identity to their profile, but cannot sign in with it until local authentication is enabled again.
+
 #### OIDC / SSO
 
 **Path:** `/settings/oidc-auth`
 
 Full OpenID Connect configuration: issuer URL, client ID and secret, redirect URI, scopes, button text, auto-provisioning, group-to-role mapping, and enforced-SSO toggle. A dedicated **Import from environment** button pulls existing `OIDC_*` values from `.env` into the database so you can migrate from file-based config without retyping anything.
+
+The toggles at the top of the page that control password sign-in:
+
+- **Disable local auth**: once SSO is fully configured, the login page shows only the SSO button and the server refuses password sign-in and self-service signup.
+- **Superadmin password login if SSO is down**: only matters while **Disable local auth** is on. Off by default. When on, superadmins who have two-factor authentication set up can sign in with their PatchMon password while your identity provider cannot be reached (a network failure, or the provider returning a server error). Nobody else can. Each such sign-in raises a `sso_fallback_login` event. Changing this setting needs the Manage Superusers permission. Anyone who can cut PatchMon off from your provider and holds a superadmin's password and second factor can get in this way, so only enable it if that risk is acceptable. See [Password Login When the SSO Provider Is Unreachable](https://patchmon.net/docs/patchmon-operator-guide#sso-provider-unreachable-password-login) in the operator guide.
 
 For a step-by-step walk-through (Authentik, Keycloak, Entra ID, Okta), see Setting up OIDC SSO.
 
@@ -278,6 +285,8 @@ Controls how and when PatchMon agents talk to the server and update themselves:
 **Path:** `/settings/agent-version`
 
 Inspect the bundled agent binary versions (one per OS/architecture), check for newer releases upstream, and force a fresh download of the bundled binaries. Useful after you upgrade the server. Agents pick up the new binaries via the auto-update flow. No manual distribution required.
+
+From agent 2.1.4, each host's page also shows a **Config Version** next to the agent version. An upgraded agent updates its `config.yml` to the new release when it restarts, so the two match once the host has reported after the upgrade. See [Host Info](#host-info).
 
 See Managing the PatchMon Agent for how agents consume this information.
 
@@ -319,11 +328,13 @@ If you change the URL later, existing agents keep using whatever URL they were i
 **Path:** `/settings/environment`
 **Requires:** `can_manage_settings`
 
-New in 2.0: every tunable environment variable that can be safely changed at runtime is listed here with its **effective value**, **source** (env / database / default), **default**, and a one-line description. Editable variables have an edit button; sensitive or bootstrap-only variables (like `DATABASE_URL`, `JWT_SECRET`, `REDIS_PASSWORD`, `AI_ENCRYPTION_KEY`, `SESSION_SECRET`) show as read-only and must still be changed in `.env`.
+New in 2.0: every tunable environment variable that can be safely changed at runtime is listed here with its **effective value**, **source** (env / database / default), **default**, and a one-line description. Editable variables have an **Edit** button; sensitive or bootstrap-only variables (like `DATABASE_URL`, `JWT_SECRET`, `REDIS_PASSWORD`, `AI_ENCRYPTION_KEY`, `SESSION_SECRET`) show **Configure via .env** and must still be changed in `.env`.
+
+A variable that would normally be editable but already has a value in `.env` (or the container environment) shows **Set in .env** instead of an Edit button. The `.env` value takes priority, so anything saved here would be ignored. To change it, edit or remove it in `.env` and restart the server. If the database also holds a value for it, the row says the database value is ignored and a **Misconfiguration detected** banner appears at the top of the page. The stock Docker `env.example` sets `CORS_ORIGIN`, so on a default Docker install that variable is managed in `.env`.
 
 Variables are grouped by category: Database, Server, Logging, Authentication, Password policy, Server performance, Rate limits, Redis, Encryption, Deployment.
 
-When you edit a value, the UI writes it to the database and immediately flashes a "Restart the application for changes to take effect" toast. Some settings take effect on the next request (CORS origin, log level, rate limits); others need a restart. The UI doesn't always know which is which, so the safe rule is: change, then `docker compose restart server`.
+When you save a value, the UI writes it to the database, reloads the table so it shows the value the server resolved, and shows the server's confirmation. Most settings take effect straight away and the confirmation says "Saved. The new value is in effect." Settings that are wired in at startup (`CORS_ORIGIN`, `ENABLE_LOGGING`, `LOG_LEVEL`, `ENABLE_HSTS`, `DB_TRANSACTION_LONG_TIMEOUT`) say "Saved. Restart the application for this change to take effect." instead; for those, run `docker compose restart server`.
 
 > **Tip:** If you've been managing PatchMon from `.env` files for a long time and want to move configuration into the database, clear a variable from `.env` first, then change it here. Otherwise the env value keeps winning.
 
@@ -335,6 +346,8 @@ Full reference: PatchMon Environment Variables Reference.
 **Requires:** `custom_branding` module (Plus tier)
 
 Upload a custom logo and favicon. The assets are stored in the database and served via `GET /api/v1/settings/logos/{type}`, so they live through container restarts without a persistent volume. Both dark-mode and light-mode variants can be uploaded separately. The read path is public (so the login page can show your branding before the user authenticates) but upload/reset are gated behind the `custom_branding` module.
+
+Logos can be PNG, JPEG or SVG, up to 5 MB. SVG files are cleaned on upload: scripts, event handlers, embedded HTML, animation elements, external links and editor metadata (for example Inkscape or Illustrator data) are removed, and an SVG that is not well-formed XML is rejected with "Invalid SVG file". If your logo looks different after uploading, export it again as a plain SVG.
 
 #### Server Version
 
@@ -374,7 +387,7 @@ The Settings sidebar doesn't list them because the pages where you actually use 
 
 #### "I changed a setting but nothing happened"
 
-Check the Environment page for the variable you changed. If the "Source" column says `env`, your change to the database value is being overridden by an environment variable set in `.env` or the container spec. Clear the env value and the DB value will take over.
+Check the Environment page for the variable you changed. If its row says **Set in .env**, the value comes from `.env` or the container spec and overrides the database, which is why the page does not let you edit it. Change it in `.env`, or remove it from `.env` and restart the server so the database value takes over.
 
 #### "I saved a setting and the UI says 'Restart to take effect'"
 
@@ -384,7 +397,7 @@ Some settings (startup-only values like `PORT`, `DATABASE_URL`, pool sizes) are 
 docker compose restart server
 ```
 
-A small number of settings (CORS origin, log level, rate-limit windows) are re-resolved on every request and don't require a restart. The UI doesn't always distinguish between them; when in doubt, restart.
+Most Environment page settings (rate limits, password policy, lockout and session timeouts, body limits) are re-resolved on every request and don't require a restart. The confirmation shown after saving tells you which case you are in.
 
 #### "Branding / AI Terminal / Roles is greyed out"
 
@@ -663,7 +676,7 @@ If there's a pending patch run awaiting a fresh post-patch report, you'll see an
 |--------|--------------|:---:|
 | **Apply** | Appears only when pending config changes (e.g. integration toggles) need to be pushed to the agent. | Yes |
 | **Fetch Report** | Sends a WebSocket command asking the agent to collect and submit a fresh report now. | Yes |
-| **Patch all** | Opens the Patching wizard pre-scoped to this host. On Windows it installs the pending Windows Updates and WinGet upgrades (see Windows patching). | Yes |
+| **Patch all** | Opens the Patching wizard pre-scoped to this host. On Windows hosts it needs agent 2.1.4 or later (see [Windows patching](#windows-patching)). | Yes |
 | **Deploy Agent** (key icon) | Opens the Credentials modal with the install command and API credentials. | No |
 | **Refresh** (circular arrow) | Re-fetches host data from the PatchMon server (UI only). | No |
 | **Delete host** (trash icon) | Opens a confirmation dialog and then removes the host record. | No |
@@ -697,7 +710,7 @@ The tab strip is context-aware. Some tabs only appear under certain conditions:
 | **Docker** | Conditional | Only when the host has reported a working Docker integration. Gated by the `docker` module; shows a PLUS badge if your plan doesn't have it. |
 | **Patching** | Yes | Gated by the `patching` module; shows a tier badge if your plan doesn't have it. |
 | **Compliance** | Conditional | Only when the host has reported the compliance integration. Gated by the `compliance` module. |
-| **Terminal** | Yes on Linux/FreeBSD | Browser-based SSH. Gated by the `ssh_terminal` module. |
+| **Terminal** | Yes | Browser-based SSH. Windows hosts need OpenSSH Server enabled. Gated by the `ssh_terminal` module. |
 | **RDP** | Windows hosts only | Browser-based RDP via Guacamole. Gated by the `rdp` module. |
 
 Each tab below is described as what you see and what you can do.
@@ -713,10 +726,24 @@ Quick reference panel for the host's identity and agent settings. Fields include
 - **Host Groups**: coloured multi-select chips. Add or remove groups; changes save on blur.
 - **Operating System**: icon plus OS type and version (detected by the agent).
 - **Agent Version**: version of `patchmon-agent` currently reporting.
-- **Agent Auto-update**: per-host toggle. If global auto-update is disabled, a yellow warning badge is shown with a tooltip pointing to **Settings → Agent Updates**.
-- **Force Agent Version Upgrade**: the **Update Now** button sends an immediate upgrade command via WebSocket. Disabled when the agent is offline, and while an update is in progress (the server also refuses a second one: `409 An agent update is already in progress on this host`). The update restarts the agent, so the agent skips it while a patch run (dry run included) is in progress, and refuses new runs while it updates; press the button again once the run is over, or let auto-update pick it up. While the update runs, a pill under the host name says where it is (*Agent update: downloading 40%*); **Agent Activity** shows it step by step.
+- **Config Version**: the version of the agent's `config.yml` layout, as last reported (agent 2.1.4 and later). The agent sets it to its own version whenever it loads its configuration, so it normally matches **Agent Version**. The field shows:
+  - the version alone when the two match;
+  - an **out of date** warning when they differ, usually because the agent could not save its `config.yml` after an upgrade;
+  - a **not reported** warning when the agent is 2.1.4 or later but no config version has been recorded;
+  - a note that agent 2.1.4 is required when the agent is older.
+- **Agent Auto-update**: per-host toggle, on by default for new hosts so the global setting alone decides whether agents update. Turn it off to keep a single host on its current agent version. If global auto-update is disabled, a yellow warning badge is shown with a tooltip pointing to **Settings → Agent Updates**.
+- **Force Agent Version Upgrade**: the **Update Now** button sends an immediate upgrade command via WebSocket. Disabled when the agent is offline, and while an update is in progress (the server also refuses a second one: `409 An agent update is already in progress on this host`). While a patch run is queued, validating or running on the host, it is refused with "A patch run is in progress on this host. Try again when it finishes.", and automatic agent updates wait until the run is over, so an agent restart never cuts a patch run short. While the update runs, a pill under the host name says where it is (*Agent update: downloading 40%*); **Agent Activity** shows it step by step.
 
 See Managing the PatchMon Agent for what the agent does when it receives an upgrade command.
+
+#### Host identity warnings
+
+From PatchMon 2.1.4 every agent knows the ID of its host record (`host_id` in its `config.yml`) and reports it. The host page uses this to warn about agents that are not what they seem. Neither warning blocks the agent: reports keep arriving and are filed under the host the agent's credentials belong to.
+
+- **Host ID mismatch**: the agent's `config.yml` names a different host than its credentials belong to. Usually the file was copied from another machine or edited by hand. Fix it on the machine with `sudo patchmon-agent config sync-host-id` (which adopts this host's ID), or reinstall the agent with the install command from this host's page. The warning clears on the agent's next check-in. See the operator guide's Agent Troubleshooting chapter for details.
+- **Possible clone**: two different machines appear to be reporting with this host's credentials, typically because a VM or container was cloned after the agent was installed. Their data alternates on this one host. Give each clone its own host (the operator guide's Agent Troubleshooting chapter has the steps), then either:
+  - **Dismiss** the warning (requires `can_manage_hosts`). It comes back if the machines keep alternating.
+  - **Regenerate credentials** (see [API Credentials](#api-credentials)) and apply them to the original machine. Any copy still using the old credentials is locked out, and the warning is cleared.
 
 ### Network
 
@@ -735,7 +762,7 @@ Clearing the primary flag re-enables auto-detection.
 
 Hardware and OS specifics collected on each report:
 
-- **Kernel version**, **SELinux status**, **architecture**, **package manager**.
+- **Kernel version**, **SELinux status** (Linux hosts only), **architecture**, **package manager**.
 - **CPU** model, socket/core counts, frequency.
 - **Memory**: total, used, free, swap (formatted in GiB).
 - **Storage / disk layout**.
@@ -831,6 +858,8 @@ Appears only when the host has actually reported a working Docker integration on
 
 Sub-tabs: **Stacks**, **Containers**, **Images**, **Volumes**, **Networks**. Each sub-tab shows counts in a badge next to its name.
 
+The containers and images lists show an update status for each row, and users with `can_manage_hosts` get a **Check for updates** button that runs the image update check on this host straight away. See [Image Update Checks](#image-update-checks).
+
 Requires the `docker` module to be enabled on your plan. Plans without the module show a tier badge on the tab and an upgrade prompt inside.
 
 ### Patching
@@ -861,6 +890,8 @@ Browser-based SSH session to the host, proxied through the agent. No inbound por
 
 Gated by the `ssh_terminal` module. The agent-side `ssh-proxy-enabled` switch in `config.yml` must also be on. This is **not** a UI toggle, due to its security implications. See the SSH section of Agent Configuration Reference.
 
+On Windows hosts the tab connects to the Windows OpenSSH Server, which is not enabled by default. See [Windows hosts](#web-ssh-terminal-windows).
+
 ### RDP (Windows only)
 
 Browser-based RDP session using a Guacamole (`guacd`) gateway on the PatchMon server. Like the Terminal tab, it uses the agent to reach the host without requiring inbound firewall rules.
@@ -885,7 +916,8 @@ Click **Copy**. You're automatically moved to the **Waiting for Connection** scr
 
 - **API ID**: copyable.
 - **API Key**: obscured by default. The plaintext key is **only** available if it was just created or regenerated; otherwise the field shows *hashed – not usable*.
-- **Regenerate**: creates a new API ID and key and invalidates the old ones. Use this if credentials have been lost or compromised. The agent on the host will need to be reconfigured or the install command re-run.
+- **Regenerate**: creates a new API ID and key and invalidates the old ones. Use this if credentials have been lost or compromised. The agent on the host will need to be reconfigured or the install command re-run. Regenerating also clears the host's **Host ID mismatch** and **possible clone** warnings.
+- **Re-issued by auto-enrolment**: shown when an auto-enrolment script issued a new API key for this host, with the date. This happens only for a host that the same enrolment token created and that has never reported, typically when a script is rerun after an install failed part-way.
 
 ### Common Actions: Where to Click
 
@@ -1026,6 +1058,8 @@ Once the group is empty, return to **Settings → Host Groups** and delete it.
 
 You can also deep-link by visiting `/hosts?group=<groupId>`; group-clicks from other parts of the UI (for example the Host Groups page's host count badge) do exactly this.
 
+Every filter on the Hosts page is kept in the address bar: the search box, Host Group, Reporting, Connection, Operating System and OS Version, the grouping, **Hide Stale**, and the column sort. Reloading the page, using the browser's back and forward buttons, or sharing or bookmarking the link brings back the same view. Filters left at their default are not added to the address.
+
 #### Grouping the table
 
 Above the filter panel, the **No Grouping** dropdown lets you group rows by **Group**, **Status**, or **OS**. Picking **By Group** splits the Hosts table into sections, one per group, each with a count header. Hosts in multiple groups appear under each of their groups. This is a visual grouping, not a filter.
@@ -1042,7 +1076,7 @@ Groups are a **selector** across the product. Wherever a workflow asks "which ho
 
 - When you build a patch run, the target picker offers **Host** or **Host group** as the target type.
 - Choosing a host group expands the target to every current member at the time the run is queued.
-- Patch policies (recurring runs) can use a host group as the primary selector, so adding a new host to the group automatically includes it in the next scheduled run.
+- Patch policies can be assigned to a host group, so a host added to the group automatically picks up that policy. The policy decides when a run someone triggers on that host actually executes; it does not start runs on its own.
 
 For the full patching flow, see the Patching chapter.
 
@@ -1161,6 +1195,8 @@ Default columns:
 | **Latest Version** | The newest version PatchMon has seen reported across all hosts for this package. |
 | **Source Repos** | Repo chips. Each chip links to that repository. If more than three sources are reported, the overflow is shown as `+N`. |
 
+With a host filter active, **Installed On**, **Status** and **Latest Version** describe that host alone: Installed On reads `1 host` and opens that host, Status is that host's own update state, and Latest Version is the version available to that host (or its installed version when it is up to date).
+
 The **Columns** button lets you hide any column except the select checkbox, drag to reorder, and reset to default. The column layout is persisted locally in your browser.
 
 #### How "Installed On" is calculated
@@ -1190,7 +1226,7 @@ Lists every host where the package is installed. Key elements:
 - **Description** panel: the package description as reported by the host's package manager.
 - **Only pending** filter: ticked by default; untick to see every host, including ones already up to date.
 - **Search**: filters the host list.
-- Per-row actions: you can trigger a targeted patch of this one package on any host that has it pending, Windows included.
+- Per-row actions: you can trigger a targeted patch of this one package on any host. On Windows hosts, Windows Updates and apps that winget can upgrade are patchable; apps winget does not recognise are marked **Not patchable** (see [Windows patching](#windows-patching)).
 - Select multiple rows and use **Patch selected** to run the same upgrade across many hosts in one patch run.
 
 #### Activity tab
@@ -1207,6 +1243,8 @@ Two flows produce a patch run from the Packages page:
 2. Click **Patch selected (N)** (top right).
 3. The **Patch wizard** opens in multi-host mode, discovers which hosts have the selected packages installed and need updates, and lets you pick which to include.
 4. If the **Host** filter is already set to a single host, the wizard locks to that host to avoid offering unrelated hosts.
+
+Arch Linux hosts are listed as **Not patchable** in the wizard, and **Patch selected** is disabled when the Host filter is an Arch host. Use **Patch all** on those hosts. See [Arch Linux patching](#arch-patching).
 
 #### Patch all on a single host
 
@@ -1232,7 +1270,8 @@ From there, you can drill into individual packages, set up a patch run, or narro
 
 - **Live list, periodic backing data.** Rows are fetched from the PatchMon server and reflect the most recent reports submitted by each host. To refresh a host's data immediately, open the host's detail page and click **Fetch Report**. The Packages list picks up the new state on its next refetch (or click **Refresh** on the Packages page).
 - **Drilling down into patch state.** The **Hosts** page is the better starting point when you care about which *hosts* are behind on updates. Use the Packages page when you care about which *packages* expose the fleet.
-- **Windows hosts.** **Patch all** and **Patch selected** work on Windows hosts: pending Windows Updates go through the Windows Update Agent and applications through WinGet, with the same dry-run validation as Linux. See Windows patching in the Patching chapter.
+- **Windows hosts.** Package reporting covers installed applications (enriched with winget update data) and Windows Updates; Chocolatey is not used. **Patch all** and **Patch selected** work on Windows hosts running agent 2.1.4 or later. Windows Update rows show a **Windows Update** source and apps a **winget** source; apps winget does not recognise are listed as **Not patchable**. See [Windows patching](#windows-patching).
+- **Arch Linux hosts.** Only **Patch all** is available. On a package's detail page an Arch host shows **Patch all only** instead of a **Patch** button. See [Arch Linux patching](#arch-patching).
 
 ### Related Pages
 
@@ -1450,7 +1489,7 @@ A **patch run** is one unit of patching work against a single host. Every time y
 Each run has:
 
 - A **type**: `patch_all` (install all available package updates) or `patch_package` (install a specific package or set of packages).
-- A **dry-run flag**: if `dry_run=true`, the agent reports what *would* change without actually installing anything. This only applies to `patch_package`; `patch_all` cannot be dry-run because the agent's bulk upgrade path does not support `--dry-run` faithfully.
+- A **dry-run flag**: if `dry_run=true`, the agent reports what *would* change without actually installing anything. On Linux and FreeBSD this only applies to `patch_package`; `patch_all` cannot be dry-run there because the agent's bulk upgrade path does not support `--dry-run` faithfully. Windows hosts support a dry run for both types.
 - A **status** that moves through the run lifecycle (see below).
 - A persisted **shell output** that captures every line of stdout/stderr produced by the package manager. Live subscribers get it streamed over WebSocket; everyone else gets the full blob on completion.
 - Optional **policy metadata**: the effective patch policy is snapshotted onto the run at trigger time, so you can see in run detail "which policy was in effect when this was queued".
@@ -1466,13 +1505,13 @@ The server moves a run through these statuses, visible as badges in the Runs & H
 | `validated` | The dry-run finished successfully; the run is waiting for an operator to approve it. |
 | `pending_approval` | A patch run was submitted for approval without a dry-run (e.g. a `patch_all` that cannot be dry-run). An approver needs to sign off before the run is queued. |
 | `approved` | The original validation run after someone approved it. A new execution run (linked by `validation_run_id`) is created alongside this row and queued. |
-| `scheduled` | The run has been accepted but is waiting for its `run_at` timestamp (delayed or fixed-time policy). |
+| `scheduled` | The run has been accepted but is waiting for its `run_at` timestamp (delayed or fixed-time policy). Scheduled runs do not block other runs on the host; when the window arrives the run moves to `queued`, or is cancelled if another run is still active on the host. |
 | `running` | The agent is currently executing the package manager command on the host. This is the status that opens the live WebSocket stream. |
 | `completed` | The run finished successfully. The persisted `shell_output` is now authoritative. |
 | `dry_run_completed` | A dry-run finished successfully (terminal state for dry-runs that aren't turned into a real run). |
 | `failed` | The run finished with a non-zero exit status or the host reported an error. |
-| `cancelled` | The run was stopped by an operator clicking **Stop Run** (or deleted before execution). The cancel is applied authoritatively in the database first; if the agent is connected the server also sends a courtesy `patch_run_stop` so the running subprocess is interrupted. With this ordering, an offline or unresponsive agent can't leave the row stuck in `running`. |
-| `timed_out` | The periodic patch-run cleanup found this run still in `running` state past the configured stall timeout (`PATCH_RUN_STALL_TIMEOUT_MIN`, default 30 minutes) and marked it as timed out. The cleanup sweep runs every 10 minutes. |
+| `cancelled` | The run was stopped by an operator clicking **Stop Run** (or deleted before execution), or a scheduled run was skipped because another run was active on the host when its window arrived. The cancel is applied authoritatively in the database first; if the agent is connected the server also sends a courtesy `patch_run_stop` so the running subprocess is interrupted. With this ordering, an offline or unresponsive agent can't leave the row stuck in `running`. |
+| `timed_out` | The periodic patch-run cleanup found this run still in `running` state past the configured stall timeout (`PATCH_RUN_STALL_TIMEOUT_MIN`, default 30 minutes) and marked it as timed out, or found a `scheduled`, `queued` or `pending_validation` run that was not dispatched within 24 hours of becoming due. The cleanup sweep runs every 10 minutes. |
 | `agent_disconnected` | The agent's WebSocket dropped while this run was `running`. The server marks every in-flight run for that host as `agent_disconnected` so the row doesn't sit at `running` indefinitely. If the agent reconnects and posts a late `completed` / `failed` / `cancelled` for the same run, the server will update the row to that final state. |
 
 #### 2. Patch Policy
@@ -1494,9 +1533,10 @@ A **dry-run** (also called a validation run) asks the agent to simulate the pack
 - For `apt-get`, the agent runs `apt-get -s install <packages>` and parses the simulation output.
 - For `dnf`/`yum`, the agent runs the planning step that reports "what would be installed" without committing.
 - For `pkg` on FreeBSD, the agent runs `pkg upgrade -n` or the equivalent install-no-run.
-- For `pacman`, the agent uses `pacman -S -p` / `pacman -Syu -p` (print-only) as the validation step.
+- `pacman` (Arch Linux) has no validation step, because selected patching is not available on Arch and `patch_all` cannot be dry-run. See [Arch Linux patching](#arch-patching).
+- For `apk` on Alpine, the agent runs `apk upgrade --simulate <packages>`, which opens the package database read-only. A validation fails if apk reports an error (for example an unknown package or a conflict with `/etc/apk/world`), or if the plan would downgrade or replace a package, or remove one listed in `/etc/apk/world`.
 
-When the dry-run completes the run transitions to `validated` and shows you the list of packages that *would* be installed, including dependencies that were pulled in. If more packages would be installed than you originally asked for, the UI badges the run with **Extra deps** and surfaces the full list in the run detail "Packages affected" panel so you can review before approving.
+When the dry-run completes the run transitions to `validated` and shows you the list of packages that *would* be installed, including dependencies that were pulled in. If more packages would be installed than you originally asked for, the UI badges the run with **Extra deps** (Linux and FreeBSD `patch_package` runs only) and surfaces the full list in the run detail "Packages affected" panel so you can review before approving.
 
 **Approval** is the step that turns a validated dry-run into a real patching run. On approval:
 
@@ -1509,34 +1549,223 @@ When the dry-run completes the run transitions to `validated` and shows you the 
 
 ### Multi-OS Coverage
 
-The agent chooses the patching back-end by detecting the host's package manager. Linux and FreeBSD patching are fully supported; Windows patching has its own path.
+The agent chooses the patching back-end by detecting the host's package manager. Linux, FreeBSD and Windows patching are supported; Windows patching has its own path.
 
 | Package manager | OSes | Supported for patching |
 |---|---|:---:|
 | `apt-get` | Debian, Ubuntu, Raspbian | Yes |
 | `dnf` | RHEL 8+, Rocky, AlmaLinux, Fedora | Yes |
 | `yum` | RHEL 7, CentOS 7 | Yes |
-| `pacman` | Arch Linux, Manjaro | Yes |
+| `pacman` | Arch Linux, Manjaro | **Patch all** only. See [Arch Linux patching](#arch-patching). |
 | `pkg` | FreeBSD 13+ (plus `freebsd-update` for the base system on `patch_all`) | Yes |
-| `apk` | Alpine Linux | **No.** The agent reports `apk` inventory but rejects patch runs with `package manager "apk" not supported for patching (apt, dnf, yum, pkg, pacman required)`. Alpine hosts are visible in PatchMon and get compliance scans, but patch runs on them fail on the agent side. |
-| `zypper` | openSUSE Leap, openSUSE Tumbleweed, SLES | **No, and no inventory either. Coming soon.** The installer detects zypper and completes, and the agent detects the OS correctly, but the agent has no zypper backend. Package collection therefore fails with `unsupported package manager: unknown` and the host never completes its first report, so it sits at "Waiting for initial system report". Follow and vote for zypper support at [feedback.patchmon.net](https://feedback.patchmon.net/b/feature-requests/posts/post_01kyza53c0fzst214afbr1qn9a). |
-| Windows Update Agent (WUA) + WinGet | Windows 10/11, Server 2019/2022/2025 | Yes (separate path) |
+| `apk` | Alpine Linux 3.21 and later (apk-tools 2 on 3.21 and 3.22, apk-tools 3 from 3.23) | Yes, with agent 2.1.4 or later. See [Alpine patching](#alpine-patching). |
+| `zypper` | openSUSE Leap 15.6 and 16.0, openSUSE Tumbleweed and Slowroll, SLES 15 and 16 | Yes, with agent 2.1.4 or later. See [openSUSE and SLES patching](#zypper-patching). |
+| `apt-get` and `univention-upgrade` | Univention Corporate Server 5.0 and 5.2 (tested on 5.0-10 and 5.2-7) | Yes, with agent 2.1.4 or later. See [Univention Corporate Server patching](#ucs-patching). |
+| Windows Update Agent (WUA) + winget | Windows 10/11, Server 2019/2022/2025 | Yes, with agent 2.1.4 or later (separate path) |
 
-> **Note:** The 2.0 release notes describe Linux patching generally. If you need to patch Alpine hosts, track the package manager roadmap or use your existing Alpine tooling until `apk` support lands.
+#### Arch Linux patching {#arch-patching}
 
-#### Windows patching
+Arch Linux does not support partial upgrades: syncing the package databases and then upgrading only some packages can leave a package linked against libraries that are not installed yet. The Arch Wiki explains this under [System maintenance: Partial upgrades are unsupported](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported). Upgrading `curl` this way on an out-of-date host can stop `pacman` itself from starting, and then the host cannot be patched at all.
 
-When the agent detects it is running on Windows, patch runs are handled by the WUA + WinGet path rather than the Linux package-manager path. Every run, dry or real, starts with a fresh inventory on the host (an online Windows Update search and `winget list --upgrade-available`) and maps the requested names onto it. Nothing the server sends reaches a command line: the agent only acts on the update GUIDs and WinGet IDs its own inventory produced. The WinGet listing is read strictly: a line that does not fit the table's columns is never taken for an app, and if one sits among the rows (or the "N upgrades available." footer announces more rows than could be read), the listing is reported as unreadable and the run fails instead of silently leaving apps out. The agent only runs the `winget.exe` of the App Installer package under `C:\Program Files\WindowsApps` (the newest version installed), never one found through `PATH` or in a user profile; when there is none, WinGet counts as not installed.
+PatchMon therefore offers only **Patch all** on hosts that use `pacman`. It runs `pacman -Syu --noconfirm`, which syncs the databases and upgrades every package in one transaction.
 
-- **Patch all** installs every pending Windows Update that PatchMon also lists as pending for the host (anything newer is held back until the next report shows it), and upgrades every WinGet app with an upgrade available, one by one with `winget upgrade --id <id> --exact`. Apps WinGet only upgrades when they are named (pinned by their manifest, listed under "require explicit targeting") are skipped, as `winget upgrade --all` would; patch them by name to upgrade them. Driver updates and optional updates (previews, and other updates Windows Update only installs on request) are skipped too, each reported `[skip]` with the reason, dry run included; patch them by name to install them.
-- **Patch package** accepts the names shown in PatchMon: an update's display name (`Title (KB...)`), a bare `KB...` number or update GUID, an app's display name, or its WinGet ID. A name that is no longer pending is reported as skipped, like apt's "already the newest version". An ambiguous name, or one whose inventory source failed, fails the run rather than being guessed. So does a name winget shortened with an ellipsis, in the inventory or in the run's own listing (older winget versions cut columns to 120 characters): the match would not be certain, so the item fails and names the candidate WinGet IDs, which the API accepts as package names.
-- **Dry run** (Validate step) takes the same inventory and prints the plan without installing anything: one `[plan]` line per item with its size, version change and whether a restart is expected. Items the real run could not install (Windows waiting for a restart, a WinGet ID winget shortened, ...) fail the dry run the same way, so a clean dry run is worth approving. Because of the Windows Update search, a Windows dry run takes minutes rather than seconds; the wizard starts every host's dry run first and then waits for them (up to 15 minutes), so hosts validate in parallel.
-- **Packages winget will not upgrade in place.** When the newer version uses another installer technology than the installed one (typically Microsoft Edge on Windows Server, installed by the OS image and kept current by its own updater), or a winget pin blocks it, winget refuses before downloading anything. The item is reported `[skip]` with the reason, as `winget upgrade --all` does, so it does not fail every run. winget only checks this when upgrading, so the first attempt cannot be predicted; after that the agent remembers the refusal, and later dry runs and runs show the app as `[skip]` up front ("winget refused this upgrade (154 -> 155) on ...") instead of asking again. The refusal is dropped, and winget asked again, once the installed or available version changes or after 30 days. It is kept in `C:\ProgramData\PatchMon\windows-patch-state.json`, which the agent only trusts when it is a regular file owned by SYSTEM or Administrators; deleting it makes the next run ask winget again. The package still shows as outdated in PatchMon.
-- **Order and stop.** WinGet apps install before Windows Updates (an update can leave a restart pending that blocks app installers). **Stop** lets the item being installed finish and starts nothing else, since killing a Windows installer midway can leave it half applied. A heartbeat line every two minutes keeps long silent installs from tripping the stall timeout. A run is bounded to four hours; an item started near the end gets at least ten minutes. Installer progress redraws and escape sequences are filtered out of the output. When a WinGet installer restarts the computer itself (winget exit code `0x8A15010B`), its app is reported `[ok]` with that note, nothing else is started (the remaining items are `[skip]`), no other restart is scheduled, and the run ends without failing; the next run installs what is still pending. An installer that only asks for a restart (`0x8A150109`) does not stop the run.
-- Each item ends with a status line, `[ok]`, `[fail]` or `[skip]`, followed by indented details and installer output; **Packages affected** lists the `[plan]` items for a dry run and the `[ok]` items for a real run, including on a run that ended `failed` partway.
-- Reboot state and per-update results go through dedicated `/patching/windows-updates/*` endpoints.
+**Patch selected** is refused at every step, all with the same message: "Arch Linux does not support partial upgrades, so PatchMon cannot patch selected packages on this host. Use Patch all."
 
-Windows patching is flagged **beta** and needs an agent that includes the dry-run support above: older Windows agents reject display names in `patch_package` runs. The Run Detail page renders the same way regardless of OS.
+- The UI disables it for Arch hosts and explains why.
+- The server rejects a new `patch_package` run for an Arch host.
+- A `patch_package` run for an Arch host that was queued or scheduled before you upgraded PatchMon is marked **failed** with the same message when it comes due. It is never sent to the agent.
+- The agent refuses one if it still receives it, before running any `pacman` command. It also refuses a dry run on Arch, because `pacman -Syu -p` syncs the package databases without upgrading.
+
+**Older pending runs.** An Arch `patch_package` run left waiting for validation or approval from before the upgrade can no longer be approved or retried. Delete it from **Patching → Runs & History** and use **Patch all** instead.
+
+#### Alpine patching {#alpine-patching}
+
+Alpine hosts are patched with `apk` on Alpine 3.21 and later, with agent 2.1.4 or later: apk-tools 2 on 3.21 and 3.22, apk-tools 3 from 3.23. Every run, real or dry, plans before it changes anything:
+
+1. `apk update` refreshes the package indexes.
+2. `apk upgrade --simulate` works out the transaction. On a real run, if apk says the plan is unreliable because apk-tools itself has an update, the agent installs that update first (`--self-upgrade-only` on apk-tools 2, `--preupgrade-only` on apk-tools 3), says so in the run output, and plans again. If it cannot tell which apk-tools version is installed, it stops instead.
+3. The agent refuses the run, before changing anything, if the plan would **downgrade** or **replace** a package, **remove** a package listed in `/etc/apk/world`, or contains a step it does not recognise. The error names each step and its likely cause. Review the plan with `apk upgrade --simulate` on the host.
+
+   apk also removes packages that nothing needs any more, for example a library a newer package no longer depends on. That is normal clean-up, so the agent lets it happen when the package is not in `/etc/apk/world`, and names each one in the run output: `Removing gdbm 1.26-r0: no longer required by any package and not in /etc/apk/world.` A dry run says `Would remove` instead. Removed packages are listed under the run's affected packages.
+4. A real run then applies the plan with `apk upgrade`.
+
+**Patch selected** runs `apk upgrade <packages>`, never `apk add`, so `/etc/apk/world` is not changed. Packages built from the same source as a selected package are upgraded with it: selecting `libssl3` also upgrades `libcrypto3`, because apk will not upgrade one without the other. If apk still leaves a selected package alone, the run output says so; select the packages it needs as well, or use **Patch all**.
+
+**Held packages.** A version constraint in `/etc/apk/world` (for example `busybox=1.37.0-r29`) holds a package at that version. apk skips held packages, and so does PatchMon: the run succeeds and its output names each one, for example `Held by /etc/apk/world: busybox=1.37.0-r29 (1.37.0-r30 available)`, along with any package held back with it. Held packages are reported as up to date in the package inventory rather than offered for patching.
+
+If the installed version of a package breaks its own constraint in `/etc/apk/world`, apk refuses every upgrade. PatchMon then fails the run before changing anything and names the line to correct, for example change `busybox<1.0` to `busybox=1.37.0-r29` or remove the version, then retry.
+
+**Security updates** on Alpine come from the Alpine security database (`secdb.alpinelinux.org`). An update is marked as a security update when it moves the package past a version that fixed a published issue. The agent fetches the database for the branch in `/etc/apk/repositories` at most every 6 hours. If it cannot reach it, it tries again after an hour, and meanwhile the report still goes through, using the last copy it fetched or, without one, marking no updates as security updates. See `apk_secdb` in the Operator Guide to turn the lookup off.
+
+**Reboot required** is set when the installed kernel package (`linux-lts`, `linux-virt` and so on) is newer than the running kernel. Alpine containers (Docker or LXC) run the host's kernel, so they never report a reboot as required.
+
+#### Univention Corporate Server patching {#ucs-patching}
+
+Univention Corporate Server (UCS) hosts use the Linux agent: choose **Linux** in the Add Host wizard. With PatchMon 2.1.4 or later, server and agent, they are listed as Univention Corporate Server with their release, patch level and errata level, for example `5.2-7 errata606`. Older agents show UCS 5.0 as Debian 10 and UCS 5.2 without its patch level, but report and patch through apt as they do on Debian.
+
+**Inventory** comes from apt, as on Debian, so the outdated packages are the errata updates published for the installed release.
+
+| Run | Command |
+|---|---|
+| **Patch all** | `univention-upgrade --noninteractive --disable-app-updates --updateto <installed release>`, for example `--updateto 5.2-7` |
+| **Patch selected** | `apt-get --only-upgrade install <packages>`, as on Debian |
+
+**Patch all** installs every errata update for the installed release through Univention's own updater, which also clears the "updates available" notice in the Univention Management Console. It never starts a release update, such as 5.2-7 to 5.2-8 or 5.0-10 to 5.1-0, and never updates App Center apps. Neither appears in the package list PatchMon shows, and a release update can need preparation and a maintenance window. Install them from the Univention Management Console, or by running `univention-upgrade` on the host. When a release update is waiting, the run output says so: `5.1-0 is available but updater has been instructed to stop at version 5.0-10.`
+
+**Security updates.** Univention publishes fixes as errata updates, not through a separate security repository, so PatchMon does not mark UCS updates as security updates.
+
+**Compliance scanning.** UCS 5.2 is scanned with the Debian 12 OpenSCAP content and CIS profiles, which needs agent 2.1.4 or later. UCS 5.0 is based on Debian 10, for which no current OpenSCAP content is published, so compliance scanning is not supported on it.
+
+**Reboot required** is set when an update installs a newer kernel than the one running.
+
+#### openSUSE and SLES patching {#zypper-patching}
+
+openSUSE and SLES hosts report inventory and are patched with `zypper`, with agent 2.1.4 or later. Older agents fail every report on these hosts with `unsupported package manager: unknown`; update the agent to fix it.
+
+**Inventory.** Installed packages come from `rpm`, and available updates from `zypper list-updates`, which leaves out packages locked with `zypper addlock`. An update is marked as a security update when a needed patch in the `security` category updates that package. Tumbleweed and Slowroll publish no patches, and an unregistered SLES host has no update repositories, so neither shows security updates. The repositories list shows each enabled zypper repository, without credentials or the registration token that SUSE Customer Center repositories carry in their URL.
+
+**Every run, real or dry, plans before it changes anything:**
+
+1. `zypper refresh` refreshes the repositories. If a repository cannot be reached, the run says so and carries on with the metadata zypper already has, so one unreachable repository does not block patching.
+2. The agent asks zypper for the plan with `--dry-run` and prints it in the run output. It refuses the run, before changing anything, if the plan would **downgrade** a package or change its **architecture** or **vendor**. Removals are allowed, because an update can obsolete or replace a package, and each one is named in the run output: `Removing libcurl-mini4: zypper's plan removes it, usually because an update obsoletes or replaces it.` A dry run says `Would remove` instead.
+3. A real run applies the plan.
+
+| Run | openSUSE Leap and SLES | Tumbleweed and Slowroll |
+|---|---|---|
+| **Patch all** | `zypper patch --with-update`: every needed patch, then any update that no patch covers, such as packages from third-party repositories | `zypper dist-upgrade`, the only supported way to update a rolling release |
+| **Patch selected** | `zypper update <packages>` | `zypper update <packages>`, with a warning that a partial update of a rolling release is not supported upstream |
+
+**Tumbleweed with Packman or other OBS repositories.** `zypper dist-upgrade` keeps each package with the vendor it came from, and PatchMon refuses any plan that changes a package's vendor. If you switch packages to Packman or another vendor, run `zypper dup --allow-vendor-change` once by hand to make that move deliberately; later runs keep the new vendor and patch normally.
+
+Patch runs include patches that suggest a reboot, such as kernel updates, and accept licence prompts, so an unattended run does not silently skip them.
+
+**zypper updating itself.** When a patch updates zypper or libzypp, zypper installs that first and asks to be run again. The agent does so, up to three times in one run, and says so in the run output. A dry run cannot see past that step: it shows only zypper's own update and says that a real run will apply more.
+
+**Locked packages.** Packages locked with `zypper addlock` are left alone, and the run output names them. Selecting only locked packages fails the run before anything changes; remove the lock with `zypper removelock` to patch them.
+
+**The zypp lock.** If another process holds the zypp lock, for example PackageKit or an administrator running zypper, the agent waits 30 seconds and then fails the run, naming the cause. Retry when it has finished.
+
+**Exit codes** are reported in plain words. A run that needs a reboot (zypper exit code 102) or skipped a repository it could not refresh (106) succeeds with a note in the output. A run where packages were installed but an RPM script failed (107) is marked failed, so that someone checks the output and runs `zypper verify` on the host.
+
+**Dependency problems.** If zypper cannot plan an update without a choice, for example removing a package or skipping patches, PatchMon does not choose for you. The run fails and quotes zypper's problem and the solutions it offers. Resolve it once on the host with zypper, then run the patch again.
+
+Leap 16.0 containers made from the stock Proxmox template hit this on their first Patch all. The template ships `systemd-sysvcompat`, which the Leap 16.0 repository no longer carries, and the systemd update conflicts with it. Run `zypper rm systemd-sysvcompat` once on the container, then patch.
+
+**Transactional hosts.** openSUSE MicroOS, Leap Micro and SUSE Linux Micro have a read-only root filesystem and are updated with `transactional-update`. They report inventory, but patch runs are refused with an explanation, and nothing is changed.
+
+**Reboot required** is set when libzypp flags it after installing a kernel or another package that needs a reboot (`zypper needs-rebooting`), or when the running kernel is older than the newest installed one.
+
+#### Windows patching {#windows-patching}
+
+Windows hosts are patched from the same places as Linux hosts: Host Detail, the Packages page and the Patch wizard. The agent on the host must be **2.1.4 or later**. For an older agent the server refuses the run with "Update the PatchMon agent on this host to v2.1.4 or later to patch Windows"; update the agent first (**Host Info → Update Now**). In this fork, agents `2.1.4-fork.N` are refused too, with "Update the PatchMon agent on this host to patch Windows: fork agents 2.1.4-fork.N use the fork's former Windows patching": they patch with the fork's former runner, which ignores the **Windows Updates** / **Applications (winget)** scope of a Patch all and refuses a Patch selected. Fork agents from `2.1.5-fork.1` on use PatchMon's.
+
+##### What can be patched
+
+| Item | Installed by | Shown as |
+|---|---|---|
+| Windows Updates: cumulative, security, .NET, definition, driver and optional updates, and feature upgrades | The Windows Update Agent on the host, from the host's configured update source (Microsoft Update or WSUS) | Source **Windows Update** |
+| Applications that winget can upgrade | winget, by the app's exact winget Id | Source **winget** |
+| Applications found only in the registry | Nothing | **Not patchable** |
+| Microsoft Store apps | Nothing: they update through the Microsoft Store | The available update, with a **Microsoft Store app** badge; not selectable |
+| Apps pinned with `winget pin` | Nothing until the pin is removed | The available update, with a **Pinned in winget** badge; not selectable |
+
+The agent reads installed applications from the Windows registry and matches them against winget. PatchMon only ever asks winget to upgrade a package by its exact winget Id. An app that winget has no match for has no Id, so there is no safe way to tell winget which package to upgrade. These apps still report their available version, but they cannot be selected; the tooltip reads "Not patchable: this app was not found in winget. Update it with its own updater." Use the vendor's updater or your software deployment tool for them.
+
+Hosts without winget (it ships with the App Installer package, which Windows Server 2019 and 2022, Server Core and LTSC editions often do not have) list every app as Not patchable. Windows Updates still patch. Windows Server 2025 includes winget as standard.
+
+**Microsoft Store apps** (apps installed from the Store or as MSIX packages) keep showing their available update, but cannot be patched: "Microsoft Store app: updates through the Microsoft Store". The agent runs as the Local System account, and winget run as Local System only updates the machine's staged copy of a Store app, never the copy each user runs, so an upgrade would report success and change nothing. Let the Microsoft Store update them, or manage them with your Store or Intune policy.
+
+**Pinned apps.** An app you have pinned on the host with `winget pin add` also keeps showing its update, with a **Pinned in winget** badge, and cannot be selected: "Pinned with winget pin; remove the pin on the host to update it". Pinned apps are left out of Patch all. Remove the pin (`winget pin remove`) and wait for the next report to patch it.
+
+If you select a Store app or a pinned app anyway, for example from an out-of-date page, the wizard refuses the run and lists the app with the same reason.
+
+Windows Update rows also carry badges: **Security**, **Optional**, **Driver** and **Feature upgrade**.
+
+##### Patch all
+
+On a Windows host the wizard shows two scope boxes, both ticked by default. At least one must stay ticked:
+
+- **Windows Updates**: installs every pending Windows update except drivers, optional updates and feature upgrades.
+- **Applications (winget)**: upgrades each app that winget reports an upgrade for, one at a time.
+
+Patch all checks the host again when the run starts, so it installs whatever is pending at that moment, not what was pending when the run was queued or validated. Approving a validated Patch all works the same way.
+
+**Drivers, optional updates and feature upgrades are never part of Patch all.** Select them individually with **Patch selected**. Selecting a feature upgrade (for example a move to a new Windows 11 version) shows a warning in the wizard: "Feature upgrades download several GB, can take over an hour and need one or more restarts to finish."
+
+To keep something out of Patch all on one host, hide the update in Windows (hidden updates disappear from PatchMon too), or pin the app with `winget pin add`. Once the next report has seen the pin, the app is shown as pinned and Patch all leaves it out. If the pin was added after the last report, the agent still checks it before upgrading: the app is not upgraded and the item ends **Skipped** with "Pinned in winget: remove the pin to update it".
+
+##### Validate first
+
+Windows supports a dry run for both **Patch selected** and **Patch all**, so the wizard offers the **Validate** step for both. A dry run searches Windows Update and asks winget whether an upgrade is available. Nothing is downloaded or installed. Each item ends **Would install**, with its expected restart behaviour, **Not applicable**, or **Skipped** when it could not be installed as things stand: a Microsoft Store app, an app pinned in winget, an update that needs user input, or an update that cannot install until the host has restarted. You can validate up to 100 packages per Windows host in one run.
+
+Approve the result as you would on Linux. When you approve a validated **Patch selected** run, only the items that would install are carried into the real run.
+
+##### Per-item results
+
+Run Detail shows an **Updates** card above the terminal, with one row per update or app: **Name**, **Source**, **KB**, **Status**, **Result** (a hint plus the Windows or winget error code) and **Restart**. It refreshes while the run is active.
+
+| Status | Meaning |
+|---|---|
+| **Installed** | Installed by this run. |
+| **Installed with errors** | Windows reported the install as successful with errors. Counted as installed. |
+| **Installed, restart required** | Installed earlier and waiting for the host to restart. PatchMon does not install it again. |
+| **Already installed** | Installed before the run reached it, for example by Windows' own automatic updates. |
+| **Would install** | Dry run only: this would be installed. |
+| **Not applicable** | No longer offered by Windows Update (installed, superseded or withdrawn), no upgrade available, or an app installed for a single user (see below). |
+| **Skipped** | The run was stopped, the run time limit was reached, a restart is needed before more updates can install, the update needs interactive input, an earlier update in the run timed out while installing, the app was pinned with `winget pin` since the last report, or the app is a Microsoft Store app ("Microsoft Store app: it updates through the Store for each user, not as SYSTEM"). |
+| **Failed** / **Aborted** | The install did not succeed. The Result column has the code and a hint, for example "Application is in use: close the app and retry". |
+
+One failed item does not stop the others. The run ends **Failed** if any item failed or was aborted, and its summary lists the first few ("2 of 7 failed: ..."). Skipped items never fail a run. They are listed in the run's summary instead, for example "1 skipped: 7zip.7zip (pinned in winget)", and a run whose only non-successful items were skipped ends **Completed** with that summary shown as a note.
+
+##### Restarts
+
+**PatchMon restarts a Windows host only when the run asks for it** (the wizard's **Restart** option, see [Restarting the Host](#restarting-the-host)); with the default, **Never**, it does not. When an update needs a restart:
+
+- Run Detail shows a banner: "A restart is required to finish installing updates." and the item's **Restart** column is marked.
+- The host is flagged as needing a reboot as soon as the run ends, without waiting for the next report, and a `patch_reboot_required` notification is sent.
+- The host keeps showing **Reboot pending** until it has actually restarted, even if Windows' own restart signals clear earlier, with the reason "Restart required to finish a patch run". PatchMon notices the restart from the host's boot time on its next report or ping.
+- An app upgrade that finished while the app was open may leave some files to be replaced at the next restart. That item is marked as needing a restart with "Installed; some files will be replaced at the next restart."
+- An update that has installed and is waiting for the restart shows as **pending restart** in the host's package list and is not offered again.
+
+Restart the host when it suits you, or have PatchMon do it. If a restart is still pending from an earlier install, Windows may refuse further installs; those items end **Skipped** with "Restart pending from an earlier install; restart the host and run again."
+
+##### Stopping a run, and long runs
+
+**Stop Run** takes effect between items. The update or app being installed at that moment always finishes, because interrupting Windows servicing part-way is worse than waiting; the remaining items end **Skipped**. Cumulative updates and feature upgrades can run for a long time without output, so the agent writes a progress line every minute and the run is not timed out while it is still working. Each step has its own limit:
+
+| Step | Limit |
+|---|---|
+| Whole run that installs Windows Updates (a Patch all with **Windows Updates** ticked, or a Patch selected that includes an update) | 8 hours |
+| Whole run that only upgrades apps | 4 hours |
+| Searching for Windows Updates | 15 minutes |
+| Downloading the run's Windows Updates | 60 minutes, or 180 minutes when a feature upgrade is included |
+| Installing one Windows Update | 180 minutes, or 240 minutes for a feature upgrade |
+| Upgrading one app with winget | 30 minutes |
+
+A step that runs out of time says so. Windows usually carries on installing an update in the background after its install step times out, so the agent then asks Windows about that update once a minute for up to 10 minutes:
+
+- If Windows finishes it in that time, the item shows **Installed** with "Installed; Windows finished after the 180-minute limit", or **Installed, restart required** with "Installed; Windows finished after the 180-minute limit; restart the host to complete it". The run carries on with the next update.
+- If Windows still has not finished, the item ends **Failed** with "Install did not finish within 180 minutes. Windows may still be completing it; check after a restart." PatchMon does not start any more Windows Updates in that run: they end **Skipped** with "Not started: Windows Update was still installing a previous update". App upgrades still run, and the run ends **Failed**. Check the host after a restart and run the remaining updates again.
+
+Stopping the run during those 10 minutes ends the check straight away. The limits quoted above are for an ordinary update; for a feature upgrade the install limit is 240 minutes.
+
+##### Apps installed for a single user
+
+The agent runs as the Local System account, so winget acts on apps installed for all users. An app installed for one user only cannot be upgraded by the agent: it ends **Not applicable** with "Not found for the system account: the app is probably installed for a single user, which the agent cannot upgrade". Upgrade it from that user's session, or reinstall it for all users.
+
+##### WSUS-managed hosts
+
+If the host gets updates from WSUS, Windows Update only offers updates that WSUS has approved for it, so PatchMon only ever installs WSUS-approved updates. WSUS stays your approval gate and PatchMon decides when they install. If the host cannot reach its update server, items fail with "Cannot reach the update server or WSUS: check proxy, firewall, WSUS URL". WSUS does not affect winget, which uses its own sources.
+
+##### Licence terms and app sources
+
+Installing an item accepts its licence terms on your behalf: the Windows Update EULA where one applies, and winget's package and source agreements. winget installers come from the winget community repository and run as Local System on the host. You choose which apps to upgrade.
+
+##### Agent updates during a patch run
+
+Agent updates are held while a patch run is queued, validating or running on the host, on every operating system. **Update Now** is refused with "A patch run is in progress on this host. Try again when it finishes.", automatic updates wait, and an agent that is told to update mid-run refuses and leaves the update to its next check. The reverse also holds: a patch run that reaches the agent while it is downloading or installing its own update fails straight away with "the agent is updating itself; run the patch again in a few minutes". Run it again once the agent is back.
+
+The terminal pane on Run Detail shows Windows Update and winget progress instead of `apt-get` output.
 
 ---
 
@@ -1560,7 +1789,7 @@ The end-to-end flow for a single `patch_all` run is:
 
 1. You click **Patch all** on a Host Detail page. The **Patch Wizard** opens, pre-loaded with the host.
 2. You optionally override the policy (e.g. "Run immediately" on a host that has a delayed policy) and click the fire button.
-3. The browser calls `POST /patching/trigger` with `patch_type=patch_all`. Because `patch_all` cannot be dry-run, the run starts in `pending_approval` if you ticked "Submit for approval", or goes straight to `queued` otherwise.
+3. The browser calls `POST /patching/trigger` with `patch_type=patch_all`. Because `patch_all` cannot be dry-run on Linux and FreeBSD, the run starts in `pending_approval` if you ticked "Submit for approval", or goes straight to `queued` otherwise.
 4. The server inserts a `patch_runs` row, snapshots the effective policy onto it, and enqueues a `run_patch` task on the `patching` asynq queue. If the policy introduces a delay, asynq schedules the task for the future and the run status shows `scheduled`.
 5. When the task dequeues, the server sends a `run_patch` WebSocket message to the agent connected for that host.
 6. The agent flips the run to `running`, calls `apt-get --with-new-pkgs upgrade -y` (or the equivalent for the OS), and streams stdout/stderr back over `POST /patching/runs/{id}/output` in short chunks. On Debian and Ubuntu, `--with-new-pkgs` lets the upgrade install packages it does not already have, which is what a kernel ABI bump needs. Without it apt holds those upgrades back and they would keep reappearing as outdated after every run.
@@ -1611,7 +1840,7 @@ The wizard has a fixed six-step sequence, but it auto-skips steps that have no d
 |---|---|---|
 | 1 | **Hosts** | You entered from Packages (fleet rollout) and need to pick which hosts to patch. Hidden when the host is pre-locked. |
 | 2 | **Packages** | You entered with a multi-package list and want to trim it. Hidden for `patch_all` or single-package runs. |
-| 3 | **Validate** | `patch_package` only. Hidden for `patch_all` (cannot dry-run) and for Approve flows (validation already exists). |
+| 3 | **Validate** | `patch_package`, plus `patch_all` on Windows hosts. Hidden for `patch_all` on Linux and FreeBSD (cannot dry-run) and for Approve flows (validation already exists). |
 | 4 | **Timing** | Always shown. Review effective policy and optionally override to "run immediately". |
 | 5 | **Approval** | `patch_package` only. Choose "Approve & Patch now" or "Submit for approval". Hidden in Approve mode. |
 | 6 | **Submit** | Always shown. Final per-host summary and the fire button. |
@@ -1638,7 +1867,7 @@ What happens next on the server:
 - If the policy introduces a delay, the task is scheduled for the future and the run is shown as `scheduled` in Runs & History. Otherwise it goes straight to `queued`.
 - The browser deep-links into the **Run Detail** page so you can watch the live terminal.
 
-> **Note:** `patch_all` cannot be dry-run. The agent's bulk-upgrade path (`apt-get --with-new-pkgs upgrade`, `dnf upgrade`, `pkg upgrade`, `pacman -Syu`) does not support a reliable simulation mode. If you want a dry-run, patch specific packages instead.
+> **Note:** On Linux and FreeBSD, `patch_all` cannot be dry-run. The agent's bulk-upgrade path (`apt-get --with-new-pkgs upgrade`, `dnf upgrade`, `pkg upgrade`, `pacman -Syu`, `apk upgrade`) does not support a reliable simulation mode. On Alpine a real `patch_all` still runs `apk upgrade --simulate` first and stops before changing anything if the plan would downgrade or replace a package, or remove one listed in `/etc/apk/world`. If you want a dry-run, patch specific packages instead. Windows hosts can validate a Patch all; see [Windows patching](#windows-patching).
 
 ---
 
@@ -1655,6 +1884,10 @@ This is the richer flow and the one to use for anything security-sensitive. The 
 4. The wizard polls each run until it terminates. While you wait you see:
     - The per-host status badge (pending validation → running → validated).
     - A live terminal excerpt for the currently running host.
+
+    If the server has not dispatched the dry-run to the agent within 30 seconds, the host is shown as **Offline**; it will patch without validation, by approving that pending validation, once the host is back. Once the server has dispatched it to the agent, the wizard waits for the result, which matters on Windows where a Windows Update search can take several minutes. If the agent drops its connection meanwhile, the host shows **Agent reconnecting** until it returns. After 25 minutes the host is shown as **Still running**.
+
+    You can close the wizard or choose **Continue without waiting** at any point. Dry-runs already sent carry on and their results appear in Runs & History. Hosts still validating are left out when you submit; patch them from Runs & History once validation finishes. If you change the package selection after validating, a validated host is patched with the new selection without validation, and an offline host is left out until you cancel or delete its old validation in Runs & History.
 5. When the dry-run completes, the run transitions to `validated` and the wizard shows:
     - The final **Packages affected** list (what would be installed, always a superset of the original request because of dependency resolution).
     - An **Extra deps** badge if dependency resolution pulled in packages you didn't originally ask for.
@@ -1699,7 +1932,7 @@ Same as Flow B, but starting from the **Packages** page. The wizard discovers wh
 Once a run is fired and not delayed, the UI redirects you into `/patching/runs/{id}`. The page has:
 
 - A header with the host name, status badge, **Awaiting inventory report** pill (post-patch), and the primary action buttons for the current state (Approve & Patch, Retry Validation, Skip & Patch, Stop Run).
-- A left-side **Run summary** card: host, type, initiated by, approved by, started / completed timestamps, link to the validation run if any, patch policy in effect, and packages affected.
+- A left-side **Run summary** card: host, type, initiated by, approved by, started / completed timestamps, link to the validation run if any, patch policy in effect, and packages affected. A package name links to its Package Detail page while the package is in the inventory. Names that are no longer in it, such as a Windows update once it is installed, show as plain text.
 - A right-side **Shell output** terminal for the live log stream.
 
 #### Live log streaming
@@ -1739,7 +1972,7 @@ You can stop a run while it is in the `running` state. This is a hard stop with 
 
 ---
 
-### Restarting the Host
+### Restarting the Host {#restarting-the-host}
 
 Many updates (a kernel, Windows cumulative updates, a .NET runtime) only take effect after a restart. PatchMon can restart the host once a run is over, or on demand from the Host Detail page. The agent always hands the restart to the operating system's own scheduler (`InitiateSystemShutdownEx` on Windows, `shutdown -r +N` on Linux and FreeBSD), which warns signed-in users with the message you give and survives the agent being restarted.
 
@@ -1791,8 +2024,7 @@ The agent never restarts the host:
 
 - after a dry run (validation);
 - after a stopped run;
-- after a failed run on Linux (a half-applied transaction is better fixed before a restart);
-- on Windows, when the run reached its time limit, when an installer timed out and may still be running, or when the run failed before installing anything;
+- after a failed run (a half-applied transaction is better fixed before a restart). On Windows this includes a run that reached its time limit and one where an install timed out while Windows may still be finishing it;
 - while another patch run is in progress on the host, or when a restart or shutdown is already pending, scheduled by PatchMon or by someone else (logind's schedule on systemd, a waiting `shutdown` process on SysV init and FreeBSD, `InitiateSystemShutdown` on Windows). PatchMon never replaces a pending shutdown with its own;
 - when remote restarts are disabled on the host (see above).
 
@@ -1862,7 +2094,26 @@ The asynq worker picked up the task but cannot reach the agent, or the agent nev
 
 #### "package manager ... not supported for patching"
 
-The agent rejected the run because the host's detected package manager is not in the supported list (`apt`, `dnf`, `yum`, `pkg`, `pacman`). This is the error you see on Alpine (`apk`) hosts today. The run immediately transitions to `failed` with the message in `error_message`.
+The agent rejected the run because the host's detected package manager is not in the supported list (`apt`, `dnf`, `yum`, `pkg`, `pacman`, `apk`). Alpine hosts show this error until their agent is updated to 2.1.4 or later. The run immediately transitions to `failed` with the message in `error_message`.
+
+#### Alpine: "/etc/apk/world requires ... but ... is installed"
+
+A version constraint in `/etc/apk/world` no longer matches the installed package, so apk refuses every transaction. Nothing was changed. Edit that line in `/etc/apk/world` as the message suggests (pin it to the installed version, or remove the version), then run the patch again. `apk fix` fails the same way, so it does not help here.
+
+#### Alpine: "apk plans changes PatchMon does not apply automatically"
+
+The simulated plan contained a step the agent does not apply on its own, so it stopped before changing anything. The message lists the steps and the likely cause of each:
+
+- `Downgrading`: usually a repository, often a tagged one such as `@edge`, was removed or changed in `/etc/apk/repositories` while packages from it are still installed. Restore the repository or deal with those packages by hand.
+- `Purging` a package listed in `/etc/apk/world`: usually a conflict (`!name`) or a changed constraint in `/etc/apk/world`, or the package was renamed or replaced by another. Packages that are not in world are removed as normal clean-up and do not stop the run.
+- `Replacing`: a repository now serves a different build of a version that is already installed.
+- Anything else: apk printed a step this agent does not recognise.
+
+Run `apk upgrade --simulate` on the host to see the whole plan.
+
+#### Alpine: "another apk process held the package database"
+
+Another `apk` command held the database lock (`/lib/apk/db/lock`) for more than 30 seconds, for example an install someone was running by hand. Wait for it to finish and run the patch again.
 
 #### The run completes but the package inventory hasn't updated
 
@@ -1875,6 +2126,10 @@ sudo patchmon-agent report
 #### Approve returns 400 "Only validated... runs can be approved"
 
 Another operator already approved or deleted the run while you were looking at it. Reload Runs & History; the row will now be in `approved` or gone.
+
+#### "A patch run is already queued or in progress on this host"
+
+PatchMon allows one queued, validating or running patch run per host at a time, because package managers lock while they work and a second run would fail on the lock. The blocking run is listed under the **Active** status filter in Runs & History. Wait for it to finish, or stop or delete it, then start the new one; in a multi-host wizard, busy hosts are reported as failed and the other hosts go ahead. Runs waiting for a policy window show as **Scheduled** and do not block the host. If the host is still busy when the window arrives, the scheduled run is cancelled with the reason "Skipped: another patch run was in progress on this host when the scheduled window arrived". Runs that are not dispatched to the agent within 24 hours of becoming due (for example because the host stayed offline) are marked **Timed out** by the cleanup sweep, so they never block a host indefinitely.
 
 ---
 
@@ -1890,6 +2145,8 @@ Another operator already approved or deleted the run while you were looking at i
 ## Chapter 10: Patch Policies and Scheduling {#patch-policies-and-scheduling}
 
 A **patch policy** controls *when* an approved patch run actually fires on a host. Policies let you carve out maintenance windows, build in a delay for "I might change my mind" runs, or force an immediate execution on anything that matters. Assignments and exclusions let you apply a policy broadly (to a host group) while still carving specific hosts out of it.
+
+A policy never starts a run by itself, and PatchMon has no recurring patch schedule. A policy only affects runs that a user triggers (from the Patching wizard, **Patch all** on a host, or the Packages page): it decides whether each run executes immediately, after a delay, or at the next fixed time. Assigning a policy with a fixed time of 01:00 to a host therefore does nothing until someone queues a run for that host.
 
 This page walks through the policy model, how effective policies are resolved, the Settings UI, and how policies interact with run triggers.
 
@@ -2125,7 +2382,7 @@ From the left sidebar, click **Patching** and switch to the **Runs & History** t
 
 Deep-link filters are also supported via URL parameters:
 
-- `/patching?tab=runs&status=active`: queued + running
+- `/patching?tab=runs&status=active`: queued, pending validation and running (the runs that block a new run on the host)
 - `/patching?tab=runs&status=failed`: only failed runs
 - `/patching?tab=runs&status=completed`: only completed runs
 - `/patching?tab=runs&status=pending_approval&type=patch_all`: combined filter
@@ -2162,7 +2419,7 @@ The runs list is sorted by `created_at` descending by default, with newest runs 
 
 Two filters are available above the table:
 
-- **Status**: `All`, `Active (queued + running)`, `Queued`, `Pending validation`, `Pending approval`, `Validated (awaiting approval)`, `Approved`, `Scheduled`, `Running`, `Completed`, `Failed`, `Cancelled`.
+- **Status**: `All`, `Active (queued, validating or running)`, `Queued`, `Pending validation`, `Pending approval`, `Validated (awaiting approval)`, `Approved`, `Scheduled`, `Running`, `Completed`, `Failed`, `Cancelled`.
 - **Type**: `All`, `Patch all`, `Patch package`.
 
 Filters reset the pagination to page 1. Click **Clear filters** to remove both. The selected filters are also encoded in the URL, so you can bookmark or share a filtered view.
@@ -2189,7 +2446,7 @@ The rightmost **Actions** column shows action buttons specific to the row's curr
 
 **Approve** and **Skip & Patch** both route through the **Patch Wizard** in approve mode, even for a single row. This is a deliberate consistency choice: every path that turns a validation into a real run uses the same UI, so you get the per-host policy override UI for free (e.g. you can pick "Run immediately" at approval time even if the host normally has a delayed policy).
 
-**Retry** re-queues the dry-run task without opening the wizard. Use this after bringing an offline host back online. Only available for `patch_package` runs; `patch_all` cannot be re-validated because it cannot be dry-run.
+**Retry** re-queues the dry-run task without opening the wizard. Use this after bringing an offline host back online. Only available for `patch_package` runs, and for `patch_all` runs on Windows hosts; on Linux and FreeBSD `patch_all` cannot be re-validated because it cannot be dry-run.
 
 #### Bulk selection and bulk actions
 
@@ -2344,7 +2601,7 @@ Terminal runs (`completed`, `failed`, `cancelled`, `dry_run_completed`) cannot b
 
 ### Overview
 
-The PatchMon agent includes an optional **Docker integration** that discovers containers, images, volumes, and networks on the host and reports them to the PatchMon server. When enabled, the agent also subscribes to the Docker event stream and relays container lifecycle events (start, stop, die, pause, unpause, kill, destroy) as status updates, keeping the fleet-wide Docker inventory broadly in sync with what is running.
+The PatchMon agent includes an optional **Docker integration** that discovers containers, images, volumes, and networks on the host and reports them to the PatchMon server. When enabled, the agent also watches the Docker event stream and sends a fresh inventory within seconds of a container being created, started, stopped or removed, and it checks each image's registry for a newer image behind the same tag.
 
 This page covers what the integration does, how to enable it per host from the PatchMon UI, what the agent needs on the host, how `config.yml` reflects the toggle, and what to check when the integration doesn't report.
 
@@ -2357,9 +2614,9 @@ This page covers what the integration does, how to enable it per host from the P
 When enabled on a host, the agent:
 
 1. **Discovers inventory on each report**: lists all containers (running and stopped), images (including intermediate layers PatchMon elects to ignore), volumes (local / NFS / custom driver), and networks (bridge / host / overlay / macvlan / user-defined).
-2. **Streams container events in real time**: subscribes to the Docker daemon's event bus. Each relevant event (start, stop, die, pause, unpause, kill, destroy) is translated into a `container_start` / `container_stop` / `container_die` / `container_pause` / `container_unpause` / `container_kill` / `container_destroy` status event and pushed to the server over the agent's WebSocket.
+2. **Reacts to container changes**: subscribes to the Docker daemon's event bus. When a container is created, started, stopped, paused, unpaused, killed, or destroyed, the agent waits five seconds (so a burst of events such as `docker compose up` becomes one update), collects the inventory again and sends it. Container state in PatchMon is normally current within seconds.
 3. **Resolves image provenance**: for each image, PatchMon attempts to attribute it to a registry (Docker Hub, GHCR, GitLab, Quay, ECR, ACR, GCR, local, private) and makes the registry entry clickable when possible.
-4. **Tracks available updates**: compares the running image tag against available tags in the registry (where the registry allows it) and flags images with newer versions.
+4. **Checks images for updates**: asks each image's registry which image its tag points at now and compares that with the image on the host. It also notices containers still running an older image after a newer one has been pulled. See [Image Update Checks](#image-update-checks).
 5. **Feeds the Compliance module**: if compliance scanning is also enabled for the host, Docker Bench for Security can run as an additional scanner (see the Compliance chapter).
 
 The resulting data powers two places in the UI:
@@ -2509,6 +2766,7 @@ Typical messages:
 - `Docker socket not found`: Docker isn't installed, or the socket has a non-standard path.
 - `Failed to create Docker client`: the socket exists but the agent can't open a client; check permissions.
 - `Docker container event`: confirms the event stream is active and receiving events.
+- `Docker image update check finished`: an update check completed, with counts of images found up to date, with an update, or unknown. Set `log_level: debug` to see the reason for each unknown result.
 - `Docker daemon ping failed, retrying`: Docker is installed but unresponsive. The agent will keep retrying.
 
 For the full logging reference, see Managing the PatchMon Agent.
@@ -2543,9 +2801,11 @@ Once the **Docker integration** is enabled on one or more hosts, PatchMon aggreg
 
 This page is a guided tour of `/docker` (the fleet view), `/docker/hosts/:id` (per-host view), and the detail pages for containers, images, volumes, and networks.
 
+Each Docker report from a host replaces that host's containers, volumes and networks, so anything removed on the host disappears from PatchMon on the next report. If the agent cannot read one of these lists from Docker, the previous entries are kept rather than cleared. Images are shared between hosts. Each report also records which images are present on that host, and the daily inventory cleanup removes an image once no container uses it and no host still has it.
+
 **Module required:** `docker`. Plans without the module show a tier-badge prompt on the Docker tab and the `/docker` routes. Contact your PatchMon administrator to enable it.
 
-**Permission required:** `can_view_hosts` to view the inventory; `can_manage_hosts` to delete Docker resources from the UI.
+**Permission required:** `can_view_hosts` to view the inventory; `can_manage_docker` to delete Docker resources and to run **Check for updates** across the fleet; `can_manage_hosts` to run **Check for updates** on a single host.
 
 ### Getting to the Docker Page
 
@@ -2562,7 +2822,7 @@ Four summary cards sit above the tabs:
 | **Hosts with Docker** | Hosts actively reporting Docker inventory | – |
 | **Running Containers** | `running / total` counts across the fleet | – |
 | **Total Images** | Distinct images reported across all hosts | – |
-| **Updates Available** | Images PatchMon knows have newer tags in their registry | Opens the **Images** tab filtered to *Updates available* |
+| **Updates Available** | Images whose registry now has a different image for the tag in use. The line underneath shows how many containers need recreating and when the last update check reported | Opens the **Images** tab filtered to *Update available* |
 
 These figures come from the `/docker/dashboard` endpoint and are refreshed every **30 seconds** automatically while the page is open.
 
@@ -2608,7 +2868,7 @@ Filters:
 
 Actions:
 
-- **Delete** (trash icon): deletes the container via the agent. Requires `can_manage_hosts`. Errors are surfaced in an alert.
+- **Delete** (trash icon): deletes the container via the agent. Requires `can_manage_docker`. Errors are surfaced in an alert.
 
 #### Images tab
 
@@ -2618,9 +2878,11 @@ One row per image. Rows show:
 - Size.
 - Source (Docker Hub, GHCR, GitLab, Quay, ECR, ACR, GCR, local, private, unknown) as a coloured badge.
 - Container count: how many containers on which hosts reference this image.
-- Update indicator: a chip when a newer tag is available in the registry.
+- Update status: a badge such as **Update available** or **Up to date**, plus a **Recreate needed** badge when containers on some host are still running an older copy. See [Image Update Checks](#image-update-checks) for what each status means.
 
-Filters include source type and an **Updates available** filter (the same filter the top **Updates Available** card opens).
+Filters include source type and an update status filter: **Update available**, **Recreate needed**, **Up to date**, **Unknown**, and **Not checked**. The top **Updates Available** card opens the same view filtered to **Update available**.
+
+Users with `can_manage_docker` see a **Check for updates** button at the top of the page. It asks every connected Docker host to run its image update check now, and a message tells you how many hosts were asked and how many were skipped because their agent is offline. Results appear as each agent reports back.
 
 Clicking an image opens `/docker/images/:id`: the image detail page with a list of the hosts that have the image and the containers using it.
 
@@ -2658,8 +2920,9 @@ The URL `/docker/hosts/:id` (and the row link on the **Hosts** tab) opens a view
 
 - The host's friendly name, hostname, and a link back to the main Host Detail page.
 - Container and image counts, running / exited / paused breakdowns.
-- The host's container list, grouped by stack where available.
-- The host's image list.
+- The host's container list, grouped by stack where available, with each container's update status.
+- Every image on the host, including images no container uses, with the update status this host reported for each.
+- A **Check for updates** button (requires `can_manage_hosts`) that runs the image update check on this host now. The agent must be connected.
 
 This view is equivalent to the **Docker** tab on the host's main Host Detail page (see [Host Detail Page](#host-detail-page)). Either works. Pick whichever route you land on.
 
@@ -2669,7 +2932,7 @@ Each Docker resource has its own detail page. They follow the same pattern: top 
 
 #### Container detail: `/docker/containers/:id`
 
-Shows the container's name, image, status, ports, host, created and started timestamps, restart policy, command and entrypoint, labels, mounts, and networks.
+Shows the container's name, image, status, ports, host, created and started timestamps, restart count, restart policy, command and entrypoint, labels, mounts, and networks. The **Update Status** field shows **Recreate needed** when a newer image for the container's tag is already on the host, otherwise the update status of the container's image on that host.
 
 A **Similar containers** strip at the bottom lists other containers using the same image across the fleet, useful for "is this `redis:7` running anywhere else?" questions.
 
@@ -2679,10 +2942,10 @@ Shows repository, tag, digest, size, architecture, OS, labels, history (layers),
 
 Below, two lists:
 
-- **Hosts with this image**: every host pulling it, with the tag they currently have.
-- **Containers using this image**: every container across the fleet referencing this image.
+- **Hosts with this image**: every host that has the image, whether or not a container uses it.
+- **Containers using this image**: every container across the fleet referencing this image, with its update status.
 
-An **Updates** panel appears when a newer tag is available in the source registry.
+An update check table lists, for each host, the status, the digest of the image on the host, the digest the registry returned, the reason when the result is **Unknown**, and when the check ran. Digests are shortened; hover to see the full value.
 
 #### Volume detail: `/docker/volumes/:id`
 
@@ -2692,39 +2955,84 @@ Shows driver, mountpoint, size (when Docker reports it), labels, and options. Th
 
 Shows driver, scope, IPAM configuration, and options. The **Containers attached** list shows what's connected to the network.
 
+### Image Update Checks {#image-update-checks}
+
+PatchMon tells you when the tag a container runs, such as `nginx:1.27` or `postgres:16`, now points at a different image in its registry. That is how you find out that an image was rebuilt with security fixes under the same tag. It does not suggest newer version tags: it will not tell you that `nginx:1.28` exists when you run `nginx:1.27`.
+
+#### How a check works
+
+The agent on each host does the checking, not the PatchMon server:
+
+- For every tagged image on the host, the agent asks the image's registry which image the tag points at now (its digest) and compares it with the digest of the copy on the host.
+- It only asks for the digest. It does not pull or download the image, and the requests do not count towards Docker Hub's pull rate limits.
+- It uses the host's own network connection and the registry logins already on the host (from `docker login`), so private registries work wherever Docker itself can pull. Credentials are never sent to PatchMon.
+- Each image is checked once per run even when several containers use it.
+
+Checks run automatically on each agent about **2 minutes after the agent starts**, then **every 6 hours** by default. The interval, or switching the check off, is set per host in the agent's `config.yml` (see the Agent config.yml Reference in the Operator Guide). A check you request with **Check for updates** runs straight away, unless that host has the check switched off or a check is already running.
+
+The **Check for updates** button appears in two places:
+
+| Where | What it checks | Permission |
+|-------|----------------|------------|
+| Top of the `/docker` page | Every connected host with Docker data | `can_manage_docker` |
+| Per-host Docker view and the **Docker** tab on Host Detail | That host only | `can_manage_hosts` |
+
+Hosts whose agent is offline are skipped, so check them again once they reconnect.
+
+#### What the statuses mean
+
+| Status | Meaning |
+|--------|---------|
+| **Update available** | The registry has a different image for this tag than the one on the host. Pull the image and recreate the container to pick it up. |
+| **Recreate needed** | A newer image for the container's tag is already pulled on this host, but the container still runs the old one. Recreate the container (for example `docker compose up -d`). Shown for containers, and as a count on images. |
+| **Up to date** | The registry's image for this tag matches the one on the host. Hover to see when it was checked. |
+| **Unknown** | The check ran but could not reach a conclusion. Hover to see the reason (below). PatchMon never shows an inconclusive check as up to date. |
+| **Local build** | The image was built on the host rather than pulled, so there is no registry image to compare with. |
+| **Pinned digest** | A container refers to this image by its digest (`image@sha256:...`), so the image behind that reference cannot change. |
+| **Untagged** | The image has no tag to check, for example an old copy left behind after a newer pull took over its tag. |
+| **Not checked** | No check has reported for this image yet: the agent has not run one, the check is switched off, or the agent is older than this feature. |
+
+When different hosts report different results for the same image, the fleet-wide views show the most important one: **Update available** first, then **Unknown**, then **Up to date**. The image detail page shows each host's own result.
+
+Reasons for an **Unknown** result:
+
+| Reason shown | What to check |
+|--------------|---------------|
+| The registry rate limited the check | The registry refused more requests for now. The next run tries again. |
+| The registry rejected the credentials | The `docker login` on the host is wrong or has expired for this registry. |
+| The tag no longer exists in the registry | The tag was deleted or renamed upstream, or the image came from a registry you can no longer reach under that name. |
+| The registry could not be reached | The host has no outbound HTTPS access to the registry, DNS fails, or a proxy or firewall is in the way. |
+| An authentication method the agent does not support | The registry asked for a login scheme other than the standard token or basic login. |
+| Served over plain HTTP and not marked insecure | The registry has no HTTPS. Add it to `insecure-registries` in the Docker daemon configuration on the host, as you would to pull from it. |
+| The registry did not return a digest | The registry answered without identifying the image, or the local image has no digest for this repository. |
+
+When an image moves to **Update available** on a host, PatchMon raises a `container_image_update_available` event once for that host and image. It does not repeat on later checks while the update is still outstanding.
+
 ### How the Data Stays Current
 
 Docker data flows into PatchMon on two channels:
 
 #### Periodic inventory reports
 
-Every time the agent runs its regular report cycle (default: 60 minutes, configurable server-side), it enumerates containers, images, volumes, and networks and sends the snapshot to the server. The full inventory in `/docker` reflects the **last snapshot** from each host.
+On every check-in the agent collects containers, images, volumes, and networks and compares a fingerprint of them with what the server last received. When anything has changed, it sends the full snapshot. The inventory in `/docker` reflects the **last snapshot** from each host.
 
 To force an immediate refresh for a single host, open its **Host Detail** page and click **Fetch Report**.
 
-#### Real-time container events
+#### Container changes
 
-When the Docker integration is enabled, the agent also subscribes to the Docker event stream and pushes container lifecycle events over its existing WebSocket connection. The relevant event types are:
-
-- `container_start` (maps to `running`)
-- `container_stop` / `container_die` / `container_kill` (all map to `exited`)
-- `container_pause` (`paused`)
-- `container_unpause` (`running`)
-- `container_destroy` (`removed`)
-
-The server records these events against the container record so that, for example, a container crash is visible in the UI within seconds rather than waiting for the next full report.
+When the Docker integration is enabled, the agent also watches the Docker event stream. When a container is created, started, stopped, dies, is paused, unpaused, killed, or destroyed, the agent waits five seconds for any related events to finish, then collects and sends the whole inventory again. A container crash, or a stack brought up with `docker compose up`, is therefore visible in the UI within seconds, and the snapshot it sends also carries any image, volume, and network changes made at the same time.
 
 #### UI refresh cadence
 
 On top of those agent-driven pushes, the `/docker` page itself refreshes the dashboard summary every 30 seconds via polling, and per-tab queries refetch when you switch tabs. The manual **Refresh** button (top right, circular arrow) forces an immediate refetch of whichever tab is active.
 
-> **Tip:** If you change something on a host (start / stop a container, pull an image) and want to see it in the UI, the event should appear within a few seconds via the WebSocket push. A full refresh of image / volume / network inventory waits for the next report. Use **Fetch Report** on the Host Detail page if you can't wait.
+> **Tip:** Container changes appear within a few seconds. Changes that do not touch a container, such as pulling an image or creating a volume on its own, appear at the next check-in. Use **Fetch Report** on the Host Detail page if you can't wait.
 
 ### Deleting Docker Resources
 
 Containers, images, volumes, and networks can be deleted from their table rows (trash icon) or from their detail pages. Deletion:
 
-- Requires `can_manage_hosts`.
+- Requires `can_manage_docker`.
 - Opens a confirmation modal listing the resource and its host.
 - Sends a delete command to the agent over the WebSocket.
 - The agent executes the equivalent `docker rm` / `docker rmi` / `docker volume rm` / `docker network rm` and reports the outcome back.
@@ -2819,7 +3127,7 @@ The per-host **default profile** setting (Host Detail → Integrations → Compl
 
 Any host OS not listed has no SSG datastream available and OpenSCAP scans will be skipped on it. The scanner is still "available" in the integrations metadata if `oscap` is installed; it just has nothing to evaluate.
 
-> **SLES and OpenSUSE:** the datastreams above ship with the server and the agent already maps SUSE-family hosts to the right profiles, but these rows are not usable yet in practice. SUSE hosts cannot complete enrolment because the agent has no zypper backend (see the package manager table earlier in this guide), so they never reach the point of running a scan. These profiles become available once zypper support lands.
+> **SLES and OpenSUSE:** SUSE hosts need agent 2.1.4 or later to complete enrolment and run scans. Older agents fail every report with `unsupported package manager: unknown`.
 
 **Default per-host state:** OpenSCAP is **enabled by default** on every host that has compliance turned on. This is controlled by the `compliance_openscap_enabled` host flag, defaulted to `true` in 1.4.2 and preserved on upgrade.
 
@@ -3503,7 +3811,7 @@ The following alert types fire from the server code in 2.0. Each can be individu
 | `compliance_scan_failed` | compliance | A compliance scan errors out |
 | `container_stopped` | docker | A tracked Docker container stops unexpectedly |
 | `container_started` | docker | A previously-stopped container starts again |
-| `container_image_update_available` | docker | A newer image digest is available for a tracked container |
+| `container_image_update_available` | docker | An image update check finds that the registry has a different image for a tag on the host. Raised once per host and image |
 | `ssh_session_started` | remote_access | A user opens a web SSH session to a host |
 | `rdp_session_started` | remote_access | A user opens a web RDP session to a host |
 | `user_login` | system | A user signs in |
@@ -3511,7 +3819,9 @@ The following alert types fire from the server code in 2.0. Each can be individu
 | `account_locked` | system | An account is locked after repeated failures |
 | `user_created` | system | A new user is created |
 | `user_role_changed` | system | A user's role is changed |
-| `user_tfa_disabled` | system | A user's two-factor authentication is removed |
+| `user_tfa_disabled` | system | A user's two-factor authentication is removed, by the user or by an administrator's reset |
+| `sso_fallback_login` | system | A superadmin signs in with a password because the SSO provider is unreachable (see **Superadmin password login if SSO is down**) |
+| `sso_fallback_refused` | system | A superadmin without two-factor authentication gives the correct password while the SSO provider is unreachable, and is refused |
 
 If a type listed in the release notes is not in this table, it is not implemented in the server. Anything absent from the `alert_config` table is treated as enabled by default for backwards compatibility, but only types with emitters in the server code actually fire.
 
@@ -3625,13 +3935,16 @@ Each row exposes:
 | **Active** | Master switch for this alert type. When off, no alerts of this type are created and no notifications are emitted. |
 | **Severity** | Default severity applied to new alerts of this type. |
 | **Alert delay** | Seconds to wait before delivering the outbound notification. If a cancelling counterpart event (e.g. `host_recovered` for `host_down`) fires within the delay window, the notification is suppressed. Useful for flappy hosts. |
-| **Frequency** | For periodic checks only (`host_down`, `host_security_updates_exceeded`, `host_pending_updates_exceeded`). Minutes between checks. |
+| **Frequency** | For periodic checks only (`host_down`, `host_security_updates_exceeded`, `host_pending_updates_exceeded`). Minutes between checks. Any whole number of minutes is honoured. For the two update-threshold types a change applies from the next check without a restart; for `host_down` it applies after a server restart. |
+| **Reminder** | For `host_security_updates_exceeded` and `host_pending_updates_exceeded` only. Hours between reminder notifications while a host stays above the threshold. `0` or empty means no reminders. A reminder is sent at the first check after the interval has passed, so it can arrive up to one **Frequency** later. |
 | **Threshold** | For threshold alerts. Numeric threshold above which an alert fires. Units depend on the alert type: `host_security_updates_exceeded` and `host_pending_updates_exceeded` use a *count* (number of pending updates); `host_down` uses *seconds* (how long the agent's WebSocket can be disconnected before the alert fires). The `host_down` row shows a `sec` suffix to make this explicit; default is 30 seconds. |
 | **Auto-assign** | Toggle plus user picker: any new alert of this type is assigned to the chosen user automatically. |
 | **Retention** | Days to keep alerts of this type before cleanup. Empty = never auto-clean. |
 | **Auto-resolve** | Days after which active alerts auto-resolve if no one touches them. |
 
 Changes are staged locally. Use the **Apply** button on the top bar to save them, or **Discard** to revert. The browser warns you if you navigate away with unsaved changes.
+
+The update-threshold alerts (`host_security_updates_exceeded`, `host_pending_updates_exceeded`) notify once per host each time the threshold is crossed, whichever destinations the event is routed to. While the host stays above the threshold, later checks send nothing more unless **Reminder** is set, in which case each destination receives a reminder (title starting "Reminder:") at that interval until the host drops back. Once its count drops to the threshold or below, the next time it goes above the threshold sends a new notification. Switching the alert type off, or switching alerts off globally, clears every host, so switching it back on notifies again for hosts still above the threshold. To stop reminders for an alert, silence it. Reminders are held only while Silenced is the alert's current status, so unsilencing it, or recording another action such as assigning or acknowledging it, lets them resume at their usual interval. Resolving an alert, by hand or through **Auto-resolve**, while the host is still above the threshold does not stop reminders: the next reminder raises it again. Silencing needs the alert to exist in **Reporting**, so if these alert types are not routed to Internal Alerts there is nothing to silence and reminders continue until the host drops back. When you first set **Reminder**, hosts that have already been above the threshold for longer than the interval get a reminder at the next check.
 
 #### Cleanup
 
@@ -3714,6 +4027,8 @@ Pick this for **generic JSON webhooks, Discord, Slack, Mattermost or Rocket.Chat
 
 The generic JSON body also carries a top-level `text` key, alongside the structured `event_type`, `severity`, `title`, `message`, `reference` and `metadata` fields. Receivers that read the structured fields are unaffected, and any receiver that requires a `text` key works without extra configuration. Note that `text` is formatted in Slack-style markdown, so it contains `*bold*` markers and Slack link syntax such as `<https://…|View in PatchMon>`; a receiver that renders it as literal text will show that markup. On scheduled reports the `text` key is a short preview only, because the full report is already present in the `html` and `csv` fields.
 
+> **Blocked destination addresses.** For security, PatchMon rejects webhook and ntfy server URLs that point at the server's own loopback interface (`127.0.0.1`, `::1`) or at cloud-metadata and link-local addresses (`169.254.169.254`, the rest of `169.254.0.0/16`, `fe80::/10`, and the name `metadata.google.internal`). The URL is checked when you save the destination and again at delivery, against the address the hostname actually resolves to. Private LAN addresses (for example `10.x`, `172.16.x`, `192.168.x`) stay allowed, so you can still send notifications to an internal ntfy, Gotify or webhook receiver.
+
 #### Email (SMTP)
 
 | Field | Required | Notes |
@@ -3726,6 +4041,17 @@ The generic JSON body also carries a top-level `text` key, alongside the structu
 | **To** | Yes | Comma-separated list of recipients. |
 | **TLS mode** | Yes | Choose how the SMTP transport secures the connection. See **TLS modes** below. Defaults to **STARTTLS** for new destinations. |
 
+##### Authentication mechanisms
+
+When a username or password is set, PatchMon reads the `AUTH` mechanisms the relay advertises and picks one:
+
+- **PLAIN** whenever the relay offers it.
+- **LOGIN** when the relay offers LOGIN but not PLAIN. Microsoft 365 SMTP AUTH, for example, advertises LOGIN and XOAUTH2 but not PLAIN.
+
+Both mechanisms follow the same TLS rules: credentials are only sent once the connection is encrypted, or in **None (insecure)** mode with the cleartext opt-in described below. If the relay offers neither PLAIN nor LOGIN (for example only `CRAM-MD5` or `XOAUTH2`), PatchMon does not attempt to authenticate and the send fails at the `auth` stage with a message listing what the relay offered.
+
+If the relay does not advertise `AUTH` at all, PatchMon skips authentication and sends the message unauthenticated, even when a username and password are set. The relay then decides whether to accept it.
+
 ##### TLS modes
 
 PatchMon offers four TLS modes on every email destination. Pick the one your relay actually supports rather than leaving it on **Auto**, so a misconfigured server fails closed instead of silently downgrading to plaintext.
@@ -3737,7 +4063,7 @@ PatchMon offers four TLS modes on every email destination. Pick the one your rel
 
 ##### Authenticated relays without TLS
 
-Some internal relays require SMTP AUTH but do not offer TLS at all. By default PatchMon refuses that combination, because PLAIN authentication over cleartext puts the username and password on the wire in a form anyone on the network path can read.
+Some internal relays require SMTP AUTH but do not offer TLS at all. By default PatchMon refuses that combination, because PLAIN or LOGIN authentication over cleartext puts the username and password on the wire in a form anyone on the network path can read.
 
 If the relay is on a network you trust and you accept that trade-off, set **TLS mode** to **None (insecure)** and tick **Send credentials over an unencrypted connection** on the destination. PatchMon then authenticates in cleartext for that destination only.
 
@@ -3756,7 +4082,7 @@ Points worth knowing before you enable it:
 Saved email destinations have a **Send test email** button next to the standard **Test** action. Unlike **Test**, which enqueues a synthetic notification through the worker, **Send test email** performs a synchronous live SMTP probe directly from the API request and reports the result inline:
 
 - On success the toast confirms delivery and the recipients should receive a short test message.
-- On failure PatchMon reports which stage of the SMTP exchange failed: `validate` (the configuration is rejected before any network activity, for example a missing host, or a username set with TLS mode **None** without the cleartext credentials opt-in), `dial` (the TCP connection or implicit TLS handshake could not be established), `starttls` (the server did not advertise `STARTTLS` in the chosen mode), `auth` (the relay rejected the credentials), or `send` (the relay accepted the session but rejected the recipients or message). The toast includes the underlying error message returned by the relay.
+- On failure PatchMon reports which stage of the SMTP exchange failed: `validate` (the configuration is rejected before any network activity, for example a missing host, or a username set with TLS mode **None** without the cleartext credentials opt-in), `dial` (the TCP connection or implicit TLS handshake could not be established), `starttls` (the server did not advertise `STARTTLS` in the chosen mode), `auth` (the relay rejected the credentials, or offers neither PLAIN nor LOGIN), or `send` (the relay accepted the session but rejected the recipients or message). The toast includes the underlying error message returned by the relay.
 
 This is the fastest way to diagnose a TLS or auth misconfiguration without trawling through server logs. The probe respects the same `can_manage_notifications` permission as editing the destination.
 
@@ -3905,6 +4231,8 @@ Per-type **Alert delay** in **Alert Lifecycle** applies *before* the route fan-o
 | `container_stopped` | `container_started` |
 | `host_security_updates_exceeded` | `host_security_updates_resolved` |
 | `host_pending_updates_exceeded` | `host_pending_updates_resolved` |
+
+A delayed `host_down` is sent once per outage: later checks that find the host still down do not queue another notification (an alert resolved by hand while the host is still down is not raised again), and a new outage after the host recovers notifies again.
 
 ### Editing and deleting routes
 
@@ -4149,7 +4477,7 @@ Because the schedule is stored as a cron string plus a timezone, daylight-saving
 
 ### Overview
 
-PatchMon ships an in-browser SSH terminal that lets operators connect to any monitored Linux/FreeBSD host without leaving the web UI. The terminal is a full xterm with line editing, colours, scrollback, resize, and keyboard shortcuts, powered by a WebSocket between the browser and the PatchMon server.
+PatchMon ships an in-browser SSH terminal that lets operators connect to any monitored Linux, FreeBSD or Windows host without leaving the web UI. Windows hosts need the OpenSSH Server feature enabled first; see [Windows hosts](#web-ssh-terminal-windows). The terminal is a full xterm with line editing, colours, scrollback, resize, and keyboard shortcuts, powered by a WebSocket between the browser and the PatchMon server.
 
 Two connection modes are supported:
 
@@ -4169,14 +4497,14 @@ Web SSH is shipped in PatchMon from 1.4.0 onwards; in 2.0 it is provided under t
 
 Users without `can_use_remote_access` attempting to open the terminal are rejected with HTTP `403 Access denied` during the WebSocket handshake.
 
-The **Hosts** related permission (`can_manage_hosts`) is required to see the "Open Terminal" control on the host detail page in the first place.
+The **Terminal** tab on the host detail page is only shown to users whose role has `can_use_remote_access`.
 
 ### Opening a terminal
 
 1. Go to **Hosts** and click the host you want to connect to.
 2. On the **Host Detail** page, open the **Terminal** tab (or click the **SSH Terminal** button in the header).
 3. Pick the **Connection mode** (Direct or Proxy).
-4. Enter the SSH **username** (defaults to `root`; the last-used username per host is cached in your browser's local storage).
+4. Enter the SSH **username** (defaults to `root`, or `Administrator` on Windows hosts; the last-used username per host is cached in your browser's local storage and takes precedence).
 5. Choose an **Authentication method**:
    - **Password**: type the host password.
    - **Key**: paste the private key (OpenSSH or PEM format) and the passphrase if encrypted.
@@ -4198,7 +4526,7 @@ In Direct mode, the PatchMon server dials the host directly:
 4. Browser sends the `connect` message with auth credentials, terminal size, and connection mode.
 5. Server dials `host.ip` (falling back to `host.hostname`) on the chosen port, authenticates with password or private key, and starts an interactive shell.
 
-**Host key verification**: the server uses `~/.ssh/known_hosts` on the PatchMon container if it exists, and falls back to `InsecureIgnoreHostKey` otherwise. Direct mode does **not** prompt the user to accept host keys. Keys are accepted on first use when the fallback is active. Supply a `known_hosts` file via volume mount for production deployments that require strict verification.
+**Host key verification (trust on first use)**: host keys are now always verified against a PatchMon-managed `known_hosts` file. The first time a host is contacted its key is recorded and the connection is accepted; on later connections a key that no longer matches is rejected as a possible man-in-the-middle and the session fails. The insecure "accept any key" behaviour has been removed. In the stock Docker image this file is not on a persistent volume, so recorded keys reset when the container is recreated and the next connection re-records them. To keep keys across upgrades, set `PATCHMON_SSH_KNOWN_HOSTS` to a path on a mounted volume.
 
 **Use Direct mode when:**
 - The PatchMon server has network reach to the host on the SSH port.
@@ -4213,7 +4541,7 @@ Flow:
 1. Browser → ticket + WebSocket as in Direct mode.
 2. Server receives the `connect` message with `connection_mode: "proxy"`.
 3. Server generates a 16-byte session ID, stores a proxy session record, and sends `{ "type": "ssh_proxy", "session_id": …, "host": "localhost", "port": 22, "username": … }` over the agent's existing WebSocket.
-4. The agent dials `<proxy_host>:<proxy_port>` (defaults `localhost:22`) **on its own host** and pipes the stream back to the server over the WebSocket as `ssh_proxy_data` frames.
+4. The agent dials `<proxy_host>:<proxy_port>` (defaults `localhost:22`) **on its own host** and pipes the stream back to the server over the WebSocket as `ssh_proxy_data` frames. For security, `proxy_host` is restricted to the host's own registered address (its IP, hostname or interface address) or `localhost`; it cannot be used to reach other machines through the agent.
 5. The server forwards those frames to the browser as terminal `data` events.
 
 **Agent config requirement.** Proxy mode requires `integrations.ssh-proxy-enabled: true` in the agent's `/etc/patchmon/config.yml`. This setting is not pushed from the server. It has to be set manually and the agent service restarted. If the agent rejects the request, the terminal shows *"Agent not connected"* or an agent-supplied error.
@@ -4222,6 +4550,46 @@ Flow:
 - The host has no inbound SSH exposure (behind NAT, in a restricted VPC, behind a corporate firewall).
 - You already trust the agent's outbound connection to PatchMon and want to reuse it.
 - You want to SSH to `localhost` through the agent without punching holes through the edge firewall.
+
+### Windows hosts {#web-ssh-terminal-windows}
+
+The Terminal tab works on Windows hosts through the OpenSSH Server that ships with Windows. PatchMon does not install or enable it for you. On Windows hosts the tab shows a short reminder of this above the connection form.
+
+**Enable OpenSSH Server.** Run in an elevated PowerShell on the host:
+
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Start-Service sshd
+Set-Service -Name sshd -StartupType Automatic
+```
+
+If the feature is already installed, the first command changes nothing; you still need to start the service and set it to start automatically.
+
+**Allow port 22.** Installing the feature normally creates the `OpenSSH-Server-In-TCP` firewall rule. Check, and create it if it is missing:
+
+```powershell
+if (-not (Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -DisplayName "OpenSSH Server (sshd)" `
+        -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
+}
+```
+
+The firewall rule matters for **Direct** mode, where the PatchMon server dials the host. **Proxy** mode connects to `localhost:22` from the agent on the host itself, so it needs only the service running and `ssh-proxy-enabled: true` in `C:\ProgramData\PatchMon\config.yml`.
+
+**Username.** On Windows hosts the username defaults to `Administrator`. Any local administrator or domain account allowed to log on works; for a domain account use `DOMAIN\user` or `user@domain`. On Windows client editions (Windows 10 and 11) the built-in Administrator account is disabled by default, and on non-English installs it has a localised name (for example `Administrateur`), so sign in with your own administrator account instead. A username you have used before on that host is remembered and takes precedence.
+
+**Key authentication.** For an account in the local Administrators group, Windows OpenSSH ignores the user's own `~\.ssh\authorized_keys` and reads `C:\ProgramData\ssh\administrators_authorized_keys` instead. The file must be writable only by Administrators and SYSTEM, or sshd silently refuses the key:
+
+```powershell
+Add-Content -Path C:\ProgramData\ssh\administrators_authorized_keys -Value "ssh-ed25519 AAAA... you@example"
+icacls.exe C:\ProgramData\ssh\administrators_authorized_keys /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
+```
+
+Accounts that are not administrators use `C:\Users\<user>\.ssh\authorized_keys` as usual. Paste the matching private key into the **SSH Key** field in the Terminal tab.
+
+**Shell.** The session opens in `cmd.exe`, the Windows OpenSSH default. Type `powershell` to switch for the rest of the session. To change the default for every SSH login on the host, set the `DefaultShell` value under `HKLM:\SOFTWARE\OpenSSH` on the host; PatchMon uses whatever shell sshd starts.
+
+**Terminal or RDP?** The Terminal tab gives you a command line over SSH and works with password or key authentication. The [RDP tab](#rdp-via-guacamole) gives you the full Windows desktop through Guacamole and needs `rdp-proxy-enabled` on the agent instead. Use the terminal for quick commands and scripts, and RDP when you need the GUI.
 
 ### One-time tickets for WebSocket auth
 
@@ -4284,7 +4652,10 @@ Server logs also record each upgrade and ticket consumption under `ssh-terminal 
 | *"Agent not connected."* in Proxy mode | Host's agent WebSocket is down. Verify from **Host Detail → Status**; restart the agent service on the host. |
 | Agent rejects with *"ssh-proxy-enabled must be true"* | Set `integrations.ssh-proxy-enabled: true` in the agent's `config.yml` and restart the agent service. |
 | *"Failed to parse private key"* | Key is encrypted: add the passphrase. Or the key format is unsupported; use OpenSSH or PEM PKCS#8. |
-| Connection established but first-time host key warning on server log | The PatchMon container has no `known_hosts` for this host. Add one via a volume mount, or accept that first-use keys are auto-trusted. |
+| Windows host: *"connection refused"* or a timeout | OpenSSH Server is not installed or `sshd` is stopped, or (Direct mode) port 22 is blocked by the Windows firewall. See [Windows hosts](#web-ssh-terminal-windows). |
+| Windows host: key is rejected but the password works | The account is a local administrator, so sshd reads `C:\ProgramData\ssh\administrators_authorized_keys`, not the user's own file. Check that file and its permissions. |
+| *"host key verification failed … (possible man-in-the-middle)"* | The host presented a different SSH key than the one recorded on first use. If the host was legitimately rebuilt or its key rotated, remove its line from the PatchMon-managed `known_hosts` file and reconnect to record the new key. |
+| *"Proxy host must be the host's own address or localhost"* | In Proxy mode the agent will only connect to the host's own registered address or `localhost`. Connecting to an unrelated address through the agent is blocked by design. |
 
 ### Related pages
 
@@ -4297,8 +4668,6 @@ Server logs also record each upgrade and ticket consumption under `ssh-terminal 
 
 ## Chapter 22: RDP via Guacamole {#rdp-via-guacamole}
 
-> **Known issue (2.0.0).** The RDP connection flow has a known bug in PatchMon 2.0.0. Sessions may fail to establish, disconnect early, or return opaque errors in certain environments. A fix is planned for the next release. See Release Notes 2.0.0 for details. If RDP is mission-critical for your rollout, validate the workflow in a staging instance before relying on it in production.
-
 ### Overview
 
 PatchMon 2.0 lets you open a full RDP session to a **Windows host** from your browser, with no RDP client installed locally and no inbound RDP port exposed to the outside world. The session travels:
@@ -4307,26 +4676,9 @@ PatchMon 2.0 lets you open a full RDP session to a **Windows host** from your br
 - From the PatchMon server into a `guacd` sidecar, which speaks the RDP protocol.
 - From `guacd` through a short-lived TCP proxy to the host's own PatchMon agent, which forwards to `localhost:3389` on the Windows host.
 
-This is a one-time ticketed connection with keyboard, mouse, and clipboard support. Screen size is configurable, and NLA/TLS/legacy RDP is auto-negotiated.
+This is a one-time ticketed connection with keyboard, mouse, and clipboard support. The remote desktop follows the size of the RDP panel, and NLA/TLS/legacy RDP is auto-negotiated.
 
 RDP is provided under the **remote_access** capability module.
-
-### Known issue: 2.0.0 RDP bug
-
-> **Before using RDP in production, read this.**
->
-> Version 2.0.0 has a known bug in the RDP connection flow that can cause:
-> - Sessions to fail handshake with generic errors.
-> - Ticket resolution issues that surface as *"invalid or expired ticket"* on otherwise valid sessions.
-> - Early disconnects after a successful handshake under some network conditions.
->
-> A fix is planned for the next release. In the meantime:
->
-> - If RDP is critical, stay on the last 1.4.x release that works for you, or retry the session.
-> - Always verify the **Web SSH Terminal** works end-to-end first. It has no such known issue and is a good baseline check for connectivity and agent health.
-> - When reporting RDP issues, include the **server log** lines tagged `rdp-ticket` and `rdp tunnel`, and the agent's `rdp_proxy_*` log lines.
->
-> Full context: Release Notes 2.0.0, section **Known issues**.
 
 ### Architecture
 
@@ -4344,22 +4696,21 @@ RDP is provided under the **remote_access** capability module.
 
 Key components:
 
-- **`guacd`**: Apache Guacamole's daemon, shipped as a sidecar container in PatchMon's Docker Compose (`guacamole/guacd:1.6.0`). Runs on `4822/tcp` inside the `patchmon-internal` network. No public ports.
+- **`guacd`**: Apache Guacamole's daemon, shipped as a sidecar container in PatchMon's Docker Compose (`guacamole/guacd:1.6.0`). It shares the server container's network namespace (`network_mode: "service:server"`) and listens on `4822/tcp` there. No public ports.
 - **PatchMon server**: acts as the Guacamole WebSocket tunnel endpoint and owns the RDP ticket store. It asks the host's agent to set up a local TCP proxy, then hands that proxy to `guacd`.
 - **Agent proxy**: on receiving `rdp_proxy` over its WebSocket, the agent opens a local TCP bridge and forwards bytes between PatchMon and `localhost:3389` on the Windows host. Requires `integrations.rdp-proxy-enabled: true` in the agent config.
 - **Windows host**: runs the standard Windows RDP service on `127.0.0.1:3389` (bound to localhost via the agent; no inbound exposure needed).
 
-See Installing PatchMon Server on Docker for the sidecar configuration as deployed by the standard compose file. If you run PatchMon without the sidecar, install `guacd` separately (`apt install guacd` / `yum install guacd`) and set `GUACD_ADDRESS` to point at it.
+`guacd` must run on the same machine (or in the same network namespace) as the PatchMon server, because the server hands it a per-session port on `127.0.0.1`. See Installing PatchMon Server on Docker for the sidecar configuration as deployed by the standard compose file. Without Docker, install `guacd` on the server itself (`apt install guacd` / `yum install guacd`) and leave `GUACD_ADDRESS` at its default of `127.0.0.1:4822`; the server starts `guacd` for you.
 
 ### Permissions and module
 
 | Access | Requirement |
 |--------|-------------|
 | Open an RDP session | **admin**, **superadmin**, or `can_use_remote_access` + `can_view_hosts` on your role |
-| Create RDP ticket for a host | `can_manage_hosts` (needed to see the control on the host detail page in the first place) |
 | Deployment | `remote_access` capability module enabled |
 
-Users without the required permission are rejected at `POST /auth/rdp-ticket` with `403 Access denied`.
+The **RDP** tab on a Windows host is only shown to users whose role has `can_use_remote_access`. Requests from users without the required permission are rejected at `POST /auth/rdp-ticket` with `403`.
 
 ### Prerequisites
 
@@ -4369,15 +4720,17 @@ Before you can open an RDP session to a host, all of these must be true:
 2. The host's **PatchMon agent is online** and connected via its WebSocket.
 3. The agent's `config.yml` has `integrations.rdp-proxy-enabled: true`. This setting is **not** pushable from the server. You edit it on the host and restart the `PatchMonAgent` service.
 4. RDP is enabled on the Windows host, and the agent's user context can reach `localhost:3389`. (The default NLA mode is fine; PatchMon negotiates security automatically.)
-5. The PatchMon server is able to reach `guacd` at its configured address (defaults to `127.0.0.1:4822` or `guacd:4822` depending on deployment). If not, RDP ticket creation fails early with `503 guacd is not reachable on the PatchMon server`.
+5. The PatchMon server is able to reach `guacd` at its configured address, `127.0.0.1:4822` by default and in the standard Docker Compose stack. If not, RDP ticket creation fails early with `503 guacd is not reachable on the PatchMon server`.
 
 ### Opening an RDP session
 
 1. Go to **Hosts** and click the Windows host.
 2. On **Host Detail**, open the **Remote Access** area and click **Open RDP** (or the RDP icon in the toolbar).
 3. Enter the Windows **username** and **password** for the account to sign in as.
-4. Optionally adjust the **Screen size**. Defaults to `1024 × 768`. Allowed range is `320–8192` on each axis; values outside this range are clamped.
+4. Check the **Keyboard layout**. It must match the keyboard layout of the Windows session (for example **English (UK)** for a UK-layout host). It defaults to the closest layout for your browser language, and PatchMon remembers your choice for each host in this browser.
 5. Click **Connect**.
+
+There is no screen-size setting. The RDP panel fills about three quarters of the browser window's height (at least 540 pixels), and the session opens at the panel's size and follows it when you resize the browser window or go full-screen.
 
 The server then:
 
@@ -4392,18 +4745,18 @@ Once connected you see the Windows sign-in screen (or desktop, if NLA authentica
 ### Credentials handling
 
 - Username and password are sent once over HTTPS to `POST /auth/rdp-ticket` and stored **encrypted** in the RDP ticket record alongside the session ID, host ID, and screen dimensions.
-- The ticket is **single-use** and expires quickly (tens of seconds). When `guacd` consumes it to set up the tunnel, the stored credentials are forwarded to `guacd` and then to RDP. PatchMon itself does not keep them after the session starts.
+- The ticket is **single-use** and expires after **5 minutes** if it is not used. When the browser opens the tunnel, the server consumes the ticket and forwards the stored credentials to `guacd` and then to RDP. PatchMon itself does not keep them after the session starts.
 - For environments where Windows asks for a certificate, the default guacd config uses `ignore-cert=true` to accept the self-signed certificate Windows generates out of the box, matching `mstsc.exe` behaviour. Hardened per-host overrides are a candidate for a future release.
 - Security mode is negotiated as `any`, which lets FreeRDP pick the strongest common mode (NLA → TLS → legacy RDP). Hardcoding NLA would break hosts with Negotiate/TLS-only security layers and refuses blank-credential sessions.
-- Empty username and password are allowed (some hosts accept blank-credential sessions) but `guacd` usually fails handshake in that case; the server logs `missing_username_or_password: true` so you can spot it in the audit trail.
+- Empty username and password are allowed (some hosts accept blank-credential sessions) but `guacd` usually fails handshake in that case; the server logs `missing_username: true` when the username is empty so you can spot it in the audit trail.
 
 ### One-time tickets
 
 RDP tickets work like SSH tickets:
 
 - 64-character hex string, `crypto/rand` entropy.
-- Stored in Redis with a short TTL.
-- Consumed atomically on first use by `doGuacConnect`.
+- Stored in Redis with a 5-minute TTL.
+- Consumed atomically on first use (a single Redis `GETDEL`), so two tunnels racing for one ticket cannot both get it.
 - Bound to a user ID, a host ID, a proxy session ID, a port, the encrypted credentials, and the requested screen width/height.
 - Validated against the user's current active state. A deactivated user cannot re-use a still-live ticket.
 
@@ -4411,10 +4764,12 @@ You never see or handle the ticket directly; the UI requests it under the hood w
 
 ### Keyboard layouts and clipboard
 
-- **Keyboard**: the Guacamole client maps the browser's keydown events to scancodes. For most Latin keyboards (en-GB, en-US) this "just works". For non-Latin layouts, match the Windows layout to the browser's. Guacamole has no per-session keyboard-layout selector in PatchMon 2.0.
-- **Clipboard**: bidirectional text clipboard is supported via Guacamole's native clipboard channel. Copy in Windows, paste in the browser, or vice versa. Rich clipboard (images, file lists) is not supported.
+- **Keyboard**: keys are translated using the **Keyboard layout** chosen on the connect form, which must match the layout of the Windows session. If it does not, symbols arrive wrong; for example, with English (US) selected on a UK-layout host, `\` arrives as `#` and `@` and `"` swap. Supported layouts: English (UK and US), Czech, Danish, French (France, Belgium, Canada, Switzerland), German (Germany, Switzerland), Hungarian, Italian, Japanese, Norwegian, Polish, Portuguese (Portugal, Brazil), Romanian, Spanish (Spain, Latin America), Swedish and Turkish.
+- **Clipboard**: text only, in both directions. Rich clipboard (images, file lists) is not supported.
+  - **Browser to Windows**: press `Ctrl+V` (`Cmd+V` on macOS) in the RDP panel. PatchMon copies your browser clipboard to Windows and then sends `Ctrl+V`, so Windows pastes the text you copied locally.
+  - **Windows to browser**: text you copy in Windows is placed on your browser clipboard automatically when PatchMon is served over HTTPS. Browsers block automatic clipboard writes on plain HTTP, so on an HTTP deployment the copied text appears in a **Remote clipboard** box above the desktop instead; select it and copy it from there.
 - **Mouse**: primary, secondary, and wheel. Mouse-wheel-click middle button is supported.
-- **Full-screen**: toggle via your browser's F11/fullscreen mode. Guacamole resizes the RDP session to the browser viewport where the host allows dynamic resolution.
+- **Full-screen and resizing**: use the full-screen button in the RDP panel. When the panel changes size, PatchMon asks Windows to change the session resolution to match, about half a second after you stop resizing. Hosts that do not support dynamic resolution keep their original size, and the desktop is scaled to fit.
 
 Printer redirection, audio, drive mapping, and USB forwarding are **not** enabled in 2.0.
 
@@ -4422,18 +4777,21 @@ Printer redirection, audio, drive mapping, and USB forwarding are **not** enable
 
 | Limit | Default | Source |
 |-------|---------|--------|
-| Concurrent RDP sessions per server | **50** | `rdpproxy.DefaultMaxSessions` |
+| Concurrent RDP sessions per server | **200** | `rdpproxy.DefaultMaxSessions` |
+| RDP connection attempts per user | **10 per minute** | `rdpTicketRateLimit` |
+| Session whose ticket is never used | Released after **5 minutes** | `rdpproxy.unattachedTimeout` |
 | Per-session idle timeout | **30 minutes** | `rdpproxy.sessionIdleTimeout` |
 | `guacd` preflight timeout | 2 seconds | `guacdPreflightTimeout` |
 | Agent handshake timeout | 12 seconds | `agentHandshakeTimeout` |
 
-Exceeding the concurrency cap returns `503 Too many concurrent RDP sessions on this server, please try again later.`
+Exceeding the concurrency cap returns `503 Too many concurrent RDP sessions on this server, please try again later.` (`code: max_sessions`). A user who requests more than 10 RDP connections in a minute gets `429 Too many requests` until the minute is up. Each click on **Connect** reserves a session slot while the agent opens its side of the connection; a slot whose ticket is never used is released after 5 minutes.
 
 ### Disconnecting
 
-- **Manual disconnect**: close the browser tab or click the disconnect control in the RDP panel. The server tears the session down, tells the agent to close the TCP bridge, and releases the Redis ticket record.
+- **Manual disconnect**: close the browser tab or click the disconnect control in the RDP panel. The server tears the session down and tells the agent to close its connection to `localhost:3389`, so Windows sees the client disconnect and moves the session to *Disconnected*. The ticket was already removed from Redis when the tunnel opened.
 - **Windows sign-out**: the RDP session closes normally; the tunnel stays open for a brief grace period before cleanup.
-- **Idle close**: after 30 minutes of no data flow the session is killed server-side.
+- **Agent goes offline**: if the host's agent loses its connection to the server (agent restart, network drop, host reboot), every RDP session to that host ends with an error in the browser straight away, rather than leaving a frozen desktop. Connect again once the agent is back.
+- **Idle close**: after 30 minutes of no data flow the session is killed server-side. A browser tab left open keeps data flowing, so in practice an idle session ends when your PatchMon login session expires and the page signs you out.
 
 ### Auditing
 
@@ -4445,28 +4803,31 @@ Every successful RDP ticket creation fires an `rdp_session_started` event:
 
 Route this event type in [Notification Routes and Delivery Log](#notification-routes-and-delivery-log) if you want a live audit trail of who is signing into Windows hosts from PatchMon.
 
-Server logs include `rdp-ticket` and `rdp session opened` lines with the session ID, user ID, host ID, negotiated security posture, and a `missing_username_or_password` field. Use these to triage incidents; the session ID ties everything together.
+Server logs include `rdp-ticket` and `rdp session opened` lines with the session ID, user ID, host ID, the requested security posture, and a `missing_username` field. When a session ends, an `rdp proxy session closed` line records the session ID, user ID, host ID, the reason (`guacd_closed`, `server_closed`, `agent_closed`, `agent_disconnected`, `idle_timeout`, `ticket_unused` or `agent_error`) and the duration in seconds. Use these to triage incidents; the session ID ties everything together.
 
 ### Troubleshooting
 
 | Symptom | Response from the server | Likely cause and fix |
 |---------|-------------------------|----------------------|
-| `guacd is not reachable on the PatchMon server.` | `503`, `code: guacd_unavailable` | The sidecar is not running. Check `docker compose ps guacd`, or install `guacd` on the host and set `GUACD_ADDRESS`. |
+| `guacd is not reachable on the PatchMon server.` | `503`, `code: guacd_unavailable` | The sidecar is not running, or `GUACD_ADDRESS` is not `127.0.0.1:4822`. Check `docker compose ps guacd`, or install `guacd` on the server itself. |
 | `The PatchMon agent on this host is not connected.` | `503`, `code: agent_disconnected` | Agent is offline. Start / restart the `PatchMonAgent` service on the host. |
 | `The PatchMon agent did not respond to the RDP proxy request in time.` | `504`, `code: agent_timeout` | The agent is connected but its handler is stuck, or blocked by firewall. Check agent logs for `rdp_proxy` entries. |
 | *rdp proxy is not enabled* (via `rdp-proxy-enabled`) | `502`, `code: agent_rdp_disabled` | Set `integrations.rdp-proxy-enabled: true` in the agent `config.yml` and restart the agent. |
 | *invalid host* | `502`, `code: agent_invalid_host` | Proxy host format rejected (reserved for future per-target proxies). |
 | *connection refused* / *no route to host* on port 3389 | `502`, `code: rdp_port_unreachable` | RDP is not running on the Windows host, or a local firewall blocks `localhost:3389`. Enable RDP on the host. |
+| *guacd could not reach the RDP session* after **Connect** | Guacamole status `519` on the tunnel | The ticket was issued, but the session was refused or dropped before the desktop started. Usual causes: Remote Desktop is disabled on the host; `guacd` cannot connect back to the PatchMon server's session listener (deploy it as in the shipped Docker Compose file, or on the same host as the server); or `guacd` or the server restarted mid-session. |
 | `RDP is only available for Windows hosts` | `400` | Non-Windows host. Use the [Web SSH Terminal](#web-ssh-terminal) instead. |
+| `Too many requests. Try again later.` | `429` | More than 10 RDP connection attempts by one user in a minute. Wait for the time in the `Retry-After` header. |
+| *This RDP ticket is invalid, expired or already used.* | Tunnel closes with Guacamole status `516` | The ticket was over 5 minutes old, had already been used, or the user lost permission. Click **Connect** again. |
 | `Forbidden: origin not allowed` in WebSocket upgrade | `403` | Your browser's `Origin` header isn't in PatchMon's `CORS_ORIGIN` allow-list. Update `CORS_ORIGIN` (or the dynamic origin resolver) to include your PatchMon URL and restart. |
-| Guacamole handshake fails repeatedly with a valid user and password | Check `rdp tunnel guacd handshake failed` in the server log. This is the 2.0.0 known-issue scenario; consult the release notes and retry. |
+| Every Docker session fails straight after **Connect** with *Server refused connection* or *Security negotiation failed*, whatever the credentials | | `guacd` is not sharing the server's network namespace, or cannot write its home directory. Compare your `docker-compose.yml` with the current one: the `guacd` service needs `network_mode: "service:server"` and a `/home/guacd` tmpfs, and the server needs `GUACD_ADDRESS=127.0.0.1:4822`. See the upgrade note in the operator guide. |
+| Guacamole handshake fails repeatedly with a valid user and password | | Check `rdp tunnel guacd handshake failed` in the server log and the `guacd` container log. |
 
 ### Related pages
 
 - [Web SSH Terminal](#web-ssh-terminal)
 - [AI Terminal Assistant](#ai-terminal-assistant)
 - Installing PatchMon Server on Docker
-- Release Notes 2.0.0
 
 ---
 
@@ -4486,10 +4847,12 @@ Four providers are supported in 2.0, each with a curated list of models:
 
 | Provider | Default model | Additional models |
 |----------|---------------|-------------------|
-| **OpenRouter** | `anthropic/claude-3.5-sonnet` | Claude 3 Haiku, GPT-4o, GPT-4o Mini, Gemini Pro 1.5, Llama 3.1 70B |
-| **Anthropic** | `claude-sonnet-4-20250514` | Claude 3.5 Sonnet, Claude 3.5 Haiku |
+| **OpenRouter** | `anthropic/claude-sonnet-5.5` | Claude Haiku 5.5, GPT-4o, GPT-4o Mini, Gemini 2.5 Flash, Llama 3.1 70B |
+| **Anthropic** | `claude-sonnet-5-5` | Claude Opus 5.5, Claude Haiku 5.5 |
 | **OpenAI** | `gpt-4o-mini` | GPT-4o, GPT-4 Turbo |
-| **Google Gemini** | `gemini-1.5-flash` | Gemini 1.5 Pro, Gemini 2.0 Flash (experimental) |
+| **Google Gemini** | `gemini-2.5-flash-lite` | Gemini 2.5 Flash, Gemini 2.5 Pro |
+
+If a saved model has since been retired by its provider, PatchMon uses that provider's default model instead, so the assistant keeps working without you re-saving the settings.
 
 Pick one provider per PatchMon deployment. To change providers, edit the AI settings. The API key is cleared automatically when you switch, and you'll be asked to enter a new one for the new provider.
 
@@ -4698,8 +5061,8 @@ Organisation-wide control.
 |----------------|-------|--------------------------|
 | `can_view_users` | View Users | See the user list and account details |
 | `can_manage_users` | Manage Users | Create, edit and delete user accounts |
-| `can_manage_superusers` | Manage Superusers | Manage `superadmin` accounts and elevated privileges |
-| `can_manage_settings` | Manage Settings | System configuration, OIDC / SSO, AI, alert config, enrollment tokens |
+| `can_manage_superusers` | Manage Superusers | Manage `superadmin` accounts and elevated privileges, and turn OIDC / SSO on or off or change its provider, client credentials, redirect URI, local login, the password fallback during an SSO outage, user auto-creation, email trust, role sync and role mapping |
+| `can_manage_settings` | Manage Settings | System configuration, OIDC / SSO (the provider and role mapping also need `can_manage_superusers`), AI, alert config, enrollment tokens |
 | `can_manage_notifications` | Manage Notifications | Configure notification destinations and routing rules |
 | `can_export_data` | Export Data | Download and export data and reports |
 
@@ -4732,11 +5095,13 @@ To create one:
    - **Preset** (optional): four quick-start presets are available:
      - **Read Only:** just the Monitoring & Visibility group
      - **Operator:** everything except the Administration group
-     - **Admin:** every permission
+     - **Admin:** every permission. Only a `superadmin` can use this preset; for anyone else the role is refused because it includes `can_manage_superusers`.
      - **Clear All:** start from zero
    - **Permissions:** tick / untick individual permissions, or use the **Select all / Deselect all** shortcut on each group header.
 4. Watch the counter at the bottom (`n/20 permissions selected`) as a sanity check.
 5. Click **Create Role**.
+
+> **You can only grant permissions you hold.** Unless you are a `superadmin`, a role you create or edit may only contain permissions your own role has. Saving a role with any other permission is refused with a message naming the permissions you lack. For example, an `admin` cannot create a role with `can_manage_superusers`, so the **Admin** preset only works for a `superadmin`.
 
 The new role appears as a new column in the matrix and is selectable when creating or editing users.
 
@@ -4747,6 +5112,8 @@ The new role appears as a new column in the matrix and is selectable when creati
 3. Tick / untick as needed, then click **Save**.
 
 Changes take effect immediately. Any session held by a user with that role has its in-memory permissions refreshed on their next request.
+
+You cannot edit or delete a role that holds a permission your own role lacks.
 
 #### Deleting a Custom Role
 
@@ -4774,7 +5141,7 @@ Go to **Settings → Users** and click **Add User** in the top-right.
 
 Click **Add User**. The account is created immediately and can sign in straight away.
 
-> **Role escalation protection:** You cannot create a user with a role that's more privileged than your own. Only `superadmin` users can create new `admin` or `superadmin` accounts. Non-superadmin accounts that hold the `can_manage_superusers` permission can also create and manage `superadmin` accounts.
+> **Role escalation protection:** Only a `superadmin` can make someone an `admin`. Other than that, you can only give a user a role whose permissions are all held by your own role. A non-superadmin can create and manage `superadmin` accounts only if their role holds every permission, including `can_manage_superusers`.
 
 #### Self-Service Sign-Up
 
@@ -4783,7 +5150,7 @@ PatchMon can also let users register themselves rather than having an admin invi
 1. Go to **Settings → Users**.
 2. Scroll to **User Registration Settings**.
 3. Tick **Enable User Self-Registration**.
-4. Pick a **Default Role for New Users**: the role that self-registered accounts are assigned.
+4. Pick a **Default Role for New Users**: the role that self-registered accounts are assigned. The same rule as assigning a role applies: only a `superadmin` can choose `admin` or `superadmin`, and anyone else can only choose a role whose permissions are all held by their own role. A save that breaks this rule is refused.
 5. Click **Save Settings**.
 
 A sign-up link now appears on the login page. Anyone who can reach the login page can create an account.
@@ -4801,8 +5168,9 @@ A sign-up link now appears on the login page. Anyone who can reach the login pag
 Important side effects:
 
 - **Sessions are revoked.** When a user's role changes, all of their existing JWT sessions are invalidated on the server. They must sign in again. This ensures the old role's privileges cannot be replayed from an existing browser tab.
-- **You cannot change your own role.** The API rejects a self-role change with "Cannot change your own role". This is a deliberate safety net: two admins must cooperate to demote each other.
-- **You cannot promote a user above yourself.** An `admin` cannot promote a user to `superadmin`. Only a `superadmin` can create or promote to `superadmin`, and likewise only `superadmin` can assign the `admin` role.
+- **You cannot change your own role.** The API rejects a self-role change with "Cannot change your own role".
+- **You can only change the role of a user whose current role is strictly below yours.** An admin cannot change another admin's role, so one admin cannot demote another and then take over the account. Only a superadmin can change an admin's role. A superadmin can change anyone's role except their own.
+- **You cannot promote a user above yourself.** You can only assign a role whose permissions are all held by your own role, so an `admin` cannot promote a user to `superadmin`. Only a `superadmin` can assign the `admin` role.
 
 #### Resetting a User's Password
 
@@ -4813,6 +5181,19 @@ Important side effects:
 After a reset, all of that user's sessions and trusted-device records are revoked. This is the standard post-compromise response. The user must sign in with the new password on every device.
 
 > You cannot reset the password of an inactive user. Reactivate them first.
+
+#### Unlinking a User's SSO Identity
+
+When a user signs in with OIDC / SSO, PatchMon binds their account to that identity at that provider. If the identity changes, for example because the user was deleted and re-created at the provider, or you moved to a different provider (including a different realm or application on the same server), their SSO login is refused with "Unable to sign in with this account". After a provider migration, unlink each existing SSO user so they can sign in through the new provider.
+
+1. Click the **Edit** (pencil) icon on the user's row.
+2. Under **SSO identity**, click **Unlink SSO identity** and confirm.
+
+Their next SSO login links the account to the new identity, keeping their role and settings, provided the identity provider sends a verified email address that matches the account. The section only appears for accounts that are linked.
+
+- You can only unlink users whose role is strictly below yours (your role holds every permission theirs grants, and at least one more), and never your own account. A superadmin can unlink anyone except themselves. This is stricter than editing, because unlinking and then changing the email address would hand an SSO-only account to someone else.
+- Every unlink, and every refused attempt, is written to the `audit_logs` table (event `user_oidc_unlink`).
+- If **Trust unverified email** is on in **Settings > OIDC / SSO**, the verified-email check is skipped, so whoever next signs in with that address claims the account. Ask the user to sign in straight after you unlink. While the setting is on, superadmins cannot be unlinked.
 
 ---
 
@@ -4830,6 +5211,7 @@ Effects:
 - All their sessions are revoked immediately.
 - All their trusted devices are revoked (so re-activating them later cannot reuse a "remember this device" cookie that predates the deactivation window).
 - The user's row is shown with a red **Inactive** badge in the users table.
+- A sign-in attempt with a wrong password gets the usual `Invalid credentials` message. Only someone who enters the account's correct password is told `Account is disabled`, so the message cannot be used to find out which accounts exist.
 
 To re-enable: edit and tick **Active** again.
 
@@ -4845,23 +5227,17 @@ Restrictions:
 - You cannot delete your own account.
 - You cannot delete the last `superadmin` (the API refuses).
 - You cannot delete the last `admin` if there are no `superadmin` users (ensures at least one admin always exists).
-- You cannot delete a user who holds a role that's more privileged than yours.
+- You cannot delete a user whose role holds a permission yours lacks.
 
 ---
 
 ### How Permissions Are Evaluated
 
-- **Admin and Super Admin** have their permissions read from the `role_permissions` table like every other role: the middleware does not short-circuit their checks. Their rows grant every permission, and the UI does not let you edit them; a row edited directly in the database does change what they can do. When this fork adds `can_restart_hosts`, it grants it to `admin`, `superadmin` and every role that has `can_manage_patching`.
-- **Every other role** (built-in or custom) has its permissions read from the database at each request. Changes made in **Settings → Roles** take effect on the user's next API call; no restart required.
-- **Role hierarchy for user management** is enforced separately from the permissions above:
-  - `superadmin` → rank 100
-  - `admin` → rank 90
-  - `host_manager` → rank 50
-  - custom roles → rank 30 (mid-tier)
-  - `user` → rank 20
-  - `readonly` → rank 10
+- **Every role, including Admin and Super Admin,** has its permissions read from the `role_permissions` table on each request; there is no built-in bypass. By default `superadmin` holds every permission and `admin` holds every permission except `can_manage_superusers`. Their rows cannot be edited from the UI, so a change to them can only come from direct database access. When this fork adds `can_restart_hosts`, it grants it to `admin`, `superadmin` and every role that has `can_manage_patching`.
+- Changes made in **Settings → Roles** take effect on the user's next API call; no restart required.
+- **Role hierarchy for user management** is based on permissions, not on role names. One role is at or below yours when every permission it grants is also granted to your role. A `superadmin` is above every other role.
 
-You can only modify, delete, or reset the password of users whose role rank is less than or equal to your own. This is distinct from the permission checks. Even if a custom role were granted `can_manage_users`, its holder still could not touch `admin` or `superadmin` accounts unless they additionally had `can_manage_superusers`.
+You can only assign, modify, delete, or reset the password of users whose role is at or below yours, and you can only create, edit or delete roles that are at or below yours. Changing a user's role and unlinking an SSO identity need a role strictly above the target's current role (see Unlinking a User's SSO Identity). Custom roles are compared by their permissions, not their names, so a custom role that holds all of an admin's permissions plus at least one more outranks `admin` and can change an admin's role, reset their 2FA or unlink their SSO identity. This is enforced separately from the permission checks. A custom role granted `can_manage_users` therefore cannot touch an account whose role has, for example, `can_manage_settings` unless it holds `can_manage_settings` too.
 
 ---
 
@@ -5091,7 +5467,7 @@ There is no "enforce for everyone" option in the wizard. This decision is always
 
 ### Admin Recovery: User Has Lost Their Authenticator
 
-PatchMon does not have a dedicated "admin reset MFA" button. Recovery is handled through the standard account-recovery flow, which implicitly disables 2FA in a safe way:
+If the user still has a backup code, they can recover on their own. Otherwise an administrator resets their 2FA from the Users page.
 
 #### Option A: User has a backup code
 
@@ -5100,27 +5476,47 @@ Ask them to sign in with a backup code (see [Using a backup code](#using-a-backu
 1. **Profile → Multi-Factor Authentication → Disable TFA** to remove the old authenticator secret entirely, and then re-enable with the new phone.
 2. Or **Regenerate Codes** to get a fresh set of backup codes without touching the authenticator.
 
-#### Option B: User has no backup codes and no authenticator
-
-An administrator must reset the account:
+#### Option B: An administrator resets the user's 2FA
 
 1. Sign in as a user with `can_manage_users` (admin, superadmin, or any custom role with that permission).
 2. Go to **Settings → Users**.
-3. Find the affected user and click **Reset Password**.
-4. Set a new password and communicate it over an out-of-band secure channel.
+3. Find the affected user and click the **Reset 2FA** icon (a crossed-out shield). It only appears for users who have 2FA turned on.
+4. Enter **your own** password, and your own 2FA code if your account uses 2FA.
+5. Optionally tick **Also set a new temporary password** and enter one twice. **If you suspect the account is compromised, tick this.** Give the temporary password to the user over a separate, secure channel.
+6. Click **Reset 2FA**.
 
-> **Password reset alone does not disable 2FA.** The user will still be prompted for a TOTP or backup code after their first login with the new password.
+The reset:
 
-If the user still cannot produce a code, you have two further options:
+- removes the user's authenticator secret and backup codes;
+- revokes every trusted ("Remember me") device for that user;
+- signs the user out of every session, so they have to sign in again.
 
-- **Deactivate, then reactivate the account.** Edit the user, untick **Active**, save (this also wipes their trusted devices), then tick **Active** again. 2FA is still enabled on the account, so this alone does not solve the missing-authenticator problem.
-- **Delete and re-create the user** as a last resort. You lose the user's ID, notification preferences, and any artefacts keyed to their account, so prefer the backup-code route wherever possible.
+On their next sign-in the user enters their password and is taken straight to a **Set up two-factor authentication** screen. They cannot reach any other page, and the server refuses every other API call from that session, until they scan the new QR code, enter a code and save their new backup codes. They can also sign out from that screen.
 
-> **Feature gap:** A "wipe 2FA on another user" admin action is on the roadmap. If you hit this frequently, consider moving your deployment to OIDC / SSO so that MFA is managed by the IdP (see Setting Up OIDC / Single Sign-On).
+If you set a temporary password, the user's old password stops working straight away. When they sign in with the temporary password they first see a **Choose a new password** screen, and must replace it before the 2FA setup screen appears. Neither the temporary password nor the password they had before the reset is accepted as the new one. Until then the server refuses every API call from that session except changing the password, reading their own profile and signing out. Only this checkbox forces a password change; the separate **Reset Password** action works as before.
+
+Forced re-enrolment only guarantees 2FA at that point: PatchMon has no setting that makes 2FA mandatory, so the user can still turn it off from their profile afterwards. Without the temporary password option, anyone who knows the user's current password can sign in and enrol their own authenticator, so tick it if that password may be known to someone else.
+
+Accounts linked to an OIDC / SSO provider, and accounts without a local password, are not forced to re-enrol, because their MFA is managed by the identity provider. The reset still clears any local 2FA they had. If an account is linked to an identity provider after a reset, the requirement lapses for the same reason.
+
+Rules the server enforces:
+
+| Rule | Detail |
+|------|--------|
+| Permission | `can_manage_users` is required. |
+| Role | You can only reset users whose role is strictly below yours: your role must hold every permission theirs grants, and at least one more. An admin cannot reset another admin or a superadmin. A superadmin can reset anyone except themselves. Two roles with the same permissions, or with different ones, cannot reset each other. |
+| Your own account | Not allowed here. Use your profile instead. |
+| Confirmation | Your password is always required, and your 2FA code (or a backup code) if you have 2FA. Wrong 2FA codes count towards your own `MAX_TFA_ATTEMPTS` lockout. |
+| SSO-only administrators | An administrator who signs in only through OIDC has no local password to confirm with, so cannot use this action. Ask an administrator with a local password. |
+| Deactivated users | Can be reset, so you can clear 2FA before reactivating an account. |
+| Reset Password afterwards | Until the user has finished setting up their account again, only a superadmin or someone with a higher role than theirs can use **Reset Password** on them. This stops a peer setting a password and enrolling their own authenticator on the account. |
+| Rate limit | 10 attempts per administrator per 15 minutes, counted per signed-in administrator rather than per IP. |
+
+Every reset is written to the server log and to the `audit_logs` table (event `user_tfa_reset`), and so is every refused attempt from the password check onwards: a wrong password or 2FA code, a role you cannot reset, an unknown user, or a user without 2FA. A successful reset also raises the `user_tfa_disabled` notification event, so any alert route you have for "2FA disabled" fires for it.
 
 #### Direct database workaround (self-hosted only)
 
-If you are self-hosting and absolutely need to clear 2FA on a user without backup codes, a DBA can clear the user's `tfa_enabled`, `tfa_secret` and `tfa_backup_codes` columns directly in the `users` table, then force a password reset from the UI. This is a last resort. Make a backup first, and never do this on PatchMon Cloud (where direct database access is not available).
+You should only need this when no administrator with a local password can perform the reset above. On a self-hosted install a DBA can clear the user's `tfa_enabled`, `tfa_secret` and `tfa_backup_codes` columns directly in the `users` table, then force a password reset from the UI. This is a last resort. Make a backup first, and never do this on PatchMon Cloud (where direct database access is not available).
 
 ```sql
 -- Replace 'alice' with the affected username. Make a backup first.

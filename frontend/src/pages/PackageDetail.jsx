@@ -25,10 +25,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import PatchWizard from "../components/PatchWizard";
+import Tooltip from "../components/ui/Tooltip";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { usePageRefresh } from "../hooks/usePageRefresh";
 import { formatRelativeTime, packagesAPI } from "../utils/api";
+import {
+	isPacmanHost,
+	PACMAN_SELECTED_PATCH_UNSUPPORTED,
+} from "../utils/patchSupport";
+import {
+	hostOsType,
+	isBlockedUpdateReason,
+	isPendingRestart,
+	isWindowsOs,
+	RESTART_REQUIRED_BADGE,
+	windowsBadges,
+	windowsPatchInfo,
+	windowsSourceLabel,
+} from "../utils/windowsPatching";
 
 function formatRepoName(name) {
 	if (!name) return "\u2014";
@@ -37,15 +52,130 @@ function formatRepoName(name) {
 	return name;
 }
 
-// A host is "patchable" for a specific package if it has a pending update.
-// Windows hosts included: the agent installs Windows Updates (WUA) and WinGet
-// apps by the name the inventory reported.
-const isHostPatchable = (host) => !!host.needsUpdate;
+const isWindowsHost = (host) => isWindowsOs(hostOsType(host));
+
+const isHostPatchable = (host) => {
+	if (isPacmanHost(host)) return false;
+	return isWindowsHost(host)
+		? windowsPatchInfo(host).patchable
+		: !!host.needsUpdate;
+};
+
+const WindowsBadges = ({ host }) => {
+	const { t } = useTranslation();
+	if (!isWindowsHost(host)) return null;
+	const badges = windowsBadges(windowsPatchInfo(host)).filter(
+		(b) => b.key !== "not-patchable" && b.key !== "security",
+	);
+	return badges.map((b) => (
+		<span
+			key={b.key}
+			className={`${b.className} w-fit`}
+			title={b.title ? t(b.title) : undefined}
+		>
+			{t(b.label)}
+		</span>
+	));
+};
+
+const SourceCell = ({ host }) => {
+	const { t } = useTranslation();
+	if (isWindowsHost(host)) {
+		const info = windowsPatchInfo(host);
+		const label = windowsSourceLabel(info);
+		if (label) {
+			return (
+				<span
+					className="badge-secondary text-xs"
+					title={info.reasonText ? t(info.reasonText) : undefined}
+				>
+					{t(label)}
+				</span>
+			);
+		}
+	}
+	if (host.sourceRepoName) {
+		return (
+			<span className="badge-secondary text-xs">
+				{formatRepoName(host.sourceRepoName)}
+			</span>
+		);
+	}
+	return null;
+};
+
+const UpToDateBadge = ({ host, className = "" }) => {
+	const { t } = useTranslation();
+	return isPendingRestart(host) ? (
+		<span
+			className={`${RESTART_REQUIRED_BADGE.className} ${className}`}
+			title={t(RESTART_REQUIRED_BADGE.title)}
+		>
+			{t(RESTART_REQUIRED_BADGE.label)}
+		</span>
+	) : (
+		<span className={`badge-success ${className}`}>{t("Up to Date")}</span>
+	);
+};
+
+const NotPatchableTag = ({ host }) => {
+	const { t } = useTranslation();
+	if (isPacmanHost(host) && host.needsUpdate) {
+		return (
+			<Tooltip content={t(PACMAN_SELECTED_PATCH_UNSUPPORTED)}>
+				<span
+					// biome-ignore lint/a11y/noNoninteractiveTabindex: focus opens the explanation for keyboard users
+					tabIndex={0}
+					className="badge-secondary w-fit"
+				>
+					{t("Patch all only")}
+				</span>
+			</Tooltip>
+		);
+	}
+	if (!isWindowsHost(host) || !host.needsUpdate) return null;
+	const info = windowsPatchInfo(host);
+	if (info.patchable || isBlockedUpdateReason(info.reason)) return null;
+	return (
+		<span
+			className="badge-secondary w-fit"
+			title={info.reasonText ? t(info.reasonText) : undefined}
+		>
+			{t("Not patchable")}
+		</span>
+	);
+};
+
+const PackageNotFound = () => {
+	const { t } = useTranslation();
+	return (
+		<div className="card p-6">
+			<div className="text-center py-8">
+				<Package className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
+				<p className="text-secondary-500 dark:text-white">
+					{t("Package not found")}
+				</p>
+				<p className="text-sm text-secondary-400 dark:text-white mt-2">
+					{t(
+						"This package is not in the package inventory. For example, Windows updates leave the inventory once they are installed.",
+					)}
+				</p>
+				<Link
+					to="/packages"
+					className="btn-outline inline-flex items-center gap-2 mt-6 min-h-[44px]"
+				>
+					<ArrowLeft className="h-4 w-4" />
+					{t("Back to Packages")}
+				</Link>
+			</div>
+		</div>
+	);
+};
 
 const PackageDetail = () => {
 	const { t } = useTranslation();
 	const { packageId } = useParams();
-	const decodedPackageId = decodeURIComponent(packageId || "");
+	const decodedPackageId = packageId ?? "";
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const toast = useToast();
@@ -119,6 +249,7 @@ const PackageDetail = () => {
 		queryFn: () =>
 			packagesAPI.getById(decodedPackageId).then((res) => res.data),
 		enabled: !!decodedPackageId,
+		retry: (count, err) => err?.response?.status !== 404 && count < 1,
 	});
 
 	// Fetch hosts that have this package (backend filters by search, paginates)
@@ -226,6 +357,10 @@ const PackageDetail = () => {
 		);
 	}
 
+	if (packageError?.response?.status === 404) {
+		return <PackageNotFound />;
+	}
+
 	if (packageError) {
 		return (
 			<div className="space-y-6">
@@ -254,16 +389,7 @@ const PackageDetail = () => {
 	}
 
 	if (!packageData) {
-		return (
-			<div className="space-y-6">
-				<div className="text-center py-8">
-					<Package className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
-					<p className="text-secondary-500 dark:text-white">
-						{t("Package not found")}
-					</p>
-				</div>
-			</div>
-		);
+		return <PackageNotFound />;
 	}
 
 	const pkg = packageData;
@@ -296,6 +422,13 @@ const PackageDetail = () => {
 						) : (
 							<span className="badge-warning">{t("Update Available")}</span>
 						)
+					) : (packageData.host_packages || []).some(isPendingRestart) ? (
+						<span
+							className={RESTART_REQUIRED_BADGE.className}
+							title={t(RESTART_REQUIRED_BADGE.title)}
+						>
+							{t(RESTART_REQUIRED_BADGE.label)}
+						</span>
 					) : (
 						<span className="badge-success">{t("Up to Date")}</span>
 					)}
@@ -588,14 +721,14 @@ const PackageDetail = () => {
 																{host.currentVersion || t("Unknown")}
 															</span>
 														</div>
-														{host.sourceRepoName && (
+														{(host.sourceRepoName || isWindowsHost(host)) && (
 															<div className="flex items-center gap-2">
 																<span className="text-xs text-secondary-500 dark:text-white">
-																	{t("Repo:")}
+																	{isWindowsHost(host)
+																		? t("Source:")
+																		: t("Repo:")}
 																</span>
-																<span className="badge-secondary text-xs">
-																	{formatRepoName(host.sourceRepoName)}
-																</span>
+																<SourceCell host={host} />
 															</div>
 														)}
 														<div className="flex items-center gap-2">
@@ -614,13 +747,18 @@ const PackageDetail = () => {
 																	</span>
 																)
 															) : (
-																<span className="badge-success text-xs">
-																	{t("Up to Date")}
-																</span>
+																<UpToDateBadge
+																	host={host}
+																	className="text-xs"
+																/>
 															)}
+															<WindowsBadges host={host} />
 														</div>
 													</div>
 													<div className="flex flex-col gap-2 items-end">
+														{canManageHosts() && (
+															<NotPatchableTag host={host} />
+														)}
 														{canManageHosts() && isHostPatchable(host) && (
 															<button
 																type="button"
@@ -631,6 +769,7 @@ const PackageDetail = () => {
 																		hostName:
 																			host.friendlyName || host.hostname,
 																		packageName: pkg.name,
+																		host,
 																	});
 																}}
 																disabled={patchingHostId === host.hostId}
@@ -786,16 +925,15 @@ const PackageDetail = () => {
 																	</span>
 																)
 															) : (
-																<span className="badge-success w-fit">
-																	{t("Up to Date")}
-																</span>
+																<UpToDateBadge host={host} className="w-fit" />
 															)}
+															<div className="flex flex-wrap gap-1 mt-1 empty:hidden">
+																<WindowsBadges host={host} />
+															</div>
 														</td>
 														<td className="px-6 py-4 whitespace-nowrap">
-															{host.sourceRepoName ? (
-																<span className="badge-secondary text-xs">
-																	{formatRepoName(host.sourceRepoName)}
-																</span>
+															{host.sourceRepoName || isWindowsHost(host) ? (
+																<SourceCell host={host} />
 															) : (
 																<span className="text-xs text-secondary-400 dark:text-secondary-400">
 																	&mdash;
@@ -838,6 +976,7 @@ const PackageDetail = () => {
 																				hostName:
 																					host.friendlyName || host.hostname,
 																				packageName: pkg.name,
+																				host,
 																			})
 																		}
 																		disabled={patchingHostId === host.hostId}
@@ -848,6 +987,10 @@ const PackageDetail = () => {
 																			? t("Queuing…")
 																			: t("Patch")}
 																	</button>
+																) : (isWindowsHost(host) ||
+																		isPacmanHost(host)) &&
+																	host.needsUpdate ? (
+																	<NotPatchableTag host={host} />
 																) : (
 																	<span className="text-sm text-secondary-500 dark:text-white">
 																		-
@@ -981,8 +1124,20 @@ const PackageDetail = () => {
 						{
 							id: patchConfirmTarget.hostId,
 							friendly_name: patchConfirmTarget.hostName,
+							os_type: hostOsType(patchConfirmTarget.host),
 						},
 					]}
+					packageMeta={
+						isWindowsHost(patchConfirmTarget.host || {})
+							? {
+									[patchConfirmTarget.packageName]: {
+										source: windowsPatchInfo(patchConfirmTarget.host).source,
+										featureUpgrade: windowsPatchInfo(patchConfirmTarget.host)
+											.featureUpgrade,
+									},
+								}
+							: undefined
+					}
 					onSuccess={handlePatchWizardSuccess}
 				/>
 			)}

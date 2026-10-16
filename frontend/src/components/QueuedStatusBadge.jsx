@@ -24,10 +24,11 @@ function formatTimeUntil(target) {
 }
 
 /**
- * Badge for queued patch runs. Shows "Queued" and a countdown timer when scheduled_at is set.
+ * Badge for queued or scheduled patch runs. Shows the label and a countdown timer when scheduled_at is set.
  */
-export function QueuedStatusBadge({ scheduledAt, className = "" }) {
+export function QueuedStatusBadge({ scheduledAt, label, className = "" }) {
 	const { t } = useTranslation();
+	const text = label ?? t("Queued");
 	const [countdown, setCountdown] = useState(null);
 
 	useEffect(() => {
@@ -58,10 +59,10 @@ export function QueuedStatusBadge({ scheduledAt, className = "" }) {
 			title={
 				scheduledAt
 					? t("Runs at {{date}}", { date: formatDate(scheduledAt) })
-					: t("Queued")
+					: text
 			}
 		>
-			{t("Queued")}
+			{text}
 			{scheduledAt && countdown && (
 				<span className="opacity-90 font-normal">({countdown})</span>
 			)}

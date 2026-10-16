@@ -10,8 +10,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
+	"time"
 
+	"patchmon-agent/internal/pkgversion"
+	"patchmon-agent/internal/winsec"
 	"patchmon-agent/pkg/models"
 
 	"github.com/spf13/viper"
@@ -206,6 +210,8 @@ func (m *Manager) LoadConfig() error {
 	// keep a stable snapshot. Integrations cleared so the file is authoritative.
 	loaded := *m.config
 	loaded.Integrations = nil
+	loaded.HostID = ""
+	loaded.ConfigVersion = ""
 	if err := v.Unmarshal(&loaded); err != nil {
 		m.loadErr = err
 		return fmt.Errorf("error unmarshaling config: %w", err)
@@ -261,10 +267,15 @@ func (m *Manager) LoadConfig() error {
 	// Ensure compliance is a nested object for YAML output
 	m.ensureComplianceNestedLocked()
 
+	m.config.HostID = strings.TrimSpace(m.config.HostID)
+	m.config.ConfigVersion = strings.TrimSpace(m.config.ConfigVersion)
+	onDiskVersion := m.config.ConfigVersion
+	migrateConfig(m.config, pkgversion.Version, configMigrations)
+
 	// Persist normalized config so new defaults (e.g. scan_interval) appear on disk
 	if err := m.saveConfigLocked(); err != nil {
-		// Non-fatal: config is correct in memory even if save fails
-		_ = err
+		// Keep reporting the file's version, so an unsaved stamp shows as a mismatch.
+		m.config.ConfigVersion = onDiskVersion
 	}
 
 	// ReportOffset can be 0 - it will be recalculated if missing
@@ -495,6 +506,14 @@ func (m *Manager) saveConfigWithLocalLocked(local map[string]interface{}) error 
 	configViper.Set("report_offset", m.config.ReportOffset)
 	configViper.Set("package_cache_refresh_mode", m.config.PackageCacheRefreshMode)
 	configViper.Set("package_cache_refresh_max_age", m.config.PackageCacheRefreshMaxAge)
+	configVersion := m.config.ConfigVersion
+	if configVersion == "" {
+		configVersion = pkgversion.Version
+	}
+	configViper.Set("config_version", configVersion)
+	if m.config.HostID != "" {
+		configViper.Set("host_id", m.config.HostID)
+	}
 
 	// Always save integrations map with all available integrations
 	if m.config.Integrations == nil {
@@ -530,6 +549,15 @@ func (m *Manager) saveConfigWithLocalLocked(local map[string]interface{}) error 
 	maps.Copy(m.config.Integrations, local)
 
 	configViper.Set("integrations", m.config.Integrations)
+
+	updateCheckEnabled, updateCheckHours := m.dockerUpdateCheckLocked()
+	configViper.Set("docker_update_check", map[string]interface{}{
+		"enabled":        updateCheckEnabled,
+		"interval_hours": updateCheckHours,
+	})
+	configViper.Set("apk_secdb", map[string]interface{}{
+		"enabled": m.apkSecDBEnabledLocked(),
+	})
 
 	return writeConfigAtomically(configViper, m.configFile)
 }
@@ -633,6 +661,78 @@ func writeConfigAtomically(v *viper.Viper, path string) error {
 	return nil
 }
 
+// HostIDResult is the outcome of AdoptHostID.
+type HostIDResult int
+
+const (
+	// HostIDIgnored means the server sent no usable host ID.
+	HostIDIgnored HostIDResult = iota
+	// HostIDAdopted means the config had no host ID and now holds the server's.
+	HostIDAdopted
+	// HostIDMatch means the config already holds the server's host ID.
+	HostIDMatch
+	// HostIDConflict means the config holds a different host ID, which is kept.
+	HostIDConflict
+)
+
+// GetHostID returns the host ID from config.yml, or "" when it has none.
+func (m *Manager) GetHostID() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.config.HostID
+}
+
+// AdoptHostID records serverID when the config has no host ID. A different,
+// non-empty host ID is never replaced here; that takes SetHostID.
+func (m *Manager) AdoptHostID(serverID string) (HostIDResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !ValidHostID(serverID) {
+		return HostIDIgnored, nil
+	}
+	switch m.config.HostID {
+	case serverID:
+		return HostIDMatch, nil
+	case "":
+		if err := m.setHostIDLocked(serverID); err != nil {
+			return HostIDIgnored, err
+		}
+		return HostIDAdopted, nil
+	}
+	return HostIDConflict, nil
+}
+
+// SetHostID replaces the host ID. Only explicit operator commands call it.
+func (m *Manager) SetHostID(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !ValidHostID(id) {
+		return fmt.Errorf("invalid host ID %q", id)
+	}
+	return m.setHostIDLocked(id)
+}
+
+// ClearHostID removes the host ID so the next ping learns it again.
+func (m *Manager) ClearHostID() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.setHostIDLocked("")
+}
+
+// Caller must hold the write lock. Copies the config so GetConfig snapshots
+// held by other goroutines are not mutated.
+func (m *Manager) setHostIDLocked(id string) error {
+	prev := m.config
+	next := *prev
+	next.HostID = id
+	m.config = &next
+	if err := m.saveConfigLocked(); err != nil {
+		m.config = prev
+		return err
+	}
+	return nil
+}
+
 // SetUpdateInterval sets the update interval and saves it to config file
 func (m *Manager) SetUpdateInterval(interval int) error {
 	m.mu.Lock()
@@ -701,6 +801,38 @@ func (m *Manager) GetPackageCacheRefreshMaxAge() int {
 		return 60
 	}
 	return m.config.PackageCacheRefreshMaxAge
+}
+
+// DefaultDockerUpdateCheckIntervalHours applies when interval_hours is unset or below 1.
+const DefaultDockerUpdateCheckIntervalHours = 6
+
+// GetDockerUpdateCheck reports the docker_update_check settings; it ignores integrations.docker.
+func (m *Manager) GetDockerUpdateCheck() (enabled bool, interval time.Duration) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	enabled, hours := m.dockerUpdateCheckLocked()
+	return enabled, time.Duration(hours) * time.Hour
+}
+
+func (m *Manager) dockerUpdateCheckLocked() (bool, int) {
+	c := m.config.DockerUpdateCheck
+	enabled := c.Enabled == nil || *c.Enabled
+	hours := c.IntervalHours
+	if hours < 1 {
+		hours = DefaultDockerUpdateCheckIntervalHours
+	}
+	return enabled, hours
+}
+
+// GetAPKSecDBEnabled reports whether Alpine hosts fetch secdb to flag security updates.
+func (m *Manager) GetAPKSecDBEnabled() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.apkSecDBEnabledLocked()
+}
+
+func (m *Manager) apkSecDBEnabledLocked() bool {
+	return m.config.APKSecDB.Enabled == nil || *m.config.APKSecDB.Enabled
 }
 
 // IsIntegrationEnabled checks if an integration is enabled
@@ -1009,6 +1141,14 @@ func (m *Manager) setupDirectories() error {
 		// Use 0750 - owner full access, group read/execute, no world access
 		if err := os.MkdirAll(dir, 0750); err != nil {
 			return fmt.Errorf("error creating directory %s: %w", dir, err)
+		}
+	}
+
+	// Windows ignores file modes, so lock the standard data directory to SYSTEM
+	// and Administrators by ACL. Guarded to the default path; a no-op off Windows.
+	if m.config.CredentialsFile == DefaultCredentialsFileWindows {
+		if err := winsec.EnsureDataDir(); err != nil {
+			return fmt.Errorf("error securing data directory: %w", err)
 		}
 	}
 

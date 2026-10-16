@@ -7,11 +7,9 @@
 >
 > | Fork feature | Where it is documented |
 > | --- | --- |
-> | Windows patching with dry run, WinGet refusals remembered | Admin Guide, Chapter 8: [Windows patching](patchmon-admin-guide.md#windows-patching) |
 > | Restart after a patch run or on demand, restart history | Admin Guide, Chapter 9: [Restarting the Host](patchmon-admin-guide.md#restarting-the-host) |
 > | Update checks against the fork's releases | Admin Guide, Chapter 2: [Server Version](patchmon-admin-guide.md#server-version) |
 > | Interface language (English, French) | Admin Guide, Chapter 2: [My Profile](patchmon-admin-guide.md#my-profile); translating more screens: [frontend/src/i18n/README.md](../frontend/src/i18n/README.md) |
-> | No agent self-update during a patch run | Operator Guide: [Update Safety Features](patchmon-operator-guide.md#update-safety-features) |
 > | Branches, releases, server install and updates, upstream releases | [FORK.md](../FORK.md) (in French) |
 >
 > The overview of the fork is in the [README](../README.md#what-this-fork-adds).

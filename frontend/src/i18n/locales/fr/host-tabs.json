@@ -62,7 +62,6 @@
 	"Self-signed certificate (SSL bypass)": "Certificat auto-signé (contournement SSL)",
 	"Use curl instead of Invoke-WebRequest": "Utiliser curl au lieu d'Invoke-WebRequest",
 	"API Key Not Available": "Clé API non disponible",
-	"The plaintext API key is only shown once when the host is created.": "La clé API en clair n'est affichée qu'une seule fois, à la création de l'hôte.",
 	"Regenerating...": "Régénération...",
 	"Regenerate": "Régénérer",
 	"API key not available - click Regenerate above": "Clé API non disponible - cliquez sur Régénérer ci-dessus",
@@ -139,5 +138,6 @@
 	"in {{minutes}} min": "dans {{minutes}} min",
 	"in {{hours}} h": "dans {{hours}} h",
 	"in {{days}} d": "dans {{days}} j",
-	"Runs at {{date}}": "Exécution prévue le {{date}}"
+	"Runs at {{date}}": "Exécution prévue le {{date}}",
+	"The plaintext API key is only shown once when the host is created. Regenerating replaces both the API ID and key, so any machine still using the old ones stops reporting until the agent is reinstalled.": "La clé API en clair n'est affichée qu'une seule fois, à la création de l'hôte. La régénération remplace l'ID et la clé API, donc toute machine qui utilise encore les anciens cesse de remonter ses données jusqu'à la réinstallation de l'agent."
 }

@@ -41,6 +41,10 @@ import { Trans, useTranslation } from "react-i18next";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AddHostWizard from "../components/AddHostWizard";
 import HostStatusPills from "../components/HostStatusPills";
+import {
+	AgentVersionIndicators,
+	ConfigVersionValue,
+} from "../components/host/HostIdentity";
 import InlineEdit from "../components/InlineEdit";
 import InlineMultiGroupEdit from "../components/InlineMultiGroupEdit";
 import InlineToggle from "../components/InlineToggle";
@@ -48,6 +52,10 @@ import RestartHostModal from "../components/RestartHostModal";
 import ModalPortal from "../components/ui/ModalPortal";
 import Tooltip from "../components/ui/Tooltip";
 import { useAuth } from "../contexts/AuthContext";
+import {
+	HOSTS_SORT_FIELDS,
+	useHostsUrlFilters,
+} from "../hooks/useHostsUrlFilters";
 import { usePageRefresh } from "../hooks/usePageRefresh";
 import { useRemoteRestartMap } from "../hooks/useRemoteRestart";
 import { useTick } from "../hooks/useTick";
@@ -62,6 +70,11 @@ import {
 	settingsAPI,
 	userPreferencesAPI,
 } from "../utils/api";
+import {
+	hasConfigVersionMismatch,
+	hasHostIdMismatch,
+	hasIdentityConflict,
+} from "../utils/hostIdentity";
 import { deriveReportingState } from "../utils/hostStatus";
 import { getOSDisplayName, OSIcon } from "../utils/osIcons.jsx";
 import { invalidateHostScope } from "../utils/queryScopes";
@@ -89,25 +102,6 @@ const WS_STATUS_BATCH_SIZE = 200;
 // fetch; when the fleet exceeds it the UI says so rather than quietly showing a
 // partial list.
 const LIVE_FILTER_FETCH_LIMIT = 1000;
-
-const HOSTS_SORT_FIELDS = {
-	agent_version: "agent_version",
-	friendlyName: "friendly_name",
-	group: "group",
-	hostname: "hostname",
-	integrations: "integrations",
-	ip: "ip",
-	last_update: "last_update",
-	needs_reboot: "needs_reboot",
-	notes: "notes",
-	os: "os_type",
-	os_version: "os_version",
-	security_updates: "security_updates",
-	ssg_version: "ssg_version",
-	status: "status",
-	updates: "updates",
-	uptime: "uptime",
-};
 
 // Display labels of the host status enum, for the "By Status" group headers.
 // Values not listed here are shown capitalised, as before.
@@ -188,19 +182,23 @@ const Hosts = () => {
 	// from this so we don't spawn N intervals on N rows.
 	const tickNow = useTick(60000);
 
-	// Table state
-	const [searchTerm, setSearchTerm] = useState("");
-	const [sortField, setSortField] = useState("hostname");
-	const [sortDirection, setSortDirection] = useState("asc");
-	const [groupFilter, setGroupFilter] = useState("all");
-	const [statusFilter, setStatusFilter] = useState("all");
-	const [connectionFilter, setConnectionFilter] = useState("all");
-	const [osFilter, setOsFilter] = useState("all");
-	const [osVersionFilter, setOsVersionFilter] = useState("all");
+	const {
+		searchTerm,
+		setSearchTerm,
+		search: debouncedSearch,
+		sortField,
+		sortDirection,
+		groupFilter,
+		statusFilter,
+		connectionFilter,
+		osFilter,
+		osVersionFilter,
+		groupBy,
+		hideStale,
+		updateFilters,
+	} = useHostsUrlFilters();
 	const [showFilters, setShowFilters] = useState(false);
-	const [groupBy, setGroupBy] = useState("none");
 	const [showColumnSettings, setShowColumnSettings] = useState(false);
-	const [hideStale, setHideStale] = useState(false);
 	const page = Math.max(1, Number.parseInt(searchParams.get("page"), 10) || 1);
 	const pageSize = normalisePageSize(
 		searchParams.get("pageSize") ||
@@ -208,30 +206,15 @@ const Hosts = () => {
 	);
 	const offset = (page - 1) * pageSize;
 
-	// Debounce search for backend (avoid refetch on every keystroke)
-	const [debouncedSearch, setDebouncedSearch] = useState("");
-	const searchDebounceRef = useRef(null);
-	useEffect(() => {
-		if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-		searchDebounceRef.current = setTimeout(() => {
-			setDebouncedSearch(searchTerm?.trim() || "");
-		}, 400);
-		return () => {
-			if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-		};
-	}, [searchTerm]);
-
-	// Deep-link params are applied only when their VALUE changes, never on every
-	// searchParams write. Paging rewrites `page` on the same URL, and without
-	// this guard that write would re-impose `?filter=stale` over a Reporting
-	// dropdown the user had just changed, then bounce them back to page 1 via
-	// the pagination-reset signature. First run has no previous snapshot, so
-	// deep links still apply in full on arrival.
+	// Deep-link side effects run only when a param's VALUE changes, so paging
+	// (which rewrites `page`) never reopens the panel or reselects hosts.
 	const appliedUrlParamsRef = useRef(null);
 	useEffect(() => {
 		const current = {
 			filter: searchParams.get("filter") || "",
 			showFilters: searchParams.get("showFilters") || "",
+			status: searchParams.get("status") || "",
+			connection: searchParams.get("connection") || "",
 			osFilter: searchParams.get("osFilter") || "",
 			osVersionFilter: searchParams.get("osVersionFilter") || "",
 			group: searchParams.get("group") || "",
@@ -243,58 +226,30 @@ const Hosts = () => {
 		const changed = (key) =>
 			previous === null || previous[key] !== current[key];
 
-		if (changed("filter")) {
-			switch (current.filter) {
-				case "needsUpdates":
-				case "selected":
-					// Row-level predicate is applied in the filtering logic below.
-					setShowFilters(true);
-					setStatusFilter("all");
-					break;
-				case "inactive":
-					// Server-side filter only. The tri-state Reporting filter also
-					// consults live WS state, so it would drop silent-but-connected
-					// rows that the errored-hosts card counted.
-					setShowFilters(true);
-					setStatusFilter("all");
-					break;
-				case "stale":
-					setShowFilters(true);
-					setStatusFilter("stale");
-					break;
-				case "upToDate":
-					setShowFilters(true);
-					setStatusFilter("reporting");
-					break;
-				case "awaitingData":
-					setShowFilters(true);
-					setStatusFilter("all");
-					break;
-				default:
-					break;
-			}
+		if (
+			changed("filter") &&
+			[
+				"needsUpdates",
+				"selected",
+				"inactive",
+				"stale",
+				"upToDate",
+				"awaitingData",
+			].includes(current.filter)
+		) {
+			setShowFilters(true);
 		}
 
 		if (changed("showFilters") && current.showFilters === "true") {
 			setShowFilters(true);
 		}
 
-		// OS filter parameter
-		if (changed("osFilter") && current.osFilter) {
+		if (
+			["status", "connection", "osFilter", "osVersionFilter", "group"].some(
+				(key) => changed(key) && current[key],
+			)
+		) {
 			setShowFilters(true);
-			setOsFilter(current.osFilter);
-		}
-
-		// OS version filter parameter (from dashboard OS distribution chart click)
-		if (changed("osVersionFilter") && current.osVersionFilter) {
-			setShowFilters(true);
-			setOsVersionFilter(current.osVersionFilter);
-		}
-
-		// Group filter parameter
-		if (changed("group") && current.group) {
-			setShowFilters(true);
-			setGroupFilter(current.group);
 		}
 
 		// Add host action from navigation
@@ -343,37 +298,43 @@ const Hosts = () => {
 				order: 7,
 			},
 			{
+				id: "config_version",
+				label: tk("Config Version"),
+				visible: false,
+				order: 8,
+			},
+			{
 				id: "auto_update",
 				label: tk("Agent Auto-Update"),
 				visible: true,
-				order: 8,
+				order: 9,
 			},
-			{ id: "ws_status", label: tk("Connection"), visible: true, order: 9 },
+			{ id: "ws_status", label: tk("Connection"), visible: true, order: 10 },
 			{
 				id: "integrations",
 				label: tk("Integrations"),
 				visible: true,
-				order: 10,
+				order: 11,
 			},
-			{ id: "status", label: tk("Reporting"), visible: true, order: 11 },
-			{ id: "needs_reboot", label: tk("Reboot"), visible: true, order: 12 },
-			{ id: "uptime", label: tk("Uptime"), visible: true, order: 13 },
-			{ id: "updates", label: tk("Updates"), visible: true, order: 14 },
+			{ id: "status", label: tk("Reporting"), visible: true, order: 12 },
+			{ id: "needs_reboot", label: tk("Reboot"), visible: true, order: 13 },
+			{ id: "uptime", label: tk("Uptime"), visible: true, order: 14 },
+			{ id: "updates", label: tk("Updates"), visible: true, order: 15 },
 			{
 				id: "security_updates",
 				label: tk("Security Updates"),
 				visible: true,
-				order: 15,
+				order: 16,
 			},
 			{
 				id: "ssg_version",
 				label: tk("SSG Version"),
 				visible: false,
-				order: 16,
+				order: 17,
 			},
-			{ id: "notes", label: tk("Notes"), visible: false, order: 17 },
-			{ id: "last_update", label: tk("Last Update"), visible: true, order: 18 },
-			{ id: "actions", label: tk("Actions"), visible: true, order: 19 },
+			{ id: "notes", label: tk("Notes"), visible: false, order: 18 },
+			{ id: "last_update", label: tk("Last Update"), visible: true, order: 19 },
+			{ id: "actions", label: tk("Actions"), visible: true, order: 20 },
 		],
 		[],
 	);
@@ -1042,6 +1003,10 @@ const Hosts = () => {
 					aValue = a.agent_version?.toLowerCase() || "zzz_no_version";
 					bValue = b.agent_version?.toLowerCase() || "zzz_no_version";
 					break;
+				case "config_version":
+					aValue = a.config_version?.toLowerCase() || "zzz_no_version";
+					bValue = b.config_version?.toLowerCase() || "zzz_no_version";
+					break;
 				case "status":
 					aValue = a.effectiveStatus || a.status;
 					bValue = b.effectiveStatus || b.status;
@@ -1336,12 +1301,10 @@ const Hosts = () => {
 	}, [visibleHosts, groupBy, t]);
 
 	const handleSort = (field) => {
-		if (sortField === field) {
-			setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-		} else {
-			setSortField(field);
-			setSortDirection("asc");
-		}
+		updateFilters({
+			sort: field,
+			order: sortField === field && sortDirection === "asc" ? "desc" : "asc",
+		});
 	};
 
 	const getSortIcon = (field) => {
@@ -1503,8 +1466,15 @@ const Hosts = () => {
 				);
 			case "agent_version":
 				return (
+					<div className="flex items-center gap-1.5 text-sm text-secondary-900 dark:text-white">
+						<span>{host.agent_version || "N/A"}</span>
+						<AgentVersionIndicators host={host} />
+					</div>
+				);
+			case "config_version":
+				return (
 					<div className="text-sm text-secondary-900 dark:text-white">
-						{host.agent_version || t("N/A")}
+						<ConfigVersionValue host={host} emptyLabel={t("N/A")} />
 					</div>
 				);
 			case "auto_update":
@@ -1824,49 +1794,26 @@ const Hosts = () => {
 		}
 	};
 
-	// Every filter held in component state. Route changes within /hosts do not
-	// remount, so any of these left set stays applied to the query even when the
-	// URL looks clean. Keep this in step with `paginationResetSignature`.
-	const resetLocalFilters = () => {
+	const resetFilters = (changes = {}) => {
 		setSearchTerm("");
-		setGroupFilter("all");
-		setStatusFilter("all");
-		setConnectionFilter("all");
-		setOsFilter("all");
-		setOsVersionFilter("all");
-		setGroupBy("none");
-		setHideStale(false);
+		updateFilters(changes, { clear: true });
 	};
 
 	// Stats card click handlers
 	const handleTotalHostsClick = () => {
-		resetLocalFilters();
+		setSearchTerm("");
 		setShowFilters(false);
 		navigate("/hosts", { replace: true });
 	};
 
 	const handleNeedsUpdatesClick = () => {
-		// Filter to show hosts needing updates (regardless of status)
-		setStatusFilter("all");
 		setShowFilters(true);
-		// Clear conflicting filters and set needsUpdates filter
-		const newSearchParams = new URLSearchParams(window.location.search);
-		newSearchParams.set("filter", "needsUpdates");
-		newSearchParams.delete("reboot"); // Clear reboot filter when switching to needsUpdates
-		navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
+		updateFilters({ filter: "needsUpdates", status: "", reboot: "" });
 	};
 
-	// Live WS state is not a backend filter, so this stays in local state like
-	// the Reporting filter rather than in the URL.
 	const handleConnectionFilterClick = (value) => {
-		resetLocalFilters();
-		setConnectionFilter(value);
 		setShowFilters(true);
-		const newSearchParams = new URLSearchParams(searchParams);
-		newSearchParams.delete("filter");
-		newSearchParams.delete("reboot");
-		newSearchParams.delete("selected");
-		setSearchParams(newSearchParams, { replace: true });
+		resetFilters({ connection: value });
 	};
 
 	if (isLoading && !hostsResponse) {
@@ -1978,10 +1925,8 @@ const Hosts = () => {
 					type="button"
 					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
 					onClick={() => {
-						resetLocalFilters();
-						const newSearchParams = new URLSearchParams();
-						newSearchParams.set("reboot", "true");
-						navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
+						setSearchTerm("");
+						navigate("/hosts?reboot=true", { replace: true });
 					}}
 				>
 					<div className="flex items-center">
@@ -2157,7 +2102,7 @@ const Hosts = () => {
 								<div className="relative">
 									<select
 										value={groupBy}
-										onChange={(e) => setGroupBy(e.target.value)}
+										onChange={(e) => updateFilters({ groupBy: e.target.value })}
 										className="appearance-none bg-white dark:bg-secondary-800 border-2 border-secondary-300 dark:border-secondary-600 rounded-lg px-2 py-2 pr-6 text-xs sm:text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-secondary-900 dark:text-white hover:border-secondary-400 dark:hover:border-secondary-500 transition-colors min-w-[100px] sm:min-w-[120px] min-h-[44px]"
 									>
 										<option value="none">{t("No Grouping")}</option>
@@ -2169,7 +2114,7 @@ const Hosts = () => {
 								</div>
 								<button
 									type="button"
-									onClick={() => setHideStale(!hideStale)}
+									onClick={() => updateFilters({ hideStale: !hideStale })}
 									className={`btn-outline flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 min-h-[44px] text-xs sm:text-sm ${hideStale ? "bg-primary-50 border-primary-300" : ""}`}
 								>
 									<AlertTriangle className="h-4 w-4 flex-shrink-0" />
@@ -2192,7 +2137,7 @@ const Hosts = () => {
 										<select
 											id={hostGroupFilterId}
 											value={groupFilter}
-											onChange={(e) => setGroupFilter(e.target.value)}
+											onChange={(e) => updateFilters({ group: e.target.value })}
 											className="w-full border border-secondary-300 dark:border-secondary-600 rounded-lg px-3 py-2.5 sm:py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white min-h-[44px]"
 										>
 											<option value="all">{t("All Groups")}</option>
@@ -2214,7 +2159,9 @@ const Hosts = () => {
 										<select
 											id={statusFilterId}
 											value={statusFilter}
-											onChange={(e) => setStatusFilter(e.target.value)}
+											onChange={(e) =>
+												updateFilters({ status: e.target.value })
+											}
 											className="w-full border border-secondary-300 dark:border-secondary-600 rounded-lg px-3 py-2.5 sm:py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white min-h-[44px]"
 										>
 											<option value="all">{t("All")}</option>
@@ -2236,7 +2183,9 @@ const Hosts = () => {
 										<select
 											id={connectionFilterId}
 											value={connectionFilter}
-											onChange={(e) => setConnectionFilter(e.target.value)}
+											onChange={(e) =>
+												updateFilters({ connection: e.target.value })
+											}
 											className="w-full border border-secondary-300 dark:border-secondary-600 rounded-lg px-3 py-2.5 sm:py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white min-h-[44px]"
 										>
 											<option value="all">{t("All")}</option>
@@ -2254,10 +2203,12 @@ const Hosts = () => {
 										<select
 											id={osFilterId}
 											value={osFilter}
-											onChange={(e) => {
-												setOsFilter(e.target.value);
-												setOsVersionFilter("all");
-											}}
+											onChange={(e) =>
+												updateFilters({
+													osFilter: e.target.value,
+													osVersionFilter: "",
+												})
+											}
 											className="w-full border border-secondary-300 dark:border-secondary-600 rounded-lg px-3 py-2.5 sm:py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white min-h-[44px]"
 										>
 											<option value="all">{t("All OS")}</option>
@@ -2282,7 +2233,9 @@ const Hosts = () => {
 												<select
 													id={osVersionFilterId}
 													value={osVersionFilter}
-													onChange={(e) => setOsVersionFilter(e.target.value)}
+													onChange={(e) =>
+														updateFilters({ osVersionFilter: e.target.value })
+													}
 													className="w-full border border-secondary-300 dark:border-secondary-600 rounded-lg px-3 py-2.5 sm:py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white min-h-[44px]"
 												>
 													<option value="all">{t("All Versions")}</option>
@@ -2302,16 +2255,7 @@ const Hosts = () => {
 									<div className="flex items-end">
 										<button
 											type="button"
-											onClick={() => {
-												resetLocalFilters();
-												// These are forwarded to the backend and are not held in
-												// any of the local state above.
-												const next = new URLSearchParams(searchParams);
-												next.delete("filter");
-												next.delete("reboot");
-												next.delete("selected");
-												setSearchParams(next, { replace: true });
-											}}
+											onClick={() => resetFilters()}
 											className="btn-outline w-full min-h-[44px]"
 										>
 											{t("Clear Filters")}
@@ -2498,6 +2442,40 @@ const Hosts = () => {
 																	/>
 																</div>
 
+																{(visibleColumns.some(
+																	(col) => col.id === "config_version",
+																) ||
+																	hasConfigVersionMismatch(host) ||
+																	hasHostIdMismatch(host) ||
+																	hasIdentityConflict(host)) && (
+																	<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+																		<div className="flex items-center gap-1.5">
+																			<span className="text-secondary-500 dark:text-white">
+																				Agent:
+																			</span>
+																			<span className="text-secondary-700 dark:text-white">
+																				{host.agent_version || "N/A"}
+																			</span>
+																			<AgentVersionIndicators host={host} />
+																		</div>
+																		{visibleColumns.some(
+																			(col) => col.id === "config_version",
+																		) && (
+																			<div className="flex items-center gap-1.5">
+																				<span className="text-secondary-500 dark:text-white">
+																					Config:
+																				</span>
+																				<span className="text-secondary-700 dark:text-white">
+																					<ConfigVersionValue
+																						host={host}
+																						emptyLabel="N/A"
+																					/>
+																				</span>
+																			</div>
+																		)}
+																	</div>
+																)}
+
 																{/* Group info */}
 																<div className="flex flex-wrap items-center gap-3 text-sm">
 																	{visibleColumns.some(
@@ -2666,6 +2644,17 @@ const Hosts = () => {
 																			>
 																				{columnLabel(column)}
 																				{getSortIcon("agent_version")}
+																			</button>
+																		) : column.id === "config_version" ? (
+																			<button
+																				type="button"
+																				onClick={() =>
+																					handleSort("config_version")
+																				}
+																				className="flex items-center gap-2 hover:text-secondary-700"
+																			>
+																				{column.label}
+																				{getSortIcon("config_version")}
 																			</button>
 																		) : column.id === "auto_update" ? (
 																			<div className="flex items-center gap-2 font-normal text-xs text-secondary-500 dark:text-white normal-case tracking-wider">
@@ -2854,17 +2843,19 @@ const Hosts = () => {
 			</div>
 
 			{/* Modals */}
-			{/* Keyed by host: its state (a command still being sent) must not
-			    carry over from one host to the next. */}
-			<RestartHostModal
-				key={restartHost?.id}
-				hostId={restartHost?.id}
-				hostName={restartHost?.friendly_name || restartHost?.hostname}
-				isOpen={!!restartHost}
-				onClose={() => setRestartHost(null)}
-				needsReboot={restartHost?.needs_reboot}
-				rebootReason={restartHost?.reboot_reason}
-			/>
+			{/* Mounted only while open, keyed by host: its state (a command still
+			    being sent) must not carry over from one host to the next. */}
+			{restartHost && (
+				<RestartHostModal
+					key={restartHost.id}
+					hostId={restartHost.id}
+					hostName={restartHost.friendly_name || restartHost.hostname}
+					isOpen
+					onClose={() => setRestartHost(null)}
+					needsReboot={restartHost.needs_reboot}
+					rebootReason={restartHost.reboot_reason}
+				/>
+			)}
 			<AddHostWizard
 				isOpen={showAddModal}
 				onClose={() => setShowAddModal(false)}

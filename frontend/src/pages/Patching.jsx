@@ -51,6 +51,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useConfirm } from "../contexts/ConfirmContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
+import { searchWithoutTab, useTabParam } from "../hooks/useTabParam";
 import { tk } from "../i18n";
 import { adminHostsAPI, formatDate, hostGroupsAPI } from "../utils/api";
 import { patchingAPI } from "../utils/patchingApi";
@@ -87,19 +88,21 @@ const Patching = () => {
 	const initialType = searchParams.get("type") || "";
 	const [activeTab, setActiveTab] = useState(initialTab);
 
-	// Sync tab and filter state on actual URL navigation (not in-page tab clicks)
+	useTabParam(activeTab);
+
 	useEffect(() => {
-		const params = new URLSearchParams(location.search);
-		const tab = params.get("tab");
-		if (tab && ["overview", "runs", "policies"].includes(tab)) {
-			setActiveTab(tab);
+		if (urlTab && ["overview", "runs", "policies"].includes(urlTab)) {
+			setActiveTab(urlTab);
 		}
-		const status = params.get("status") || "";
-		setRunsFilterStatus(status);
-		const type = params.get("type") || "";
-		setRunsFilterType(type);
+	}, [urlTab]);
+
+	const filterSearch = searchWithoutTab(location.search);
+	useEffect(() => {
+		const params = new URLSearchParams(filterSearch);
+		setRunsFilterStatus(params.get("status") || "");
+		setRunsFilterType(params.get("type") || "");
 		setRunsPage(1);
-	}, [location.search]);
+	}, [filterSearch]);
 
 	const [runsFilterStatus, setRunsFilterStatus] = useState(initialStatus);
 	const [runsFilterType, setRunsFilterType] = useState(initialType);
@@ -266,6 +269,7 @@ const Patching = () => {
 			hostname: run.hosts?.hostname,
 		},
 		patchType: run.patch_type,
+		windowsScope: run.windows_scope || null,
 		packageNames:
 			Array.isArray(run.package_names) && run.package_names.length > 0
 				? run.package_names
@@ -382,16 +386,18 @@ const Patching = () => {
 					type="button"
 					onClick={() => navigate("/patching?tab=runs&status=active")}
 					className="card p-4 hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow text-left"
-					title={t("View queued and running runs")}
+					title={t("View queued, validating and running runs")}
 				>
 					<div className="flex items-center">
 						<Clock className="h-5 w-5 text-blue-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								{t("Queued / Running")}
+								{t("Active", { context: "runs" })}
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-								{(summary.queued ?? 0) + (summary.running ?? 0)}
+								{(summary.queued ?? 0) +
+									(summary.pending_validation ?? 0) +
+									(summary.running ?? 0)}
 							</p>
 						</div>
 					</div>
@@ -559,6 +565,11 @@ const Patching = () => {
 					patchTypeByRun={Object.fromEntries(
 						approveWizardRuns.map((r) => [r.runId, r.patchType]),
 					)}
+					windowsScopeByRun={Object.fromEntries(
+						approveWizardRuns
+							.filter((r) => r.windowsScope)
+							.map((r) => [r.runId, r.windowsScope]),
+					)}
 					onSuccess={handleApproveWizardSuccess}
 				/>
 			)}
@@ -570,7 +581,7 @@ const Patching = () => {
 
 const STATUS_OPTIONS = [
 	{ value: "", label: tk("All statuses") },
-	{ value: "active", label: tk("Active (queued + running)") },
+	{ value: "active", label: tk("Active (queued, validating or running)") },
 	{ value: "queued", label: tk("Queued") },
 	{ value: "pending_validation", label: tk("Pending validation") },
 	{ value: "pending_approval", label: tk("Pending approval") },

@@ -1,6 +1,6 @@
 > [!NOTE]
 > **This is a fork: [Stefanotr/PatchMon](https://github.com/Stefanotr/PatchMon)**, built on the official [PatchMon/PatchMon](https://github.com/PatchMon/PatchMon).
-> It follows the official releases and adds Windows patching with dry run, restart management and fork-aware updates: see [What this fork adds](#what-this-fork-adds).
+> It follows the official releases and adds restart management, live agent activity, a French interface and fork-aware updates: see [What this fork adds](#what-this-fork-adds).
 > The rest of this page is the upstream README; maintaining the fork is covered in [FORK.md](FORK.md).
 >
 > [![Fork release](https://img.shields.io/github/v/release/Stefanotr/PatchMon?style=flat-square&label=fork%20release&color=teal)](https://github.com/Stefanotr/PatchMon/releases)
@@ -24,7 +24,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/PatchMon/PatchMon?style=for-the-badge&color=blue)](https://github.com/PatchMon/PatchMon/releases)
 [![Stars](https://img.shields.io/github/stars/PatchMon/PatchMon?style=for-the-badge&color=yellow)](https://github.com/PatchMon/PatchMon/stargazers)
 [![License](https://img.shields.io/badge/License-AGPL%20v3-orange?style=for-the-badge)](LICENSE)
-[![AI-DECLARATION: assist](https://img.shields.io/badge/AI--DECLARATION-assist-fef9c3?style=for-the-badge&labelColor=333333)](AI-DECLARATION.md)
+[![AI-DECLARATION: pair](https://img.shields.io/badge/AI--DECLARATION-pair-ffedd5?style=for-the-badge&labelColor=333333)](AI-DECLARATION.md)
 
 </div>
 
@@ -34,11 +34,8 @@
 
 | Feature | What it does |
 |---|---|
-| **Windows patching with dry run** | Patch runs on Windows go through Windows Update and WinGet, with the same validate, approve and run flow as Linux. The dry run prints the exact plan (size, version change, restart expected) without installing anything. |
-| **WinGet refusals remembered** | An app WinGet will not upgrade in place (another installer technology, a pin) is skipped with the reason instead of failing every run, and later runs show it as skipped up front. |
 | **Restart management** | Restart hosts after a patch run (never, if one is needed, always) or on demand, after a delay or at a time of day, with a warning for signed-in users, and cancel a restart PatchMon scheduled. Each host opts in locally (`remote-restart-enabled` in its `config.yml`, which the server cannot change: an option of the install command, `patchmon-agent config remote-restart on`, or an edit of the file) and restarting needs its own permission, `can_restart_hosts`. The *Required* badge of the Hosts list opens the restart dialog, which says when a restart is optional. Agents announce their setting, so restarts are greyed out on hosts that refuse them. |
 | **Restart history** | Every restart command is recorded before it is sent, then completed with its outcome, even when the agent answers late; restarts patch runs schedule or skip are recorded too: who asked, the outcome, the restart time. |
-| **Safe agent self-update** | The agent never updates itself during a patch run, dry runs included, so *Update Now* cannot cut an install off. |
 | **Live agent activity** | The host's *Agent Activity* shows what the agent is doing now, refreshed every 2 seconds: an agent update step by step (download percentage, verification, installation, restart, back online on the new version), patch runs with their last output line, compliance scans and queued jobs, then their outcome. *Update Now* no longer reports an update as completed as soon as it is sent. |
 | **Fork-aware updates** | Builds are stamped with the fork's repository and commit. The server checks the fork's GitHub releases, for itself and for its agents, instead of upstream's version records; *Check for updates* sees a new release right away, and the UI links to the fork. |
 | **Upstream release watch** | A daily workflow opens an issue when PatchMon publishes an official version the fork does not contain yet. |
@@ -59,7 +56,7 @@ services:
 docker compose pull server && docker compose up -d server
 ```
 
-Moving an existing server to the fork, updating and going back to the official image are covered in [FORK.md](FORK.md) (in French). The features are documented in the guides: [Windows patching](docs/patchmon-admin-guide.md#windows-patching), [Restarting the Host](docs/patchmon-admin-guide.md#restarting-the-host), [Update Safety Features](docs/patchmon-operator-guide.md#update-safety-features).
+Moving an existing server to the fork, updating and going back to the official image are covered in [FORK.md](FORK.md) (in French). The features are documented in the guides: [Restarting the Host](docs/patchmon-admin-guide.md#restarting-the-host).
 
 ---
 

@@ -29,16 +29,21 @@ type InstallHandler struct {
 	bootstrap  *store.BootstrapStore
 	reports    *store.ReportStore
 	scriptBase []byte // base script (embedded or from AGENTS_DIR)
+	log        *slog.Logger
 }
 
 // NewInstallHandler creates a new install handler.
-func NewInstallHandler(hosts *store.HostsStore, settings *store.SettingsStore, bootstrap *store.BootstrapStore, reports *store.ReportStore) *InstallHandler {
+func NewInstallHandler(hosts *store.HostsStore, settings *store.SettingsStore, bootstrap *store.BootstrapStore, reports *store.ReportStore, log *slog.Logger) *InstallHandler {
+	if log == nil {
+		log = slog.Default()
+	}
 	return &InstallHandler{
 		hosts:      hosts,
 		settings:   settings,
 		bootstrap:  bootstrap,
 		reports:    reports,
 		scriptBase: loadScript(),
+		log:        log,
 	}
 }
 
@@ -173,6 +178,10 @@ func (h *InstallHandler) ServeInstall(w http.ResponseWriter, r *http.Request) {
 	if osParam != "linux" && osParam != "freebsd" && osParam != "windows" {
 		osParam = inferHostOS(host.ExpectedPlatform, host.OSType)
 	}
+	hostIDValue := ""
+	if util.ValidHostID(host.ID) {
+		hostIDValue = host.ID
+	}
 
 	// Windows: serve PowerShell script with env vars
 	if osParam == "windows" {
@@ -190,7 +199,7 @@ func (h *InstallHandler) ServeInstall(w http.ResponseWriter, r *http.Request) {
 			JSON(w, http.StatusNotFound, map[string]string{"error": "Windows installation script not found"})
 			return
 		}
-		envBlock := fmt.Sprintf("$env:PATCHMON_SERVER_URL = \"%s\"\n$env:PATCHMON_BOOTSTRAP_TOKEN = \"%s\"\n$env:PATCHMON_IGNORE_SSL = \"%s\"\n\n", serverURL, token, skipSSLVerify)
+		envBlock := fmt.Sprintf("$env:PATCHMON_SERVER_URL = \"%s\"\n$env:PATCHMON_BOOTSTRAP_TOKEN = \"%s\"\n$env:PATCHMON_IGNORE_SSL = \"%s\"\n$env:PATCHMON_HOST_ID = \"%s\"\n\n", serverURL, token, skipSSLVerify, hostIDValue)
 		// Remove shebang if present (PowerShell scripts may have # optional)
 		if bytes.HasPrefix(script, []byte("#!")) {
 			script = append([]byte("#"), script[1:]...)
@@ -228,6 +237,7 @@ export BOOTSTRAP_TOKEN="%s"
 export CURL_FLAGS="%s"
 export SKIP_SSL_VERIFY="%s"
 export FORCE_INSTALL="%s"
+export PATCHMON_HOST_ID="%s"
 %s
 # Fetch actual credentials using bootstrap token (one-time use, expires in 5 minutes)
 fetch_credentials() {
@@ -257,7 +267,7 @@ fetch_credentials() {
     fi
 }
 fetch_credentials
-`, serverURL, osParam, token, curlFlags, skipSSLVerify, forceStr, archExport)
+`, serverURL, osParam, token, curlFlags, skipSSLVerify, forceStr, hostIDValue, archExport)
 
 	// Remove shebang from original script and prepend env block
 	script := h.scriptBase
@@ -420,9 +430,9 @@ func (h *InstallHandler) ServePing(w http.ResponseWriter, r *http.Request) {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
 				slog.Warn("ping: body exceeded AGENT_PING_BODY_LIMIT", "host_id", checkin.ID, "limit_bytes", tooLarge.Limit)
-				JSON(w, http.StatusRequestEntityTooLarge, map[string]string{
-					"error": fmt.Sprintf("Check-in exceeds the %s AGENT_PING_BODY_LIMIT. Raise it in Settings then Environment. A host with many mounted volumes can need this.", formatBytesEnv(tooLarge.Limit)),
-				})
+				h.rejectUpdate(w, r, checkin.ID, "ping", nil, http.StatusRequestEntityTooLarge,
+					fmt.Sprintf("Check-in exceeds the %s AGENT_PING_BODY_LIMIT. Raise it in Settings then Environment. A host with many mounted volumes can need this.", formatBytesEnv(tooLarge.Limit)),
+					pingStart)
 				return
 			}
 			JSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -452,8 +462,11 @@ func (h *InstallHandler) ServePing(w http.ResponseWriter, r *http.Request) {
 	// Hash compare. If the agent shipped no body (legacy) we skip this and
 	// `requestFull` stays empty — matches previous behaviour exactly.
 	var requestFull []string
+	hostIDMismatch := false
 	if hasBody {
 		requestFull = computeRequestFull(checkin, &req.Hashes)
+		hostIDMismatch = h.observeAgentIdentity(r.Context(), checkin.ID, checkin.ReportedHostID,
+			claimedHostID(req.HostID), checkin.Identity, req.MachineID, req.Hashes.HostnameHash)
 	}
 
 	now := time.Now()
@@ -479,13 +492,19 @@ func (h *InstallHandler) ServePing(w http.ResponseWriter, r *http.Request) {
 		// sending full reports. The key name and value are a fixed contract
 		// with the agent — do not rename or change the shape.
 		"hashGate": true,
+		// The agent hashes and sends a package field only when the server lists it here.
+		"capabilities": agentCapabilities,
 		"integrations": map[string]bool{
 			"docker":     checkin.DockerEnabled,
 			"compliance": checkin.ComplianceEnabled,
 		},
+		"hostId": checkin.ID,
 	}
 	if len(requestFull) > 0 {
 		resp["requestFull"] = requestFull
+	}
+	if hostIDMismatch {
+		resp["hostIdMismatch"] = true
 	}
 
 	// Record one update_history row per ping cycle for the Agent Activity
@@ -598,6 +617,13 @@ func buildMetricsParams(req *models.PingRequest) store.HostMetricsParams {
 		v := req.AgentVersion
 		mp.AgentVersion = &v
 	}
+	if util.ValidConfigVersion(req.ConfigVersion) {
+		v := req.ConfigVersion
+		mp.ConfigVersion = &v
+	}
+	if id := claimedHostID(req.HostID); id != "" {
+		mp.ReportedHostID = &id
+	}
 	return mp
 }
 
@@ -672,7 +698,7 @@ func (h *InstallHandler) ServeUpdateInterval(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// rejectUpdate writes an error response for a rejected /hosts/update AND
+// rejectUpdate writes an error response for a rejected /hosts/update or ping AND
 // records a matching "error" row in the Agent Activity feed.
 //
 // Without the activity row a rejection is completely invisible in the UI: the
@@ -700,7 +726,7 @@ func (h *InstallHandler) rejectUpdate(w http.ResponseWriter, r *http.Request, ho
 			Status:           "error",
 			ErrorMessage:     &msg,
 		}); err != nil {
-			slog.Warn("update: failed to record rejected-report activity row", "host_id", hostID, "error", err)
+			slog.Warn("agent check-in: failed to record rejected-request activity row", "host_id", hostID, "error", err)
 		}
 	}
 	JSON(w, status, map[string]string{"error": reason})
@@ -901,11 +927,24 @@ func (h *InstallHandler) ServeUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fullReportHostnameHash := ""
+	if reportType == "full" && payload.Hostname != "" {
+		fullReportHostnameHash = CanonicalHostnameHash(payload.Hostname)
+	}
+	h.observeAgentIdentity(r.Context(), host.ID, host.ReportedHostID, claimedHostID(payload.HostID),
+		store.IdentityFingerprintState{
+			Fingerprint:     host.IdentityFingerprint,
+			PrevFingerprint: host.IdentityPrevFingerprint,
+			ChangedAt:       host.IdentityFingerprintChangedAt,
+			ConflictAt:      host.IdentityConflictAt,
+		}, payload.MachineID, fullReportHostnameHash)
+
 	resp := map[string]interface{}{
 		"message":           "Host updated successfully",
 		"packagesProcessed": result.PackagesProcessed,
 		"updatesAvailable":  result.UpdatesAvailable,
 		"securityUpdates":   result.SecurityUpdates,
+		"hostId":            host.ID,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -944,19 +983,12 @@ func (h *InstallHandler) ServeAgentVersion(w http.ResponseWriter, r *http.Reques
 
 	// Check auto_update settings
 	settings, _ := h.settings.GetFirst(r.Context())
-	serverAutoUpdate := settings != nil && settings.AutoUpdate
-	hostAutoUpdate := host.AutoUpdate
-	autoUpdateDisabled := !serverAutoUpdate || !hostAutoUpdate
-	var autoUpdateDisabledReason string
-	if autoUpdateDisabled {
-		if !serverAutoUpdate && !hostAutoUpdate {
-			autoUpdateDisabledReason = "Auto-update is disabled in server settings and for this host"
-		} else if !serverAutoUpdate {
-			autoUpdateDisabledReason = "Auto-update is disabled in server settings"
-		} else {
-			autoUpdateDisabledReason = "Auto-update is disabled for this host"
-		}
+	patching, err := h.hosts.HasActivePatchRun(r.Context(), host.ID)
+	if err != nil {
+		slog.Warn("agent version: active patch run check failed", "host_id", host.ID, "error", err)
+		patching = true
 	}
+	autoUpdateDisabled, autoUpdateDisabledReason := agentAutoUpdateGate(settings != nil && settings.AutoUpdate, host.AutoUpdate, patching)
 
 	architecture := r.URL.Query().Get("arch")
 	if architecture == "" {
@@ -1163,3 +1195,19 @@ func (h *InstallHandler) ServeAgentDownload(w http.ResponseWriter, r *http.Reque
 
 	serveAgentBinary(w, r, binaryPath, info, f)
 }
+
+func agentAutoUpdateGate(serverAutoUpdate, hostAutoUpdate, patchRunActive bool) (bool, string) {
+	switch {
+	case !serverAutoUpdate && !hostAutoUpdate:
+		return true, "Auto-update is disabled in server settings and for this host"
+	case !serverAutoUpdate:
+		return true, "Auto-update is disabled in server settings"
+	case !hostAutoUpdate:
+		return true, "Auto-update is disabled for this host"
+	case patchRunActive:
+		return true, store.PatchRunInProgressMessage
+	}
+	return false, ""
+}
+
+var agentCapabilities = []string{"wingetPinned", "wingetStoreApp"}

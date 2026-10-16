@@ -26,6 +26,7 @@ import (
 	"patchmon-agent/internal/logutil"
 	"patchmon-agent/internal/pkgversion"
 	"patchmon-agent/internal/winexec"
+	"patchmon-agent/internal/winsec"
 
 	"github.com/spf13/cobra"
 )
@@ -254,7 +255,7 @@ func updateAgent(origin updateOrigin) (err error) {
 	// into the locked install directory.
 	tempPath := executablePath + ".new"
 	if runtime.GOOS == "windows" {
-		dir, dirErr := secureUpdateDir()
+		dir, dirErr := winsec.SecureUpdateDir()
 		if dirErr != nil {
 			return fmt.Errorf("failed to prepare update directory: %w", dirErr)
 		}
@@ -392,7 +393,7 @@ func psQuote(s string) string {
 //  3. Launch that script detached so it outlives this process.
 //  4. Exit immediately — the script takes over.
 func updateAgentWindows(executablePath, tempPath, newVersion string, progress *updateReporter) error {
-	dir, err := secureUpdateDir()
+	dir, err := winsec.SecureUpdateDir()
 	if err != nil {
 		_ = os.Remove(tempPath)
 		return fmt.Errorf("failed to prepare update directory: %w", err)
@@ -448,7 +449,7 @@ try {
 		return fmt.Errorf("failed to launch Windows update script: %w", err)
 	}
 
-	logger.Info("Windows update script launched — exiting to allow service replacement")
+	logger.Info("Windows update script launched; exiting to allow service replacement")
 	time.Sleep(500 * time.Millisecond)
 	os.Exit(0)
 	return nil // unreachable
@@ -841,7 +842,7 @@ func restartService(_ string, _ string) error {
 		// A failure before the restart script runs returns the error and
 		// keeps the agent running: exiting here would leave the service
 		// stopped, since nothing would start it again.
-		dir, dirErr := secureUpdateDir()
+		dir, dirErr := winsec.SecureUpdateDir()
 		if dirErr != nil {
 			return fmt.Errorf("prepare the update directory for the restart script: %w", dirErr)
 		}
