@@ -136,5 +136,16 @@
 	"(+ {{count}} dep:_other": "(+ {{count}} dépendances\u00a0:",
 	"Stopped by user": "Arrêtée par l'utilisateur",
 	"Completed with skipped items": "Terminée avec des éléments ignorés",
-	"A restart is required to finish installing updates.": "Un redémarrage est nécessaire pour terminer l'installation des mises à jour."
+	"A restart is required to finish installing updates.": "Un redémarrage est nécessaire pour terminer l'installation des mises à jour.",
+	"Not in the package inventory": "Absent de l'inventaire des paquets",
+	"Result": "Résultat",
+	"Updates ({{count}})": "Mises à jour ({{count}})",
+	"Restart:": "Redémarrage\u00a0:",
+	"Would install": "Serait installée",
+	"Not applicable": "Non applicable",
+	"Installed": "Installée",
+	"Already installed": "Déjà installée",
+	"Installed, restart required": "Installée, redémarrage requis",
+	"Installed with errors": "Installée avec des erreurs",
+	"Aborted": "Abandonnée"
 }

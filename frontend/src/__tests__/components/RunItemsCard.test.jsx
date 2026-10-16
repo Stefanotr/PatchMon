@@ -64,15 +64,18 @@ describe("RunItemsCard", () => {
 		}
 	});
 
-	it("gives the name the flexible width, truncated with a tooltip", () => {
+	// Fork: the run detail shows the whole title, wrapped, since a Windows
+	// update is told apart by its end (version, KB).
+	it("gives the name the flexible width and wraps a long title", () => {
 		render(<RunItemsCard items={ITEMS} />);
 		const table = screen.getAllByTestId("run-item-row")[0].closest("table");
 		expect(table).toHaveClass("table-fixed");
 		expect(table.parentElement).toHaveClass("overflow-x-auto");
-		const name = within(screen.getAllByTestId("run-item-row")[0]).getByTitle(
+		const name = within(screen.getAllByTestId("run-item-row")[0]).getByText(
 			ITEMS[0].title,
 		);
-		expect(name).toHaveClass("truncate");
+		expect(name).not.toHaveClass("truncate");
+		expect(name.className).toContain("[overflow-wrap:anywhere]");
 	});
 
 	it("shows the result code once when the message already contains it", () => {

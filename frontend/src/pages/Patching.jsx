@@ -53,7 +53,13 @@ import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
 import { searchWithoutTab, useTabParam } from "../hooks/useTabParam";
 import { tk } from "../i18n";
-import { adminHostsAPI, formatDate, hostGroupsAPI } from "../utils/api";
+import {
+	adminHostsAPI,
+	formatDate,
+	formatDateOnly,
+	getGlobalTimezone,
+	hostGroupsAPI,
+} from "../utils/api";
 import { patchingAPI } from "../utils/patchingApi";
 import { hasExtraDependencies } from "../utils/patchRun";
 
@@ -602,9 +608,34 @@ const TYPE_OPTIONS = [
 	{ value: "patch_package", label: tk("Patch package") },
 ];
 
+// A run date on two lines, date then time, so the date columns of the runs
+// table stay narrow. The full date and time stay in the tooltip.
+function RunDateCell({ value }) {
+	if (!value) return "—";
+	const d = new Date(value);
+	if (Number.isNaN(d.getTime())) return "—";
+	let time;
+	try {
+		time = new Intl.DateTimeFormat(undefined, {
+			timeZone: getGlobalTimezone() || undefined,
+			timeStyle: "medium",
+		}).format(d);
+	} catch {
+		time = d.toLocaleTimeString();
+	}
+	return (
+		<span className="block leading-tight" title={formatDate(value)}>
+			<span className="block whitespace-nowrap">{formatDateOnly(value)}</span>
+			<span className="block whitespace-nowrap text-xs">{time}</span>
+		</span>
+	);
+}
+
 /**
  * Inline row-action buttons shared between mobile cards and desktop rows.
  * Rendered with compact size for desktop, full-width-friendly size for mobile.
+ * compact: below 2xl the desktop buttons show their icon only; the label stays
+ * for screen readers, and the tooltip explains the action.
  */
 function RunRowActions({
 	run,
@@ -613,9 +644,12 @@ function RunRowActions({
 	retryingId,
 	approvingId,
 	size = "sm",
+	compact = false,
 }) {
 	const { t } = useTranslation();
 	const isMobile = size === "md";
+	const label = (text) =>
+		compact ? <span className="sr-only 2xl:not-sr-only">{text}</span> : text;
 	const baseBtn = isMobile
 		? "inline-flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-md min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
 		: "inline-flex items-center gap-1 text-xs px-2 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed";
@@ -635,7 +669,7 @@ function RunRowActions({
 						<RefreshCw
 							className={`${iconSize} ${retryingId === run.id ? "animate-spin" : ""}`}
 						/>
-						{t("Retry")}
+						{label(t("Retry"))}
 					</button>
 					<button
 						type="button"
@@ -649,7 +683,7 @@ function RunRowActions({
 						) : (
 							<PlayCircle className={iconSize} />
 						)}
-						{t("Skip & Patch")}
+						{label(t("Skip & Patch"))}
 					</button>
 				</>
 			)}
@@ -666,7 +700,7 @@ function RunRowActions({
 					) : (
 						<PlayCircle className={iconSize} />
 					)}
-					{t("Approve")}
+					{label(t("Approve"))}
 				</button>
 			)}
 			{run.status === "validated" && (
@@ -682,7 +716,7 @@ function RunRowActions({
 					) : (
 						<PlayCircle className={iconSize} />
 					)}
-					{t("Approve")}
+					{label(t("Approve"))}
 				</button>
 			)}
 			<Link
@@ -968,7 +1002,7 @@ function RunsTab({
 				) : (
 					<>
 						{/* Mobile cards (§20.2) */}
-						<div className="md:hidden p-3 space-y-3">
+						<div className="xl:hidden p-3 space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-3">
 							{runs.map((run) => {
 								const isDeletable = deletableStatuses.has(run.status);
 								const isApprovable = approvableStatuses.has(run.status);
@@ -1093,13 +1127,13 @@ function RunsTab({
 						</div>
 
 						{/* Desktop table (§4.1) */}
-						<div className="hidden md:block overflow-x-auto">
+						<div className="hidden xl:block overflow-x-auto">
 							<table className="min-w-full w-full divide-y divide-secondary-200 dark:divide-secondary-600 table-auto">
 								<thead className="bg-secondary-50 dark:bg-secondary-700 sticky top-0 z-10">
 									<tr>
 										<th
 											scope="col"
-											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider w-10"
+											className="px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider w-10"
 										>
 											{deletableRuns.length > 0 ? (
 												<button
@@ -1119,7 +1153,7 @@ function RunsTab({
 										</th>
 										<th
 											scope="col"
-											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider w-10"
+											className="px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider w-10"
 										>
 											{approvableRuns.length > 0 ? (
 												<button
@@ -1139,43 +1173,43 @@ function RunsTab({
 										</th>
 										<th
 											scope="col"
-											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
+											className="px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 										>
 											{t("Host")}
 										</th>
 										<th
 											scope="col"
-											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
+											className="px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
 										>
 											{t("Type")}
 										</th>
 										<th
 											scope="col"
-											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
+											className="px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
 											{t("Status")}
 										</th>
 										<th
 											scope="col"
-											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
+											className="hidden min-[1400px]:table-cell px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
 											{t("Initiated by")}
 										</th>
 										<th
 											scope="col"
-											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
+											className="px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
 											{t("Started")}
 										</th>
 										<th
 											scope="col"
-											className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
+											className="hidden 2xl:table-cell px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
 											{t("Completed")}
 										</th>
 										<th
 											scope="col"
-											className="px-3 sm:px-4 py-2 text-right text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
+											className="px-3 py-2 text-right text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap"
 										>
 											{t("Actions")}
 										</th>
@@ -1203,7 +1237,7 @@ function RunsTab({
 														: "hover:bg-secondary-50 dark:hover:bg-secondary-700"
 												}`}
 											>
-												<td className="px-3 sm:px-4 py-2 whitespace-nowrap w-10">
+												<td className="px-3 py-2 whitespace-nowrap w-10">
 													{isDeletable ? (
 														<button
 															type="button"
@@ -1220,7 +1254,7 @@ function RunsTab({
 														</button>
 													) : null}
 												</td>
-												<td className="px-3 sm:px-4 py-2 whitespace-nowrap w-10">
+												<td className="px-3 py-2 whitespace-nowrap w-10">
 													{isApprovable ? (
 														<button
 															type="button"
@@ -1237,44 +1271,47 @@ function RunsTab({
 														</button>
 													) : null}
 												</td>
-												<td className="px-3 sm:px-4 py-2 text-sm text-secondary-900 dark:text-white min-w-0">
+												<td className="px-3 py-2 text-sm text-secondary-900 dark:text-white min-w-0">
 													<div
-														className="truncate max-w-[220px]"
+														className="truncate max-w-[11rem] 2xl:max-w-[14rem]"
 														title={hostLabel}
 													>
 														{hostLabel}
 													</div>
 												</td>
-												<td className="px-3 sm:px-4 py-2 text-sm text-secondary-900 dark:text-white min-w-0">
-													<div className="max-w-[320px]">
+												<td className="px-3 py-2 text-sm text-secondary-900 dark:text-white min-w-0">
+													<div className="max-w-[14rem] 2xl:max-w-[20rem]">
 														<CompactPackageSummary run={run} />
 													</div>
 												</td>
-												<td className="px-3 sm:px-4 py-2 whitespace-nowrap">
-													<div className="flex items-center gap-1.5">
+												<td className="px-3 py-2">
+													<div className="flex flex-wrap items-center gap-1.5">
 														<PatchRunStatusBadge run={run} />
 														{hasExtraDeps && <ValidatedBadge />}
 													</div>
 												</td>
-												<td className="px-3 sm:px-4 py-2 whitespace-nowrap text-sm text-secondary-600 dark:text-secondary-400">
+												<td className="hidden min-[1400px]:table-cell px-3 py-2 whitespace-nowrap text-sm text-secondary-600 dark:text-secondary-400">
 													{run.triggered_by_username ? (
-														<span className="inline-flex items-center gap-1">
-															<User className="h-4 w-4" />
-															{run.triggered_by_username}
+														<span
+															className="inline-flex items-center gap-1 max-w-[9rem]"
+															title={run.triggered_by_username}
+														>
+															<User className="h-4 w-4 shrink-0" />
+															<span className="truncate">
+																{run.triggered_by_username}
+															</span>
 														</span>
 													) : (
 														"—"
 													)}
 												</td>
-												<td className="px-3 sm:px-4 py-2 whitespace-nowrap text-sm text-secondary-600 dark:text-secondary-400">
-													{formatDate(run.created_at)}
+												<td className="px-3 py-2 text-sm text-secondary-600 dark:text-secondary-400">
+													<RunDateCell value={run.created_at} />
 												</td>
-												<td className="px-3 sm:px-4 py-2 whitespace-nowrap text-sm text-secondary-600 dark:text-secondary-400">
-													{run.completed_at
-														? formatDate(run.completed_at)
-														: "—"}
+												<td className="hidden 2xl:table-cell px-3 py-2 text-sm text-secondary-600 dark:text-secondary-400">
+													<RunDateCell value={run.completed_at} />
 												</td>
-												<td className="px-3 sm:px-4 py-2 whitespace-nowrap text-right">
+												<td className="px-3 py-2 whitespace-nowrap text-right">
 													<div className="flex items-center justify-end gap-2">
 														<RunRowActions
 															run={run}
@@ -1283,6 +1320,7 @@ function RunsTab({
 															retryingId={retryingId}
 															approvingId={approvingId}
 															size="sm"
+															compact
 														/>
 													</div>
 												</td>
