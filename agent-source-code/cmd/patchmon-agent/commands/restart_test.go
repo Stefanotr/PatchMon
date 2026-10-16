@@ -916,3 +916,53 @@ func TestParseOnOff(t *testing.T) {
 		}
 	}
 }
+
+// The restart step shared by the Linux and Windows runs: a stopped or failed
+// run never asks the host whether it needs a restart, nor restarts it.
+func TestRestartAfterRun(t *testing.T) {
+	ifNeeded := reboot.Options{Mode: reboot.ModeIfNeeded, DelayMinutes: 10}
+	for _, tt := range []struct {
+		name       string
+		opts       reboot.Options
+		stopped    bool
+		runErr     error
+		needed     bool
+		reason     string
+		wantAsked  bool
+		wantCalls  int
+		wantOutput []string
+	}{
+		{name: "no restart option", opts: reboot.Options{}, needed: true},
+		{name: "stopped", opts: ifNeeded, stopped: true, needed: true, wantOutput: []string{"Restart: not scheduled, the run was stopped"}},
+		{name: "failed", opts: ifNeeded, runErr: errors.New("boom"), needed: true, wantOutput: []string{"Restart: not scheduled, the run failed"}},
+		{name: "pending on the host", opts: ifNeeded, needed: true, reason: "CBS RebootPending", wantAsked: true, wantCalls: 1, wantOutput: []string{"Restart required: yes (CBS RebootPending)", "Restart: scheduled for"}},
+		{name: "nothing pending", opts: ifNeeded, wantAsked: true, wantOutput: []string{"Restart required: no", "Restart: not needed"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := resetRestartState(t)
+			asked := false
+			needed := func() (bool, string) {
+				asked = true
+				return tt.needed, tt.reason
+			}
+			var out strings.Builder
+			if err := restartAfterRun(&out, "run-1", tt.opts, tt.stopped, tt.runErr, needed); err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if asked != tt.wantAsked {
+				t.Errorf("host asked = %v, want %v", asked, tt.wantAsked)
+			}
+			if s.calls != tt.wantCalls {
+				t.Errorf("schedule called %d time(s), want %d", s.calls, tt.wantCalls)
+			}
+			if len(tt.wantOutput) == 0 && out.Len() != 0 {
+				t.Errorf("unexpected output %q", out.String())
+			}
+			for _, want := range tt.wantOutput {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output %q lacks %q", out.String(), want)
+				}
+			}
+		})
+	}
+}

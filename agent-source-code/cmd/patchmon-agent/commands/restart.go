@@ -375,6 +375,37 @@ type skippedRestart struct{ reason string }
 
 func (s skippedRestart) Error() string { return s.reason }
 
+// restartAfterRun applies a real run's restart option once the run is over,
+// on every platform. A stopped or failed run is never restarted; otherwise
+// needed reports whether the host has a restart pending, and why. It returns
+// the error of a wanted restart that could not be scheduled.
+func restartAfterRun(out io.Writer, runID string, opts reboot.Options, stopped bool, runErr error, needed func() (bool, string)) error {
+	if !opts.Enabled() {
+		return nil
+	}
+	blocked := ""
+	switch {
+	case stopped:
+		blocked = "the run was stopped"
+	case runErr != nil:
+		blocked = "the run failed; restart by hand once the failure is fixed"
+	}
+	isNeeded := false
+	if blocked == "" {
+		var reason string
+		isNeeded, reason = needed()
+		switch {
+		case isNeeded && reason != "":
+			_, _ = fmt.Fprintf(out, "Restart required: yes (%s)\n", reason)
+		case isNeeded:
+			_, _ = fmt.Fprintln(out, "Restart required: yes")
+		default:
+			_, _ = fmt.Fprintln(out, "Restart required: no")
+		}
+	}
+	return scheduleRestart(out, runID, opts, isNeeded, blocked, scheduleHostRestart)
+}
+
 // scheduleRestart applies a run's restart option once the run is over and
 // writes what it did to out. needed says whether the host reports a pending
 // restart; blocked says why the run must not restart it ("" when it may).

@@ -2947,25 +2947,8 @@ func runPatch(patchRunID, patchType string, packageNames []string, dryRun bool, 
 	// Restart last, once every package step is over. A failed run is left
 	// alone: a package manager that stopped midway can leave the host in a
 	// state a restart makes worse.
-	if !dryRun && restart.Enabled() {
-		blocked := ""
-		switch {
-		case wasStopped:
-			blocked = "the run was stopped"
-		case stepErr != nil:
-			blocked = "the run failed; restart by hand once the failure is fixed"
-		}
-		needed := false
-		if blocked == "" {
-			var reason string
-			needed, reason = system.New(logger).CheckRebootRequired()
-			if needed {
-				sink.WriteString(fmt.Sprintf("Restart required: yes (%s)\n", reason))
-			} else {
-				sink.WriteString("Restart required: no\n")
-			}
-		}
-		if err := scheduleRestart(sink, patchRunID, restart, needed, blocked, scheduleHostRestart); err != nil {
+	if !dryRun {
+		if err := restartAfterRun(sink, patchRunID, restart, wasStopped, stepErr, system.New(logger).CheckRebootRequired); err != nil {
 			stepErr, restartFailed = err, true
 		}
 	}
@@ -3096,6 +3079,7 @@ func runPatchWindows(patchRunID string, req packages.WindowsPatchRequest, parseE
 			required, _ := system.New(logger).CheckRebootRequired()
 			return required
 		},
+		RestartRequested: !req.DryRun && restart.Enabled(),
 	}
 	apps := func() []models.Package {
 		return packages.NewWindowsManager(logger).UpdatableWingetApps()
@@ -3110,25 +3094,18 @@ func runPatchWindows(patchRunID string, req packages.WindowsPatchRequest, parseE
 	stage, errMsg := res.Stage, res.ErrorMessage
 
 	// Restart last, once every item is over. A stopped or failed run is left
-	// alone, and a restart that could not be scheduled fails the run.
-	if !req.DryRun && restart.Enabled() {
-		blocked := ""
-		switch {
-		case wasStopped:
-			blocked = "the run was stopped"
-		case stageErr != nil:
-			blocked = "the run failed; restart by hand once the failure is fixed"
-		}
-		needed := false
-		if blocked == "" {
-			needed = res.RebootRequired
-			if needed {
-				sink.WriteString("Restart required: yes\n")
-			} else {
-				sink.WriteString("Restart required: no\n")
+	// alone, and a restart that could not be scheduled fails the run. The
+	// run's items only know about their own installs, so "if needed" also
+	// asks Windows: a restart left pending by an earlier install blocks the
+	// very updates this run skipped.
+	if !req.DryRun {
+		needed := func() (bool, string) {
+			if res.RebootRequired {
+				return true, "an update or app of this run needs it"
 			}
+			return system.New(logger).CheckRebootRequired()
 		}
-		if err := scheduleRestart(sink, patchRunID, restart, needed, blocked, scheduleHostRestart); err != nil {
+		if err := restartAfterRun(sink, patchRunID, restart, wasStopped, stageErr, needed); err != nil {
 			stageErr = err
 			stage, errMsg = "failed", err.Error()
 		}

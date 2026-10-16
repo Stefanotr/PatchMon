@@ -95,6 +95,9 @@ type WindowsPatchHooks struct {
 	PostItems      func([]models.PatchRunItem)
 	Stopped        func() bool
 	RebootRequired func() bool
+	// RestartRequested: the run carries a restart option (this fork), applied
+	// by the agent once the run is over.
+	RestartRequested bool
 }
 
 // WindowsPatchResult is the outcome of a Windows patch run.
@@ -1138,7 +1141,11 @@ func (r *windowsPatchRun) run(runCtx, stopCtx context.Context) WindowsPatchResul
 		r.out("Nothing to install\n")
 	}
 	if res.RebootRequired {
-		r.out("\n[Restart required] A restart is required to finish installing updates. PatchMon does not restart the host.\n")
+		if r.hooks.RestartRequested {
+			r.out("\n[Restart required] A restart is required to finish installing updates.\n")
+		} else {
+			r.out("\n[Restart required] A restart is required to finish installing updates. PatchMon does not restart the host.\n")
+		}
 	}
 	res.Stage, res.ErrorMessage = finalWindowsStage(res.Items, r.runErrors, r.stopped(), r.req.DryRun)
 	r.post(r.items...)
