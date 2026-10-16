@@ -48,6 +48,7 @@ import {
 import InlineEdit from "../components/InlineEdit";
 import InlineMultiGroupEdit from "../components/InlineMultiGroupEdit";
 import InlineToggle from "../components/InlineToggle";
+import RemoteRestartHelpModal from "../components/RemoteRestartHelpModal";
 import RestartHostModal from "../components/RestartHostModal";
 import ModalPortal from "../components/ui/ModalPortal";
 import Tooltip from "../components/ui/Tooltip";
@@ -155,6 +156,8 @@ const Hosts = () => {
 	const [showAddModal, setShowAddModal] = useState(false);
 	// Host whose restart dialog is open, from its "Reboot required" badge.
 	const [restartHost, setRestartHost] = useState(null);
+	// Host whose "allow remote restarts" command is shown.
+	const [restartHelpHost, setRestartHelpHost] = useState(null);
 	const { canRestartHosts, hasModule } = useAuth();
 	const canRestart = canRestartHosts() && hasModule("patching");
 	// Hosts whose agent refuses remote restarts: their restart is greyed out.
@@ -1684,7 +1687,7 @@ const Hosts = () => {
 											})
 										: canRestart
 											? t(
-													"{{reason}}. Remote restarts are disabled on this host.",
+													"{{reason}}. Remote restarts are disabled on this host: click to see how to allow them.",
 													{
 														reason: host.reboot_reason || t("Reboot required"),
 													},
@@ -1694,17 +1697,20 @@ const Hosts = () => {
 							>
 								<button
 									type="button"
-									className={`badge bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200 gap-1 ${canRestart && !restartRefused(host) ? "cursor-pointer hover:opacity-80" : "cursor-help"} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1`}
+									className={`badge bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200 gap-1 ${canRestart ? "cursor-pointer hover:opacity-80" : "cursor-help"} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1`}
 									aria-label={
-										canRestart && !restartRefused(host)
-											? t("Reboot required: restart the host")
-											: t("Reboot required")
+										!canRestart
+											? t("Reboot required")
+											: restartRefused(host)
+												? t("Reboot required: see how to allow remote restarts")
+												: t("Reboot required: restart the host")
 									}
 									onClick={(e) => {
 										e.preventDefault();
 										e.stopPropagation();
-										if (canRestart && !restartRefused(host))
-											setRestartHost(host);
+										if (!canRestart) return;
+										if (restartRefused(host)) setRestartHelpHost(host);
+										else setRestartHost(host);
 									}}
 								>
 									<RotateCcw className="h-3 w-3" />
@@ -2843,6 +2849,14 @@ const Hosts = () => {
 			</div>
 
 			{/* Modals */}
+			{restartHelpHost && (
+				<RemoteRestartHelpModal
+					key={restartHelpHost.id}
+					isOpen
+					host={restartHelpHost}
+					onClose={() => setRestartHelpHost(null)}
+				/>
+			)}
 			{/* Mounted only while open, keyed by host: its state (a command still
 			    being sent) must not carry over from one host to the next. */}
 			{restartHost && (

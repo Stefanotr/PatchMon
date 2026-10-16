@@ -64,6 +64,7 @@ import { PackageListDisplay } from "../components/PackageListDisplay";
 import { PatchRunStatusBadge } from "../components/PatchRunStatusBadge";
 import PatchWizard from "../components/PatchWizard";
 import RdpViewer from "../components/RdpViewer";
+import RemoteRestartHelpModal from "../components/RemoteRestartHelpModal";
 import RestartHostModal from "../components/RestartHostModal";
 import SshTerminal from "../components/SshTerminal";
 import TierBadge from "../components/TierBadge";
@@ -236,6 +237,7 @@ const HostDetail = () => {
 	const [showApplyConfigModal, setShowApplyConfigModal] = useState(false);
 	const [showPatchConfirmModal, setShowPatchConfirmModal] = useState(false);
 	const [showRestartModal, setShowRestartModal] = useState(false);
+	const [showRemoteRestartHelp, setShowRemoteRestartHelp] = useState(false);
 
 	// Ref to track component mount state for setTimeout cleanup
 	const isMountedRef = useRef(true);
@@ -2105,6 +2107,19 @@ const HostDetail = () => {
 								<span className="hidden sm:inline">
 									{t("Restart", { context: "action" })}
 								</span>
+							</button>
+						)}
+						{canRestart && restartRefused && (
+							<button
+								type="button"
+								onClick={() => setShowRemoteRestartHelp(true)}
+								className="btn-outline flex items-center gap-2 text-sm whitespace-nowrap"
+								title={t(
+									"Show the command that allows remote restarts on this host",
+								)}
+							>
+								<Terminal className="h-4 w-4" />
+								<span className="hidden sm:inline">{t("Allow restarts")}</span>
 							</button>
 						)}
 						{reportMessage.text && (
@@ -5859,6 +5874,13 @@ const HostDetail = () => {
 
 			{/* Keyed by host: the page stays mounted when it moves to another
 			    host, and the dialog's state must not follow. */}
+			{showRemoteRestartHelp && (
+				<RemoteRestartHelpModal
+					isOpen
+					host={host}
+					onClose={() => setShowRemoteRestartHelp(false)}
+				/>
+			)}
 			<RestartHostModal
 				key={hostId}
 				hostId={hostId}

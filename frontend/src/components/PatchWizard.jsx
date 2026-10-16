@@ -59,6 +59,7 @@ import {
 	windowsPatchAllSummary,
 	windowsPatchInfo,
 } from "../utils/windowsPatching";
+import RemoteRestartHelpModal from "./RemoteRestartHelpModal";
 import RestartOptions from "./RestartOptions";
 import ModalPortal from "./ui/ModalPortal";
 
@@ -670,6 +671,8 @@ export default function PatchWizard({
 
 	// Selected hosts whose agent refuses remote restarts: patched, never
 	// restarted, whatever the restart choice.
+	// Target whose restart command the help shows first, or null when closed.
+	const [restartHelpTarget, setRestartHelpTarget] = useState(null);
 	const restartRefusedTargets = useMemo(
 		() =>
 			selectedTargets.filter((tg) => remoteRestartByHost[tg.hostId] === false),
@@ -2278,10 +2281,30 @@ export default function PatchWizard({
 																)
 																.join(", "),
 														},
-													)}
+													)}{" "}
+													<button
+														type="button"
+														className="underline font-medium hover:no-underline"
+														onClick={() =>
+															setRestartHelpTarget(restartRefusedTargets[0])
+														}
+													>
+														{t("How to allow them")}
+													</button>
 												</span>
 											</p>
 										)}
+									{restartHelpTarget && (
+										<RemoteRestartHelpModal
+											isOpen
+											host={{
+												friendly_name: restartHelpTarget.friendly_name,
+												hostname: restartHelpTarget.hostname,
+												os_type: restartHelpTarget.osType,
+											}}
+											onClose={() => setRestartHelpTarget(null)}
+										/>
+									)}
 									{restartChoice.mode !== "never" && (
 										<p className="mt-2 text-[11px] text-secondary-500 dark:text-secondary-400">
 											{t(
