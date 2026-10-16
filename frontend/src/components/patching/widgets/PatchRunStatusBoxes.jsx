@@ -23,7 +23,7 @@ const PatchRunStatusBoxes = ({ data }) => {
 			to: "/patching?tab=runs",
 		},
 		{
-			label: t("Active"),
+			label: t("Active", { context: "runs" }),
 			value: active,
 			Icon: Clock,
 			icon_class: "text-blue-600",
