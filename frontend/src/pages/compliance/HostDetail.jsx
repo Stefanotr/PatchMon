@@ -8,6 +8,7 @@ import {
 	Shield,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import HostComplianceDetail from "../../components/compliance/HostComplianceDetail";
 import { useToast } from "../../contexts/ToastContext";
@@ -15,6 +16,7 @@ import { dashboardAPI } from "../../utils/api";
 import { complianceAPI } from "../../utils/complianceApi";
 
 const ComplianceHostDetail = () => {
+	const { t } = useTranslation();
 	const { id } = useParams();
 	const queryClient = useQueryClient();
 	const toast = useToast();
@@ -26,16 +28,22 @@ const ComplianceHostDetail = () => {
 	const triggerScanMutation = useMutation({
 		mutationFn: () => complianceAPI.triggerScan(id, { profile_type: "all" }),
 		onSuccess: (response) => {
-			const msg = response?.data?.message || "Compliance scan triggered";
+			const msg = response?.data?.message || t("Compliance scan triggered");
 			const jobId = response?.data?.job_id || response?.data?.jobId;
-			toast.success(jobId ? `${msg} - Job ID: ${jobId}` : msg);
+			toast.success(
+				jobId
+					? t("{{message}} - Job ID: {{jobId}}", { message: msg, jobId })
+					: msg,
+			);
 			setPendingScanAt(Date.now());
 			queryClient.invalidateQueries({ queryKey: ["compliance-latest", id] });
 			queryClient.invalidateQueries({ queryKey: ["compliance-active-scans"] });
 		},
 		onError: (error) => {
 			const errorMsg = error.response?.data?.error || error.message;
-			toast.error(`Failed to start scan: ${errorMsg}`);
+			toast.error(
+				t("Failed to start scan: {{message}}", { message: errorMsg }),
+			);
 		},
 	});
 
@@ -129,7 +137,7 @@ const ComplianceHostDetail = () => {
 						<AlertTriangle className="h-5 w-5 text-red-400" />
 						<div className="ml-3">
 							<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-								Host not found
+								{t("Host not found")}
 							</h3>
 						</div>
 					</div>
@@ -139,7 +147,7 @@ const ComplianceHostDetail = () => {
 					className="mt-4 inline-flex items-center text-primary-600 hover:text-primary-900"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Security Compliance
+					{t("Back to Security Compliance")}
 				</Link>
 			</div>
 		);
@@ -154,7 +162,7 @@ const ComplianceHostDetail = () => {
 					className="inline-flex items-center text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 mb-4"
 				>
 					<ArrowLeft className="h-4 w-4 mr-2" />
-					Back to Security Compliance
+					{t("Back to Security Compliance")}
 				</Link>
 				<div className="flex items-start justify-between">
 					<div className="flex items-center">
@@ -171,12 +179,14 @@ const ComplianceHostDetail = () => {
 									className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] sm:min-h-0 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 									title={
 										!ws_status?.connected
-											? "Host is disconnected"
+											? t("Host is disconnected")
 											: hasRunningScan
-												? "A compliance scan is already running on this host. Cancel it from Security Compliance."
+												? t(
+														"A compliance scan is already running on this host. Cancel it from Security Compliance.",
+													)
 												: scanInFlight
-													? "A scan has just been queued for this host"
-													: "Run compliance scan now"
+													? t("A scan has just been queued for this host")
+													: t("Run compliance scan now")
 									}
 								>
 									{scanInFlight ? (
@@ -184,11 +194,11 @@ const ComplianceHostDetail = () => {
 									) : (
 										<Play className="h-4 w-4" />
 									)}
-									{scanInFlight ? "Scanning…" : "Run Scan"}
+									{scanInFlight ? t("Scanning…") : t("Run Scan")}
 								</button>
 							</div>
 							<p className="mt-1 text-sm text-secondary-600 dark:text-white">
-								{host.ip} &middot; Compliance Overview
+								{host.ip} &middot; {t("Compliance Overview")}
 							</p>
 						</div>
 					</div>
@@ -206,13 +216,13 @@ const ComplianceHostDetail = () => {
 									ws_status?.connected ? "bg-green-500" : "bg-secondary-400"
 								}`}
 							/>
-							{ws_status?.connected ? "Connected" : "Disconnected"}
+							{ws_status?.connected ? t("Connected") : t("Disconnected")}
 						</span>
 						<Link
 							to={`/hosts/${id}`}
 							className="inline-flex items-center text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
 						>
-							View Full Host Details
+							{t("View Full Host Details")}
 							<ExternalLink className="ml-2 h-4 w-4" />
 						</Link>
 					</div>

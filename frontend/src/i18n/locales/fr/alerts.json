@@ -26,5 +26,7 @@
 	"User Tfa Disabled": "2FA désactivée pour un utilisateur",
 	"Ssh Session Started": "Session SSH ouverte",
 	"Rdp Session Started": "Session RDP ouverte",
-	"Server Update": "Mise à jour du serveur"
+	"Server Update": "Mise à jour du serveur",
+	"SSO Fallback Login": "Connexion de secours hors SSO",
+	"SSO Fallback Refused": "Connexion de secours hors SSO refusée"
 }

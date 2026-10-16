@@ -13,8 +13,10 @@ import {
 	ShieldX,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { complianceAPI } from "../../utils/complianceApi";
+import { SEVERITY_LABELS } from "../../utils/complianceStatus";
 
 const SEVERITY_COLORS = {
 	critical: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
@@ -33,6 +35,7 @@ const ScanResultsTab = ({
 	scannedHosts,
 	initialFilters,
 }) => {
+	const { t } = useTranslation();
 	const [search, setSearch] = useState("");
 	const [severity_filter, set_severity_filter] = useState("");
 	const [status_filter, set_status_filter] = useState("");
@@ -153,19 +156,29 @@ const ScanResultsTab = ({
 
 	const get_status_icon = (rule) => {
 		if (rule.hosts_failed > 0) {
-			return <ShieldX className="h-4 w-4 text-red-500" title="Has failures" />;
+			return (
+				<ShieldX className="h-4 w-4 text-red-500" title={t("Has failures")} />
+			);
 		}
 		if (rule.hosts_warned > 0) {
 			return (
-				<ShieldAlert className="h-4 w-4 text-yellow-500" title="Has warnings" />
+				<ShieldAlert
+					className="h-4 w-4 text-yellow-500"
+					title={t("Has warnings")}
+				/>
 			);
 		}
 		if (rule.hosts_passed > 0) {
 			return (
-				<ShieldCheck className="h-4 w-4 text-green-500" title="All passing" />
+				<ShieldCheck
+					className="h-4 w-4 text-green-500"
+					title={t("All passing")}
+				/>
 			);
 		}
-		return <Shield className="h-4 w-4 text-secondary-400" title="No data" />;
+		return (
+			<Shield className="h-4 w-4 text-secondary-400" title={t("No data")} />
+		);
 	};
 
 	return (
@@ -178,7 +191,7 @@ const ScanResultsTab = ({
 						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary-400" />
 						<input
 							type="text"
-							placeholder="Search rules by title, ID, or section..."
+							placeholder={t("Search rules by title, ID, or section...")}
 							value={search}
 							onChange={(e) => {
 								setSearch(e.target.value);
@@ -199,10 +212,10 @@ const ScanResultsTab = ({
 							}}
 							className="px-3 py-2 bg-secondary-50 dark:bg-secondary-700 border border-secondary-200 dark:border-secondary-600 rounded-lg text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
 						>
-							<option value="">All Severities</option>
+							<option value="">{t("All Severities")}</option>
 							{SEVERITY_ORDER.map((s) => (
 								<option key={s} value={s}>
-									{s.charAt(0).toUpperCase() + s.slice(1)}
+									{t(SEVERITY_LABELS[s])}
 								</option>
 							))}
 						</select>
@@ -217,10 +230,10 @@ const ScanResultsTab = ({
 						}}
 						className="px-3 py-2 bg-secondary-50 dark:bg-secondary-700 border border-secondary-200 dark:border-secondary-600 rounded-lg text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
 					>
-						<option value="">All Statuses</option>
-						<option value="fail">Failing</option>
-						<option value="warn">Warnings</option>
-						<option value="pass">Passing</option>
+						<option value="">{t("All Statuses")}</option>
+						<option value="fail">{t("Failing")}</option>
+						<option value="warn">{t("Warnings")}</option>
+						<option value="pass">{t("Passing")}</option>
 					</select>
 
 					{/* Host Filter */}
@@ -233,7 +246,7 @@ const ScanResultsTab = ({
 							}}
 							className="px-3 py-2 bg-secondary-50 dark:bg-secondary-700 border border-secondary-200 dark:border-secondary-600 rounded-lg text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 max-w-[220px] truncate"
 						>
-							<option value="">All Hosts</option>
+							<option value="">{t("All Hosts")}</option>
 							{host_options.map((h) => (
 								<option key={h.host_id} value={h.host_id}>
 									{h.friendly_name || h.hostname || h.host_id}
@@ -252,7 +265,7 @@ const ScanResultsTab = ({
 							}}
 							className="px-3 py-2 bg-secondary-50 dark:bg-secondary-700 border border-secondary-200 dark:border-secondary-600 rounded-lg text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
 						>
-							<option value="">All Scan Types</option>
+							<option value="">{t("All Scan Types")}</option>
 							<option value="openscap">OpenSCAP</option>
 							<option value="docker-bench">Docker Bench</option>
 						</select>
@@ -274,8 +287,8 @@ const ScanResultsTab = ({
 					<Shield className="h-8 w-8 text-secondary-400 mx-auto mb-3" />
 					<p className="text-secondary-500 dark:text-white">
 						{search || severity_filter || status_filter
-							? "No rules match your filters"
-							: "No compliance rules found. Run a scan to populate rules."}
+							? t("No rules match your filters")
+							: t("No compliance rules found. Run a scan to populate rules.")}
 					</p>
 				</div>
 			) : (
@@ -284,8 +297,11 @@ const ScanResultsTab = ({
 					{total_pages > 1 && (
 						<div className="flex items-center justify-between px-4 py-2 border-b border-secondary-200 dark:border-secondary-700 bg-secondary-50 dark:bg-secondary-800">
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Showing {page * limit + 1}–{Math.min((page + 1) * limit, total)}{" "}
-								of {total} rules
+								{t("Showing {{from}}–{{to}} of {{total}} rules", {
+									from: page * limit + 1,
+									to: Math.min((page + 1) * limit, total),
+									total,
+								})}
 							</p>
 							<div className="flex items-center gap-2">
 								<button
@@ -297,7 +313,10 @@ const ScanResultsTab = ({
 									<ChevronLeft className="h-4 w-4" />
 								</button>
 								<span className="text-sm text-secondary-500 dark:text-white">
-									Page {page + 1} of {total_pages}
+									{t("Page {{page}} of {{pages}}", {
+										page: page + 1,
+										pages: total_pages,
+									})}
 								</span>
 								<button
 									type="button"
@@ -318,42 +337,42 @@ const ScanResultsTab = ({
 								<tr>
 									<SortableTh
 										column="status"
-										label="Status"
+										label={t("Status")}
 										className="text-left w-12"
 									/>
 									<SortableTh
 										column="title"
-										label="Rule"
+										label={t("Rule")}
 										className="text-left"
 									/>
 									<SortableTh
 										column="severity"
-										label="Severity"
+										label={t("Severity")}
 										className="text-left w-24"
 									/>
 									<SortableTh
 										column="profile_type"
-										label="Profile"
+										label={t("Profile")}
 										className="text-left w-20"
 									/>
 									<SortableTh
 										column="hosts_passed"
-										label="Pass"
+										label={t("Pass")}
 										className="text-center w-16 text-green-600 dark:text-green-400"
 									/>
 									<SortableTh
 										column="hosts_failed"
-										label="Fail"
+										label={t("Fail")}
 										className="text-center w-16 text-red-600 dark:text-red-400"
 									/>
 									<SortableTh
 										column="hosts_warned"
-										label="Warn"
+										label={t("Warn")}
 										className="text-center w-16 text-yellow-600 dark:text-yellow-400"
 									/>
 									<SortableTh
 										column="total_hosts"
-										label="Hosts"
+										label={t("Hosts")}
 										className="text-center w-16"
 									/>
 								</tr>
@@ -382,8 +401,10 @@ const ScanResultsTab = ({
 													"bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-white"
 												}`}
 											>
-												{(rule.severity || "unknown").charAt(0).toUpperCase() +
-													(rule.severity || "unknown").slice(1)}
+												{SEVERITY_LABELS[rule.severity || "unknown"]
+													? t(SEVERITY_LABELS[rule.severity || "unknown"])
+													: rule.severity.charAt(0).toUpperCase() +
+														rule.severity.slice(1)}
 											</span>
 										</td>
 										<td className="px-4 py-2 whitespace-nowrap">
@@ -439,8 +460,12 @@ const ScanResultsTab = ({
 					<div className="flex items-center justify-between px-4 py-3 border-t border-secondary-200 dark:border-secondary-700">
 						<p className="text-sm text-secondary-500 dark:text-white">
 							{total > 0
-								? `Showing ${page * limit + 1}–${Math.min((page + 1) * limit, total)} of ${total} rules`
-								: "No rules"}
+								? t("Showing {{from}}–{{to}} of {{total}} rules", {
+										from: page * limit + 1,
+										to: Math.min((page + 1) * limit, total),
+										total,
+									})
+								: t("No rules")}
 						</p>
 						{total_pages > 1 && (
 							<div className="flex items-center gap-2">
@@ -453,7 +478,10 @@ const ScanResultsTab = ({
 									<ChevronLeft className="h-4 w-4" />
 								</button>
 								<span className="text-sm text-secondary-500 dark:text-white">
-									Page {page + 1} of {total_pages}
+									{t("Page {{page}} of {{pages}}", {
+										page: page + 1,
+										pages: total_pages,
+									})}
 								</span>
 								<button
 									type="button"

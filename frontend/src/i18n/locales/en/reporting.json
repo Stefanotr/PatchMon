@@ -1,0 +1,12 @@
+{
+	"{{count}} alert(s) selected_one": "{{count}} alert(s) selected",
+	"{{count}} alert(s) selected_other": "{{count}} alert(s) selected",
+	"{{count}} alert(s) updated: {{action}}_one": "{{count}} alert(s) updated: {{action}}",
+	"{{count}} alert(s) updated: {{action}}_other": "{{count}} alert(s) updated: {{action}}",
+	"Are you sure you want to delete {{count}} alert?_one": "Are you sure you want to delete {{count}} alert?",
+	"Are you sure you want to delete {{count}} alert?_other": "Are you sure you want to delete {{count}} alerts?",
+	"Delete {{count}} alert_one": "Delete {{count}} alert",
+	"Delete {{count}} alert_other": "Delete {{count}} alerts",
+	"{{count}} alert deleted_one": "{{count}} alert deleted",
+	"{{count}} alert deleted_other": "{{count}} alerts deleted"
+}

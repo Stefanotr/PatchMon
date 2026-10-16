@@ -1,0 +1,20 @@
+{
+	"Started {{count}} compliance scan(s)_one": "Started {{count}} compliance scan(s)",
+	"Started {{count}} compliance scan(s)_other": "Started {{count}} compliance scan(s)",
+	"Started {{count}} scan(s), {{failed}} failed_one": "Started {{count}} scan(s), {{failed}} failed",
+	"Started {{count}} scan(s), {{failed}} failed_other": "Started {{count}} scan(s), {{failed}} failed",
+	"Scan {{count}} Host_one": "Scan {{count}} Host",
+	"Scan {{count}} Host_other": "Scan {{count}} Hosts",
+	"{{value}} rules evaluated_one": "{{value}} rules evaluated",
+	"{{value}} rules evaluated_other": "{{value}} rules evaluated",
+	"{{value}} total failures_one": "{{value}} total failures",
+	"{{value}} total failures_other": "{{value}} total failures",
+	"{{count}} scans_one": "{{count}} scans",
+	"{{count}} scans_other": "{{count}} scans",
+	"{{count}} OpenSCAP scans_one": "{{count}} OpenSCAP scans",
+	"{{count}} OpenSCAP scans_other": "{{count}} OpenSCAP scans",
+	"{{count}} Docker Bench scans_one": "{{count}} Docker Bench scans",
+	"{{count}} Docker Bench scans_other": "{{count}} Docker Bench scans",
+	"{{value}} total warnings_one": "{{value}} total warnings",
+	"{{value}} total warnings_other": "{{value}} total warnings"
+}

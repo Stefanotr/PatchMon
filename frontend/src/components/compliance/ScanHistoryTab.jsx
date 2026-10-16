@@ -12,31 +12,33 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import i18n, { dateFnsLocale, tk } from "../../i18n";
 import { complianceAPI } from "../../utils/complianceApi";
 
 const STATUS_CONFIG = {
 	completed: {
 		icon: CheckCircle,
-		label: "Completed",
+		label: tk("Completed"),
 		colour: "text-green-600 dark:text-green-400",
 		bg: "bg-green-100 dark:bg-green-900/30",
 	},
 	failed: {
 		icon: XCircle,
-		label: "Failed",
+		label: tk("Failed"),
 		colour: "text-red-600 dark:text-red-400",
 		bg: "bg-red-100 dark:bg-red-900/30",
 	},
 	cancelled: {
 		icon: Ban,
-		label: "Cancelled",
+		label: tk("Cancelled"),
 		colour: "text-secondary-500 dark:text-white",
 		bg: "bg-secondary-100 dark:bg-secondary-700",
 	},
 	running: {
 		icon: RefreshCw,
-		label: "Running",
+		label: tk("Running"),
 		colour: "text-blue-600 dark:text-blue-400",
 		bg: "bg-blue-100 dark:bg-blue-900/30",
 	},
@@ -49,15 +51,16 @@ const PROFILE_TYPE_LABELS = {
 
 const format_duration = (ms) => {
 	if (ms == null) return " -";
-	if (ms < 1000) return `${ms}ms`;
+	if (ms < 1000) return i18n.t("{{n}}ms", { n: ms });
 	const seconds = ms / 1000;
-	if (seconds < 60) return `${seconds.toFixed(1)}s`;
+	if (seconds < 60) return i18n.t("{{n}}s", { n: seconds.toFixed(1) });
 	const minutes = Math.floor(seconds / 60);
 	const remaining = Math.round(seconds % 60);
-	return `${minutes}m ${remaining}s`;
+	return i18n.t("{{minutes}}m {{seconds}}s", { minutes, seconds: remaining });
 };
 
 const ScanHistoryTab = ({ scanned_hosts }) => {
+	const { t } = useTranslation();
 	const [page, set_page] = useState(0);
 	const [status_filter, set_status_filter] = useState("");
 	const [type_filter, set_type_filter] = useState("");
@@ -114,7 +117,7 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary-400 dark:text-white" />
 						<input
 							type="text"
-							placeholder="Search host or profile..."
+							placeholder={t("Search host or profile...")}
 							value={search}
 							onChange={(e) => set_search(e.target.value)}
 							className="w-full pl-9 pr-3 py-2 bg-secondary-50 dark:bg-secondary-700 border border-secondary-200 dark:border-secondary-600 rounded-lg text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -129,11 +132,11 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 						}}
 						className="px-3 py-2 bg-secondary-50 dark:bg-secondary-700 border border-secondary-200 dark:border-secondary-600 rounded-lg text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
 					>
-						<option value="">All Statuses</option>
-						<option value="completed">Completed</option>
-						<option value="failed">Failed</option>
-						<option value="running">Running</option>
-						<option value="cancelled">Cancelled</option>
+						<option value="">{t("All Statuses")}</option>
+						<option value="completed">{t("Completed")}</option>
+						<option value="failed">{t("Failed")}</option>
+						<option value="running">{t("Running")}</option>
+						<option value="cancelled">{t("Cancelled")}</option>
 					</select>
 
 					<select
@@ -144,7 +147,7 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 						}}
 						className="px-3 py-2 bg-secondary-50 dark:bg-secondary-700 border border-secondary-200 dark:border-secondary-600 rounded-lg text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
 					>
-						<option value="">All Types</option>
+						<option value="">{t("All Types")}</option>
 						<option value="openscap">OpenSCAP</option>
 						<option value="docker-bench">Docker Bench</option>
 					</select>
@@ -158,7 +161,7 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 							}}
 							className="px-3 py-2 bg-secondary-50 dark:bg-secondary-700 border border-secondary-200 dark:border-secondary-600 rounded-lg text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 max-w-[220px] truncate"
 						>
-							<option value="">All Hosts</option>
+							<option value="">{t("All Hosts")}</option>
 							{host_options.map((h) => (
 								<option key={h.host_id} value={h.host_id}>
 									{h.friendly_name || h.hostname || h.host_id}
@@ -179,14 +182,14 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 							}}
 							className="text-xs text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
 						>
-							Clear filters
+							{t("Clear filters")}
 						</button>
 					)}
 
 					<div className="ml-auto flex items-center gap-3">
 						{total > 0 && (
 							<span className="text-sm text-secondary-500 dark:text-white whitespace-nowrap">
-								{total} scan{total !== 1 ? "s" : ""} found
+								{t("{{count}} scan found", { count: total })}
 							</span>
 						)}
 						{total_pages > 1 && (
@@ -210,12 +213,12 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 					<div className="text-center py-16 text-secondary-400 dark:text-white">
 						<Shield className="h-10 w-10 mx-auto mb-3" />
 						<p className="font-medium text-secondary-700 dark:text-white">
-							No scan history found
+							{t("No scan history found")}
 						</p>
 						<p className="text-sm mt-1">
 							{debounced_search
-								? "No scans match your search."
-								: "Completed and failed scans will appear here."}
+								? t("No scans match your search.")
+								: t("Completed and failed scans will appear here.")}
 						</p>
 					</div>
 				) : (
@@ -224,25 +227,25 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 							<thead className="bg-secondary-50 dark:bg-secondary-700">
 								<tr>
 									<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-										Host
+										{t("Host")}
 									</th>
 									<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-										Profile
+										{t("Profile")}
 									</th>
 									<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-										Status
+										{t("Status")}
 									</th>
 									<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-										Outcome
+										{t("Outcome")}
 									</th>
 									<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-										Duration
+										{t("Duration")}
 									</th>
 									<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-										Rules
+										{t("Rules")}
 									</th>
 									<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-										Started
+										{t("Started")}
 									</th>
 								</tr>
 							</thead>
@@ -293,7 +296,7 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 													<StatusIcon
 														className={`h-4 w-4 ${scan.status === "running" ? "animate-spin" : ""}`}
 													/>
-													{cfg.label}
+													{t(cfg.label)}
 												</span>
 											</td>
 
@@ -301,16 +304,16 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 												{scan.status === "completed" ? (
 													<div className="flex items-center gap-3 text-sm">
 														<span className="text-green-600 dark:text-green-400 font-medium">
-															{scan.passed} pass
+															{t("{{count}} pass", { count: scan.passed })}
 														</span>
 														{scan.failed > 0 && (
 															<span className="text-red-600 dark:text-red-400 font-medium">
-																{scan.failed} fail
+																{t("{{count}} fail", { count: scan.failed })}
 															</span>
 														)}
 														{scan.warnings > 0 && (
 															<span className="text-yellow-600 dark:text-yellow-400 font-medium">
-																{scan.warnings} warn
+																{t("{{count}} warn", { count: scan.warnings })}
 															</span>
 														)}
 														<span className="text-secondary-400 dark:text-white">
@@ -322,15 +325,15 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 														className="text-sm text-red-500 dark:text-red-400 max-w-[200px] truncate block"
 														title={scan.error_message || ""}
 													>
-														{scan.error_message || "Scan failed"}
+														{scan.error_message || t("Scan failed")}
 													</span>
 												) : scan.status === "cancelled" ? (
 													<span className="text-sm text-secondary-500 dark:text-white">
-														{scan.error_message || "Scan cancelled"}
+														{scan.error_message || t("Scan cancelled")}
 													</span>
 												) : (
 													<span className="text-sm text-secondary-400 dark:text-white">
-														In progress…
+														{t("In progress…")}
 													</span>
 												)}
 											</td>
@@ -341,6 +344,7 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 													{scan.status === "running"
 														? formatDistanceToNow(new Date(scan.started_at), {
 																addSuffix: false,
+																locale: dateFnsLocale(),
 															})
 														: format_duration(scan.duration_ms)}
 												</div>
@@ -357,6 +361,7 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 														? format(
 																new Date(scan.started_at),
 																"dd MMM yyyy HH:mm",
+																{ locale: dateFnsLocale() },
 															)
 														: ""
 												}
@@ -364,6 +369,7 @@ const ScanHistoryTab = ({ scanned_hosts }) => {
 												{scan.started_at
 													? formatDistanceToNow(new Date(scan.started_at), {
 															addSuffix: true,
+															locale: dateFnsLocale(),
 														})
 													: " -"}
 											</td>
