@@ -4,8 +4,9 @@ import {
 	PACMAN_SELECTED_PATCH_UNSUPPORTED,
 } from "./patchSupport";
 
-// A Linux dry run is one package manager simulation, so it validates as many
-// packages as a run may hold (fork: PatchMon keeps 5).
+// Above this many packages the wizard warns that validating can take a
+// while; it validates any number since PatchMon 2.1.6. A Linux dry run is one
+// package manager simulation, so the fork warns from 100 (PatchMon: 5).
 export const LINUX_DRY_RUN_PACKAGE_LIMIT = 100;
 export const WINDOWS_DRY_RUN_PACKAGE_LIMIT = 100;
 

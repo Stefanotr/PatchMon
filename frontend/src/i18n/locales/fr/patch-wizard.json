@@ -89,7 +89,6 @@
 	"Show validation output": "Afficher la sortie de validation",
 	"Re-run validation": "Relancer la validation",
 	"Choose which packages to include in this patch run.": "Choisissez les paquets à inclure dans cette exécution de patch.",
-	"{{limit}} package limit for dry-run validation. The next step will let you skip validation and queue the patch directly.": "La validation par dry run est limitée à {{limit}} paquets. L'étape suivante vous permettra d'ignorer la validation et de mettre directement le patch en file d'attente.",
 	"Choose when this patch should run on each host. By default each host follows its assigned policy; you can override to run immediately instead.": "Choisissez quand ce patch doit s'exécuter sur chaque hôte. Par défaut, chaque hôte suit la politique qui lui est attribuée\u00a0; vous pouvez forcer une exécution immédiate à la place.",
 	"Apply to all hosts:": "Appliquer à tous les hôtes\u00a0:",
 	"Use host policy": "Utiliser la politique de l'hôte",
@@ -140,7 +139,6 @@
 	"Host policy: Default": "Politique de l'hôte\u00a0: par défaut",
 	"Done": "Terminé",
 	"Skip validation": "Ignorer la validation",
-	"Skip (too many packages)": "Ignorer (trop de paquets)",
 	"Not patchable on this host": "Non patchable sur cet hôte",
 	"Windows Updates": "Mises à jour Windows",
 	"Applications (winget)": "Applications (winget)",
@@ -171,5 +169,6 @@
 	"Installs all pending Windows updates, except optional, driver and feature upgrades, and upgrades the apps winget can update.": "Installe toutes les mises à jour Windows en attente, sauf les mises à jour facultatives, les pilotes et les mises à niveau de fonctionnalités, et met à niveau les applications que winget peut mettre à jour.",
 	"Installs all pending Windows updates, except optional, driver and feature upgrades.": "Installe toutes les mises à jour Windows en attente, sauf les mises à jour facultatives, les pilotes et les mises à niveau de fonctionnalités.",
 	"Upgrades the apps winget can update.": "Met à niveau les applications que winget peut mettre à jour.",
-	"Nothing selected. Choose Windows Updates, Applications (winget), or both.": "Rien n'est sélectionné. Choisissez Mises à jour Windows, Applications (winget), ou les deux."
+	"Nothing selected. Choose Windows Updates, Applications (winget), or both.": "Rien n'est sélectionné. Choisissez Mises à jour Windows, Applications (winget), ou les deux.",
+	"Validating more than {{limit}} packages can take a while. You can skip validation on the next step.": "Valider plus de {{limit}} paquets peut prendre du temps. Vous pourrez ignorer la validation à l'étape suivante."
 }

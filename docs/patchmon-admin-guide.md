@@ -1531,7 +1531,7 @@ Policies are assigned to **hosts** or **host groups**. You can also add per-host
 A **dry-run** (also called a validation run) asks the agent to simulate the package installation without applying it. It exists to catch problems *before* you touch the host:
 
 - For `apt-get`, the agent runs `apt-get -s install <packages>` and parses the simulation output.
-- For `dnf`/`yum`, the agent runs the planning step that reports "what would be installed" without committing.
+- For `dnf`/`yum`, the agent runs `dnf upgrade --assumeno <packages>` (or `yum`), which prints the transaction plan and stops before committing. Every package in the plan, including dependencies, is listed in the validation result.
 - For `pkg` on FreeBSD, the agent runs `pkg upgrade -n` or the equivalent install-no-run.
 - `pacman` (Arch Linux) has no validation step, because selected patching is not available on Arch and `patch_all` cannot be dry-run. See [Arch Linux patching](#arch-patching).
 - For `apk` on Alpine, the agent runs `apk upgrade --simulate <packages>`, which opens the package database read-only. A validation fails if apk reports an error (for example an unknown package or a conflict with `/etc/apk/world`), or if the plan would downgrade or replace a package, or remove one listed in `/etc/apk/world`.
@@ -4849,12 +4849,12 @@ Four providers are supported in 2.0, each with a curated list of models:
 
 | Provider | Default model | Additional models |
 |----------|---------------|-------------------|
-| **OpenRouter** | `anthropic/claude-sonnet-5.5` | Claude Haiku 5.5, GPT-4o, GPT-4o Mini, Gemini 2.5 Flash, Llama 3.1 70B |
+| **OpenRouter** | `anthropic/claude-sonnet-5.5` | Claude Haiku 5.5, GPT-4o, GPT-4o Mini, Gemini 3.8 Flash, Llama 3.1 70B |
 | **Anthropic** | `claude-sonnet-5-5` | Claude Opus 5.5, Claude Haiku 5.5 |
-| **OpenAI** | `gpt-4o-mini` | GPT-4o, GPT-4 Turbo |
-| **Google Gemini** | `gemini-2.5-flash-lite` | Gemini 2.5 Flash, Gemini 2.5 Pro |
+| **OpenAI** | `gpt-4o-mini` | GPT-4o, GPT-5.6 Sol |
+| **Google Gemini** | `gemini-3.5-flash-lite` | Gemini 3.6 Flash, Gemini 3.8 Flash |
 
-If a saved model has since been retired by its provider, PatchMon uses that provider's default model instead, so the assistant keeps working without you re-saving the settings.
+If a saved model has since been retired by its provider, PatchMon uses that provider's default model instead, so the assistant keeps working without you re-saving the settings. A saved model that is no longer in the list but still served by its provider (for example Gemini 2.5, which Google now offers only to accounts that used it before) stays selected until you pick another.
 
 Pick one provider per PatchMon deployment. To change providers, edit the AI settings. The API key is cleared automatically when you switch, and you'll be asked to enter a new one for the new provider.
 
