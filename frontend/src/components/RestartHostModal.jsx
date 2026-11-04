@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { useToast } from "../contexts/ToastContext";
+import { REMOTE_RESTART_DISABLED_HINT } from "../hooks/useRemoteRestart";
 import { adminHostsAPI } from "../utils/api";
 import {
 	buildRebootRequest,
@@ -34,6 +35,10 @@ export const restartHistoryPath = (hostId) =>
  *
  * needsReboot is the host's last reported state: true shows why a restart is
  * pending, false says a restart is optional, undefined shows neither.
+ *
+ * restartsDisabled: the host refuses new restarts (remote-restart-enabled is
+ * off). The dialog then only cancels: the agent still cancels a restart
+ * PatchMon scheduled before restarts were turned off.
  */
 export default function RestartHostModal({
 	hostId,
@@ -42,6 +47,7 @@ export default function RestartHostModal({
 	onClose,
 	needsReboot,
 	rebootReason,
+	restartsDisabled = false,
 }) {
 	const { t } = useTranslation();
 	const toast = useToast();
@@ -152,7 +158,22 @@ export default function RestartHostModal({
 					</div>
 				)}
 
-				<RestartOptions value={choice} onChange={setChoice} showMode={false} />
+				{restartsDisabled ? (
+					<div className="flex items-start gap-2 rounded-md border border-secondary-200 bg-secondary-50 p-3 text-sm text-secondary-700 dark:border-secondary-600 dark:bg-secondary-700/50 dark:text-secondary-200">
+						<Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+						<span>
+							{t(
+								"Remote restarts are disabled on this host, so it refuses new ones. A restart PatchMon scheduled before can still be cancelled here.",
+							)}
+						</span>
+					</div>
+				) : (
+					<RestartOptions
+						value={choice}
+						onChange={setChoice}
+						showMode={false}
+					/>
+				)}
 
 				<p className="mt-4 text-xs text-secondary-500 dark:text-secondary-400">
 					{t(
@@ -184,7 +205,10 @@ export default function RestartHostModal({
 						type="button"
 						onClick={() => restart.mutate()}
 						className="btn-danger text-sm"
-						disabled={busy || invalid}
+						disabled={busy || invalid || restartsDisabled}
+						title={
+							restartsDisabled ? t(REMOTE_RESTART_DISABLED_HINT) : undefined
+						}
 					>
 						{restart.isPending ? t("Sending...") : t("Schedule restart")}
 					</button>

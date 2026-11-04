@@ -85,5 +85,7 @@
 	"In a terminal, with sudo.": "Dans un terminal, avec sudo.",
 	"Alpine (OpenRC)": "Alpine (OpenRC)",
 	"As root.": "En root.",
-	"In PowerShell run as administrator.": "Dans PowerShell lancé en administrateur."
+	"In PowerShell run as administrator.": "Dans PowerShell lancé en administrateur.",
+	"Remote restarts are disabled on this host, so it refuses new ones. A restart PatchMon scheduled before can still be cancelled here.": "Les redémarrages à distance sont désactivés sur cet hôte, qui refuse donc les nouveaux. Un redémarrage planifié auparavant par PatchMon peut encore être annulé ici.",
+	"Remote restarts are disabled on this host: cancel a scheduled restart": "Les redémarrages à distance sont désactivés sur cet hôte\u00a0: annuler un redémarrage planifié"
 }

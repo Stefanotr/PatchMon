@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	commitUrl,
 	isForkRepo,
 	repoUrl,
 	shortCommit,
@@ -35,5 +36,22 @@ describe("source repository", () => {
 		expect(shortCommit({ source_commit: "0123456789abcdef" })).toBe("0123456");
 		expect(shortCommit({ source_commit: "zzz" })).toBeNull();
 		expect(shortCommit({})).toBeNull();
+	});
+
+	it("links the commit from checked values only", () => {
+		expect(
+			commitUrl({
+				source_repository: "Stefanotr/PatchMon",
+				source_commit: "0123456789abcdef",
+				source_commit_url: "javascript:alert(1)",
+			}),
+		).toBe("https://github.com/Stefanotr/PatchMon/commit/0123456789abcdef");
+		expect(
+			commitUrl({
+				source_repository: "evil.example/x",
+				source_commit: "0123456",
+			}),
+		).toBe("https://github.com/PatchMon/PatchMon/commit/0123456");
+		expect(commitUrl({ source_commit: "zzz" })).toBeNull();
 	});
 });

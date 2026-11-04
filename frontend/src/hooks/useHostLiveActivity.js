@@ -39,6 +39,13 @@ export function useHostLiveActivity(hostId, { enabled = true } = {}) {
 
 	const openBefore = useRef(null);
 	const versionTimer = useRef(null);
+	// Another host (the page stays mounted): its tasks are not compared with
+	// the last host's, and that host's pending refresh is dropped.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs again for each host on purpose
+	useEffect(() => {
+		openBefore.current = null;
+		return () => clearTimeout(versionTimer.current);
+	}, [hostId]);
 	useEffect(() => {
 		const tasks = query.data;
 		if (!tasks) return;
@@ -54,7 +61,6 @@ export function useHostLiveActivity(hostId, { enabled = true } = {}) {
 			VERSION_REFRESH_DELAY_MS,
 		);
 	}, [query.data, hostId, queryClient]);
-	useEffect(() => () => clearTimeout(versionTimer.current), []);
 
 	const tasks = query.data || [];
 	// An update queued counts: one at a time.
