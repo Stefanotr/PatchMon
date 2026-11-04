@@ -252,6 +252,12 @@ func (h *AgentWSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		updates = startUpdateProgressWorker(connCtx, apiID, host.ID, h.onUpdateProgress)
 		defer updates.stop()
 	}
+	// Restart events too, at a bounded rate.
+	var restartEvents *restartEventWorker
+	if h.onRestartEvent != nil {
+		restartEvents = startRestartEventWorker(connCtx, apiID, h.onRestartEvent)
+		defer restartEvents.stop()
+	}
 
 	// Read loop - process messages from agent
 	for {
@@ -269,10 +275,10 @@ func (h *AgentWSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 			Type string `json:"type"`
 		}
 		if err := json.Unmarshal(message, &reply); err == nil && reply.Type == "reboot_result" {
-			if !agentReplies.deliver(apiID, message) && h.onRestartEvent != nil {
+			if !agentReplies.deliver(apiID, message) && restartEvents != nil {
 				// Off the read loop: recording writes to the database. apiID
 				// is the authenticated connection's, never the message's.
-				go h.onRestartEvent(r.Context(), apiID, message)
+				restartEvents.offer(message)
 			}
 			continue
 		}

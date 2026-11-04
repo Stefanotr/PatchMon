@@ -71,6 +71,24 @@ func (s *JobHistoryStore) RecordFinished(ctx context.Context, j FinishedJob) err
 	})
 }
 
+// recentRecordsChecked bounds HasRecord's look back.
+const recentRecordsChecked = 200
+
+// HasRecord reports whether apiID has a record of jobName for jobID among its
+// most recent ones, so that an event an agent sends twice is recorded once.
+func (s *JobHistoryStore) HasRecord(ctx context.Context, apiID, jobID, jobName string) (bool, error) {
+	rows, err := s.db.DB(ctx).Queries.ListJobHistoryByApiID(ctx, db.ListJobHistoryByApiIDParams{ApiID: &apiID, Limit: recentRecordsChecked})
+	if err != nil {
+		return false, err
+	}
+	for _, r := range rows {
+		if r.JobID == jobID && r.JobName == jobName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Statuses of a command recorded with RecordStarted. job_history already
 // uses them for queued jobs, and the Agent Activity shows them.
 const (

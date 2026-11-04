@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -82,6 +83,11 @@ type liveActivityReader interface {
 	PatchRuns(ctx context.Context, hostID string, finishedAfter time.Time) ([]db.ListLivePatchRunsRow, error)
 }
 
+// agentUpdateCloser closes an agent update the host's check-in shows done.
+type agentUpdateCloser interface {
+	CloseIfVersionChanged(ctx context.Context, apiID, version string) error
+}
+
 type liveHostReader interface {
 	GetByID(ctx context.Context, id string) (*models.Host, error)
 }
@@ -93,13 +99,58 @@ type HostLiveActivityHandler struct {
 	inspector   *asynq.Inspector
 	compliance  *ComplianceProgressTracker
 	permissions *store.PermissionsStore
+	updates     agentUpdateCloser
 	now         func() time.Time
+	queued      queuedJobsCache
 }
 
-// NewHostLiveActivityHandler creates the handler. inspector and compliance
-// may be nil.
-func NewHostLiveActivityHandler(hosts liveHostReader, live liveActivityReader, inspector *asynq.Inspector, compliance *ComplianceProgressTracker, permissions *store.PermissionsStore) *HostLiveActivityHandler {
-	return &HostLiveActivityHandler{hosts: hosts, live: live, inspector: inspector, compliance: compliance, permissions: permissions, now: time.Now}
+// queuedJobsTTL is how long a host's queue tasks are reused: listing them
+// pages through several Redis queues, and each open host page polls every 2
+// seconds.
+const queuedJobsTTL = 5 * time.Second
+
+// queuedJobsCache keeps each host's queue tasks for queuedJobsTTL.
+type queuedJobsCache struct {
+	mu      sync.Mutex
+	entries map[string]queuedJobsEntry
+}
+
+type queuedJobsEntry struct {
+	at   time.Time
+	rows []queue.HostJobRow
+}
+
+// get returns key's tasks, listing them with list when the cached ones are
+// older than queuedJobsTTL. Expired entries are dropped as it goes.
+func (c *queuedJobsCache) get(key string, now time.Time, list func() ([]queue.HostJobRow, error)) ([]queue.HostJobRow, error) {
+	c.mu.Lock()
+	if e, ok := c.entries[key]; ok && now.Sub(e.at) < queuedJobsTTL {
+		c.mu.Unlock()
+		return e.rows, nil
+	}
+	c.mu.Unlock()
+	rows, err := list()
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = make(map[string]queuedJobsEntry)
+	}
+	for k, e := range c.entries {
+		if now.Sub(e.at) >= queuedJobsTTL {
+			delete(c.entries, k)
+		}
+	}
+	c.entries[key] = queuedJobsEntry{at: now, rows: rows}
+	return rows, nil
+}
+
+// NewHostLiveActivityHandler creates the handler. inspector, compliance and
+// updates may be nil.
+func NewHostLiveActivityHandler(hosts liveHostReader, live liveActivityReader, inspector *asynq.Inspector, compliance *ComplianceProgressTracker, permissions *store.PermissionsStore, updates agentUpdateCloser) *HostLiveActivityHandler {
+	return &HostLiveActivityHandler{hosts: hosts, live: live, inspector: inspector, compliance: compliance, permissions: permissions, updates: updates, now: time.Now}
 }
 
 // Get returns the host's live tasks: open ones first, newest first.
@@ -114,6 +165,14 @@ func (h *HostLiveActivityHandler) Get(w http.ResponseWriter, r *http.Request) {
 	now := h.now()
 	finishedAfter := now.Add(-liveFinishedWindow)
 
+	// An agent that does not report its update shows it done once it checks
+	// in on the new version, not at the deadline.
+	if h.updates != nil && host.AgentVersion != nil {
+		if err := h.updates.CloseIfVersionChanged(ctx, host.ApiID, *host.AgentVersion); err != nil {
+			slog.Warn("live activity: closing a finished agent update", "host_id", hostID, "error", err)
+		}
+	}
+
 	jobs, err := h.live.Jobs(ctx, host.ApiID, now.Add(-liveOpenWindow), finishedAfter)
 	if err != nil {
 		slog.Error("live activity: jobs", "host_id", hostID, "error", err)
@@ -124,13 +183,20 @@ func (h *HostLiveActivityHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	patching := hostctx.HasModule(ctx, "patching")
 	if h.inspector != nil {
-		if q, qerr := queue.GetHostJobs(ctx, h.inspector, hostID, host.ApiID, 50); qerr == nil && q != nil {
+		rows, qerr := h.queued.get(complianceKey(ctx, host.ApiID), now, func() ([]queue.HostJobRow, error) {
+			q, err := queue.GetHostJobs(ctx, h.inspector, hostID, host.ApiID, 50)
+			if err != nil || q == nil {
+				return nil, err
+			}
+			return q.JobHistory, nil
+		})
+		if qerr == nil {
 			// A patch run shows as itself, not as its queue task.
 			var skip map[string]bool
 			if patching {
 				skip = map[string]bool{queue.TypeRunPatch: true}
 			}
-			tasks = append(tasks, liveTasksFromQueue(q.JobHistory, jobs, skip)...)
+			tasks = append(tasks, liveTasksFromQueue(rows, jobs, skip)...)
 		}
 	}
 	if patching {

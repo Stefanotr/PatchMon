@@ -93,6 +93,7 @@ func TestLatestVersionFromForkReleases(t *testing.T) {
 		{"tag_name": "v2.1.4-fork.2", "draft": false},
 		{"tag_name": "v2.1.4-fork.10", "draft": false},
 		{"tag_name": "v2.1.5-fork.1", "draft": true},
+		{"tag_name": "v2.1.6-fork.1", "draft": false, "prerelease": true},
 		{"tag_name": "nightly", "draft": false},
 		{"tag_name": "v2.1.4-fork.3", "draft": false}
 	]`)
@@ -152,16 +153,62 @@ func TestCheckLatestVersionSeesANewRelease(t *testing.T) {
 	}
 }
 
+// Once the cache expires, background checks get the last answer at once
+// while one read goes on: a slow GitHub holds no page back.
+func TestExpiredAnswerServedWhileReading(t *testing.T) {
+	stamp(t, "Stefanotr/PatchMon", "")
+	release := make(chan struct{})
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) > 1 {
+			<-release
+		}
+		_, _ = w.Write([]byte(`[{"tag_name": "v2.1.4-fork.3"}]`))
+	}))
+	t.Cleanup(srv.Close)
+	githubAPI = srv.URL
+	ctx := context.Background()
+	if v, err := LatestVersion(ctx, "server.vcheck.patchmon.net"); err != nil || v != "2.1.4-fork.3" {
+		t.Fatalf("first read = %q, %v", v, err)
+	}
+	ageCache(releasesTTL)
+	for range 3 {
+		start := time.Now()
+		if v, err := LatestVersion(ctx, "server.vcheck.patchmon.net"); err != nil || v != "2.1.4-fork.3" || time.Since(start) > time.Second {
+			t.Fatalf("expired read = %q, %v after %s", v, err, time.Since(start))
+		}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("%d reads of GitHub, want one refresh", calls.Load())
+	}
+	// Let the refresh end before the test resets the cache.
+	close(release)
+	for {
+		releases.mu.Lock()
+		busy := releases.fetching != nil
+		releases.mu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestLatestVersionErrors(t *testing.T) {
 	for name, tt := range map[string]struct {
 		status int
 		body   string
 	}{
-		"not found":   {http.StatusNotFound, `{"message":"Not Found"}`},
-		"rate limit":  {http.StatusForbidden, `{"message":"API rate limit exceeded"}`},
-		"no releases": {http.StatusOK, `[]`},
-		"only drafts": {http.StatusOK, `[{"tag_name":"v2.1.4-fork.1","draft":true}]`},
-		"bad json":    {http.StatusOK, `{`},
+		"not found":         {http.StatusNotFound, `{"message":"Not Found"}`},
+		"rate limit":        {http.StatusForbidden, `{"message":"API rate limit exceeded"}`},
+		"no releases":       {http.StatusOK, `[]`},
+		"only drafts":       {http.StatusOK, `[{"tag_name":"v2.1.4-fork.1","draft":true}]`},
+		"only pre-releases": {http.StatusOK, `[{"tag_name":"v2.1.4-fork.1","prerelease":true}]`},
+		"bad json":          {http.StatusOK, `{`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			stamp(t, "Stefanotr/PatchMon", "")

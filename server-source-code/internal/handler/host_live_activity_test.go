@@ -191,3 +191,31 @@ func TestSortLiveTasks(t *testing.T) {
 		t.Fatalf("order = %v", ids)
 	}
 }
+
+// A host's queue tasks are listed once per queuedJobsTTL, whoever polls.
+func TestQueuedJobsCache(t *testing.T) {
+	var c queuedJobsCache
+	calls := 0
+	list := func() ([]queue.HostJobRow, error) {
+		calls++
+		return []queue.HostJobRow{{}}, nil
+	}
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	for _, at := range []time.Duration{0, time.Second, queuedJobsTTL - time.Millisecond} {
+		if rows, err := c.get("t|api-a", now.Add(at), list); err != nil || len(rows) != 1 {
+			t.Fatalf("rows=%v err=%v", rows, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("listed %d times within the TTL, want 1", calls)
+	}
+	if _, err := c.get("t|api-b", now, list); err != nil || calls != 2 {
+		t.Fatalf("another host shares the entry: calls=%d err=%v", calls, err)
+	}
+	if _, err := c.get("t|api-a", now.Add(queuedJobsTTL), list); err != nil || calls != 3 {
+		t.Fatalf("an expired entry was reused: calls=%d", calls)
+	}
+	if len(c.entries) != 1 {
+		t.Fatalf("expired entries kept: %d", len(c.entries))
+	}
+}

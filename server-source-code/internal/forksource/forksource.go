@@ -97,7 +97,7 @@ func Describe() Info {
 // release, so both checks get the same answer. A fork's answer may be up to
 // releasesTTL old, which suits background checks and page loads.
 func LatestVersion(ctx context.Context, dnsDomain string) (string, error) {
-	return latestVersion(ctx, dnsDomain, releasesTTL)
+	return latestVersion(ctx, dnsDomain, releasesTTL, false)
 }
 
 // CheckLatestVersion answers a check an admin asked for ("Check for
@@ -106,14 +106,14 @@ func LatestVersion(ctx context.Context, dnsDomain string) (string, error) {
 // while repeated clicks stay within GitHub's limit. The fresh answer also
 // serves the next LatestVersion calls.
 func CheckLatestVersion(ctx context.Context, dnsDomain string) (string, error) {
-	return latestVersion(ctx, dnsDomain, refreshFloor)
+	return latestVersion(ctx, dnsDomain, refreshFloor, true)
 }
 
-func latestVersion(ctx context.Context, dnsDomain string, maxAge time.Duration) (string, error) {
+func latestVersion(ctx context.Context, dnsDomain string, maxAge time.Duration, waitFresh bool) (string, error) {
 	if !IsFork() {
 		return lookupDNS(dnsDomain)
 	}
-	return releases.latest(ctx, Repo(), maxAge)
+	return releases.latest(ctx, Repo(), maxAge, waitFresh)
 }
 
 // lookupDNS is a variable so tests do not touch the network.
@@ -139,24 +139,60 @@ type releaseCache struct {
 	version string
 	err     error
 	at      time.Time
+	// fetching is closed when the read in progress ends (nil: none).
+	fetching chan struct{}
 }
 
 var releases releaseCache
 
 // latest returns the cached answer when it is younger than maxAge (at most
 // releasesErrorTTL for an error), and reads the releases again otherwise.
-func (c *releaseCache) latest(ctx context.Context, repo string, maxAge time.Duration) (string, error) {
+// One read at a time, outside the lock: a caller that has an older answer
+// gets it at once while the read goes on, unless it waits for a fresh one
+// (waitFresh, a manual check), so a slow or unreachable GitHub holds no page
+// back.
+func (c *releaseCache) latest(ctx context.Context, repo string, maxAge time.Duration, waitFresh bool) (string, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.err != nil && maxAge > releasesErrorTTL {
 		maxAge = releasesErrorTTL
 	}
-	if c.repo == repo && !c.at.IsZero() && time.Since(c.at) < maxAge {
+	known := c.repo == repo && !c.at.IsZero()
+	if known && time.Since(c.at) < maxAge {
+		defer c.mu.Unlock()
 		return c.version, c.err
 	}
-	c.version, c.err = fetchLatestRelease(ctx, repo)
-	c.repo, c.at = repo, time.Now()
+	if c.fetching == nil {
+		c.fetching = make(chan struct{})
+		go c.refresh(repo, c.fetching)
+	}
+	wait := c.fetching
+	if known && !waitFresh {
+		defer c.mu.Unlock()
+		return c.version, c.err
+	}
+	c.mu.Unlock()
+	select {
+	case <-wait:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.repo != repo {
+		return "", errors.New("the repository changed while its releases were read")
+	}
 	return c.version, c.err
+}
+
+// refresh reads the releases and stores the answer. The read is shared, so
+// it is not tied to the request that started it.
+func (c *releaseCache) refresh(repo string, done chan struct{}) {
+	version, err := fetchLatestRelease(context.Background(), repo)
+	c.mu.Lock()
+	c.repo, c.version, c.err, c.at = repo, version, err, time.Now()
+	c.fetching = nil
+	c.mu.Unlock()
+	close(done)
 }
 
 func fetchLatestRelease(ctx context.Context, repo string) (string, error) {
@@ -178,8 +214,9 @@ func fetchLatestRelease(ctx context.Context, repo string) (string, error) {
 		return "", fmt.Errorf("github releases of %s: HTTP %d", repo, resp.StatusCode)
 	}
 	var list []struct {
-		TagName string `json:"tag_name"`
-		Draft   bool   `json:"draft"`
+		TagName    string `json:"tag_name"`
+		Draft      bool   `json:"draft"`
+		Prerelease bool   `json:"prerelease"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxReleasesBody)).Decode(&list); err != nil {
 		return "", fmt.Errorf("github releases of %s: %w", repo, err)
@@ -187,7 +224,8 @@ func fetchLatestRelease(ctx context.Context, repo string) (string, error) {
 	best := ""
 	for _, r := range list {
 		m := tagRe.FindStringSubmatch(r.TagName)
-		if r.Draft || m == nil {
+		// A pre-release is a test build, not an update to announce.
+		if r.Draft || r.Prerelease || m == nil {
 			continue
 		}
 		if best == "" || util.CompareVersions(m[1], best) > 0 {
