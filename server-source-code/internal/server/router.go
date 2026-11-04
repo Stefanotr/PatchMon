@@ -245,7 +245,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 		handler.WithOnAgentConnect(handler.NewAgentConnectHandler(dbProvider, queueClient, queueInspector, integrationStatusStore, notifyEmit, log)),
 		// Restarts scheduled by patch runs, and late answers to restart
 		// commands, recorded in the host's Agent Activity.
-		handler.WithOnRestartEvent(handler.RecordRestartEvent(hostsStore, store.NewJobHistoryStore(dbProvider))),
+		handler.WithOnRestartEvent(handler.RecordRestartEvent(hostsStore, patchRunsStore, store.NewJobHistoryStore(dbProvider))),
 		handler.WithOnRemoteRestartOptIn(handler.RecordRemoteRestartOptIn(remoteRestartStore)),
 		handler.WithOnAgentVersion(handler.RecordAgentVersion(agentUpdateStore)),
 		handler.WithOnAgentUpdateProgress(handler.RecordAgentUpdateProgress(agentUpdateStore)),

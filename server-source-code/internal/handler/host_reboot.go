@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"regexp"
 	"time"
-	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/PatchMon/PatchMon/server-source-code/internal/db"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/middleware"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/models"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/queue"
@@ -280,6 +280,7 @@ func (h *HostsHandler) finishRestartRecord(ctx context.Context, host *models.Hos
 type restartJournal interface {
 	RecordFinished(ctx context.Context, j store.FinishedJob) error
 	RecordOutcomeOf(ctx context.Context, o store.CommandOutcome) (bool, error)
+	HasRecord(ctx context.Context, apiID, jobID, jobName string) (bool, error)
 }
 
 // recordCommandOutcome writes o on the record of the command jobID sent to
@@ -358,23 +359,28 @@ type hostByAPIID interface {
 	GetByApiID(ctx context.Context, apiID string) (*models.Host, error)
 }
 
+// patchRunByID finds the patch run a restart event names.
+type patchRunByID interface {
+	GetByID(ctx context.Context, id string) (*db.GetPatchRunByIDRow, error)
+}
+
 // RecordRestartEvent returns the agent websocket hook for the reboot_result
 // messages no restart command is waiting for, recorded in the host's Agent
 // Activity: the restart a patch run scheduled, skipped or failed to schedule
 // (a new record), and a late answer to a restart command (the outcome, on
 // the command's record). Other messages are ignored.
-func RecordRestartEvent(hosts *store.HostsStore, jobs *store.JobHistoryStore) func(ctx context.Context, apiID string, message []byte) {
-	return restartEventRecorder(hosts, jobs)
+func RecordRestartEvent(hosts *store.HostsStore, runs *store.PatchRunsStore, jobs *store.JobHistoryStore) func(ctx context.Context, apiID string, message []byte) {
+	return restartEventRecorder(hosts, runs, jobs)
 }
 
-func restartEventRecorder(hosts hostByAPIID, jobs restartJournal) func(ctx context.Context, apiID string, message []byte) {
+func restartEventRecorder(hosts hostByAPIID, runs patchRunByID, jobs restartJournal) func(ctx context.Context, apiID string, message []byte) {
 	return func(ctx context.Context, apiID string, message []byte) {
 		// The agent connection may close right after the message: keep the
 		// request's values (tenant database), not its cancellation.
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if runID, failure, out, ok := parseRunRestart(message); ok {
-			recordRunRestart(ctx, hosts, jobs, apiID, runID, failure, out)
+			recordRunRestart(ctx, hosts, runs, jobs, apiID, runID, failure, out)
 			return
 		}
 		requestID, o, ok := parseLateCommandReply(message)
@@ -395,11 +401,83 @@ func restartEventRecorder(hosts hostByAPIID, jobs restartJournal) func(ctx conte
 	}
 }
 
+// Limits for one agent connection's restart events: a patch run sends one
+// and a late answer one per command, so more means a faulty or hostile agent.
+const (
+	restartEventBacklog = 16
+	restartEventBurst   = 10
+	restartEventRefill  = 10 * time.Second
+	// restartEventMaxBytes: an event is a few hundred bytes.
+	restartEventMaxBytes = 4 << 10
+)
+
+// restartEventWorker records one connection's restart events in order, off
+// the read loop and at a bounded rate, rather than in a goroutine and a few
+// database round trips per message.
+type restartEventWorker struct {
+	ch   chan []byte
+	done chan struct{}
+}
+
+// startRestartEventWorker starts the worker. ctx keeps its values (the
+// host's database) but not its end: an event can arrive just before the
+// connection closes.
+func startRestartEventWorker(ctx context.Context, apiID string, record func(ctx context.Context, apiID string, message []byte)) *restartEventWorker {
+	w := &restartEventWorker{ch: make(chan []byte, restartEventBacklog), done: make(chan struct{})}
+	ctx = context.WithoutCancel(ctx)
+	go func() {
+		defer close(w.done)
+		tokens, refilled := float64(restartEventBurst), time.Now()
+		for msg := range w.ch {
+			now := time.Now()
+			tokens = min(restartEventBurst, tokens+float64(now.Sub(refilled))/float64(restartEventRefill))
+			refilled = now
+			if tokens < 1 {
+				slog.Debug("agent ws: restart event dropped, sent too fast", "api_id", apiID)
+				continue
+			}
+			tokens--
+			record(ctx, apiID, msg)
+		}
+	}()
+	return w
+}
+
+// offer queues an event, or drops it when it is too large or the backlog is
+// full.
+func (w *restartEventWorker) offer(message []byte) {
+	if len(message) > restartEventMaxBytes {
+		return
+	}
+	select {
+	case w.ch <- message:
+	default:
+	}
+}
+
+// stop lets the worker record what is queued, then end.
+func (w *restartEventWorker) stop() {
+	close(w.ch)
+}
+
 // recordRunRestart records a restart a patch run scheduled, skipped or
-// failed to schedule.
-func recordRunRestart(ctx context.Context, hosts hostByAPIID, jobs restartJournal, apiID, runID, failure string, out map[string]any) {
+// failed to schedule: once, and only for a real run of the agent's own host,
+// so that an agent cannot fill the history with events of its own making.
+func recordRunRestart(ctx context.Context, hosts hostByAPIID, runs patchRunByID, jobs restartJournal, apiID, runID, failure string, out map[string]any) {
 	host, err := hosts.GetByApiID(ctx, apiID)
 	if err != nil || host == nil {
+		return
+	}
+	run, err := runs.GetByID(ctx, runID)
+	if err != nil || run == nil || run.HostID != host.ID || run.DryRun {
+		slog.Debug("hosts: ignoring a restart event for a run this host does not have", "api_id", apiID, "patch_run_id", runID)
+		return
+	}
+	switch seen, err := jobs.HasRecord(ctx, host.ApiID, runID, restartJobName); {
+	case err != nil:
+		slog.Warn("hosts: could not check for an earlier record of a patch run restart", "host_id", host.ID, "error", err)
+		return
+	case seen:
 		return
 	}
 	if err := jobs.RecordFinished(ctx, store.FinishedJob{
@@ -415,18 +493,11 @@ func recordRunRestart(ctx context.Context, hosts hostByAPIID, jobs restartJourna
 	}
 }
 
-// clipReason bounds a reason relayed from the agent.
+// clipReason makes a reason relayed from the agent fit for display: one
+// line, no control characters, bounded.
 func clipReason(s string) string {
-	const n = 300
-	if s == "" {
+	if s = agentText(s, 300); s == "" {
 		return "no reason given"
-	}
-	if len(s) <= n {
-		return s
-	}
-	s = s[:n]
-	for !utf8.ValidString(s) {
-		s = s[:len(s)-1]
 	}
 	return s
 }

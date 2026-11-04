@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PatchMon/PatchMon/server-source-code/internal/db"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/models"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/store"
 )
@@ -88,13 +89,11 @@ func TestClipReason(t *testing.T) {
 	if got := clipReason(""); got != "no reason given" {
 		t.Errorf("empty reason = %q", got)
 	}
-	long := strings.Repeat("e", 299) + "éé" // straddles the limit
-	got := clipReason(long)
-	if len(got) > 300 || !strings.HasPrefix(long, got) {
-		t.Errorf("clipReason kept %d bytes", len(got))
+	if got := clipReason("disk\nfull\x07 \x1b"); got != "disk full" {
+		t.Errorf("control characters kept: %q", got)
 	}
-	if got != strings.Repeat("e", 299) {
-		t.Errorf("clipReason split a rune: %q", got[len(got)-3:])
+	if got := clipReason(strings.Repeat("\u00e9", 301)); got != strings.Repeat("\u00e9", 300)+"..." {
+		t.Errorf("clipReason kept %d runes", len([]rune(got)))
 	}
 }
 
@@ -137,7 +136,7 @@ func TestParseRunRestartSkipped(t *testing.T) {
 
 	// Clipped like any agent text.
 	_, failure, _, _ = parseRunRestart([]byte(`{"action":"run","run_id":"r1","skipped":true,"error":"` + strings.Repeat("y", 400) + `"}`))
-	if failure != "restart skipped: "+strings.Repeat("y", 300) {
+	if failure != "restart skipped: "+strings.Repeat("y", 300)+"..." {
 		t.Fatalf("not clipped: %d bytes", len(failure))
 	}
 
@@ -275,6 +274,26 @@ func (j *fakeJournal) RecordOutcomeOf(_ context.Context, o store.CommandOutcome)
 	return j.changed, nil
 }
 
+func (j *fakeJournal) HasRecord(_ context.Context, apiID, jobID, jobName string) (bool, error) {
+	for _, f := range j.finished {
+		if f.ApiID == apiID && f.JobID == jobID && f.JobName == jobName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// fakeRuns maps a patch run ID to its host; a "dry-" prefix makes it a dry run.
+type fakeRuns map[string]string
+
+func (f fakeRuns) GetByID(_ context.Context, id string) (*db.GetPatchRunByIDRow, error) {
+	host, ok := f[id]
+	if !ok {
+		return nil, nil
+	}
+	return &db.GetPatchRunByIDRow{ID: id, HostID: host, DryRun: strings.HasPrefix(id, "dry-")}, nil
+}
+
 type fakeHosts map[string]*models.Host
 
 func (f fakeHosts) GetByApiID(_ context.Context, apiID string) (*models.Host, error) {
@@ -286,7 +305,8 @@ func (f fakeHosts) GetByApiID(_ context.Context, apiID string) (*models.Host, er
 
 func TestRestartHookRecordsRunEvents(t *testing.T) {
 	jobs := &fakeJournal{}
-	hook := restartEventRecorder(fakeHosts{"api-a": {ID: "host-a", ApiID: "api-a"}}, jobs)
+	hosts := fakeHosts{"api-a": {ID: "host-a", ApiID: "api-a"}, "api-b": {ID: "host-b", ApiID: "api-b"}}
+	hook := restartEventRecorder(hosts, fakeRuns{"r1": "host-a", "rb": "host-b", "dry-1": "host-a"}, jobs)
 
 	hook(context.Background(), "api-a", []byte(`{"type":"reboot_result","action":"run","run_id":"r1","ok":false,"skipped":true,"error":"another patch run is in progress"}`))
 	if len(jobs.finished) != 1 || len(jobs.outcomes) != 0 {
@@ -303,11 +323,20 @@ func TestRestartHookRecordsRunEvents(t *testing.T) {
 	if len(jobs.finished) != 1 {
 		t.Fatal("recorded a run restart for an unknown host")
 	}
+
+	// Sent again, the event is not recorded twice; nor are events for a run
+	// that does not exist, belongs to another host, or is a dry run.
+	for _, id := range []string{"r1", "r404", "rb", "dry-1"} {
+		hook(context.Background(), "api-a", []byte(`{"type":"reboot_result","action":"run","run_id":"`+id+`","ok":true}`))
+	}
+	if len(jobs.finished) != 1 {
+		t.Fatalf("records: %+v", jobs.finished)
+	}
 }
 
 func TestRestartHookRecordsLateCommandAnswers(t *testing.T) {
 	jobs := &fakeJournal{changed: true}
-	hook := restartEventRecorder(fakeHosts{}, jobs)
+	hook := restartEventRecorder(fakeHosts{}, fakeRuns{}, jobs)
 
 	// The message names another agent: only the connection's own counts.
 	hook(context.Background(), "api-a", []byte(`{"type":"reboot_result","request_id":"`+testRequestID+`","action":"reboot","api_id":"api-b","ok":true,"reboot_at":"2026-10-12T23:00:00Z"}`))
@@ -338,5 +367,34 @@ func TestRestartHookRecordsLateCommandAnswers(t *testing.T) {
 	}
 	if len(jobs.outcomes) != 2 || len(jobs.finished) != 0 {
 		t.Fatalf("recorded an invalid message: %+v", jobs.outcomes)
+	}
+}
+
+// One connection's restart events are recorded at a bounded rate, and an
+// oversized one not at all.
+func TestRestartEventWorkerBoundsTheRate(t *testing.T) {
+	var got []int
+	w := startRestartEventWorker(context.Background(), "api-a", func(_ context.Context, apiID string, m []byte) {
+		if apiID == "api-a" {
+			got = append(got, len(m))
+		}
+	})
+	w.offer(make([]byte, restartEventMaxBytes+1))
+	for range 3 * restartEventBacklog {
+		w.offer([]byte(`{"type":"reboot_result"}`))
+	}
+	w.stop()
+	select {
+	case <-w.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the worker did not end")
+	}
+	if len(got) == 0 || len(got) > restartEventBurst {
+		t.Fatalf("recorded %d events, want 1 to %d", len(got), restartEventBurst)
+	}
+	for _, n := range got {
+		if n > restartEventMaxBytes {
+			t.Fatal("an oversized event was recorded")
+		}
 	}
 }
