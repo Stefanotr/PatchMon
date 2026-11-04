@@ -227,9 +227,12 @@ const Login = () => {
 						localStorage.removeItem(releaseCacheKey);
 					}
 				}
-				// Use cache if less than 1 hour old
+				// Use cache if less than 1 hour old. The time is shared by every
+				// language: without this language's entry, fetch anyway.
 				const shouldFetchFresh =
-					!cacheTime || now - parseInt(cacheTime, 10) >= 3600000;
+					!cachedRelease ||
+					!cacheTime ||
+					now - parseInt(cacheTime, 10) >= 3600000;
 
 				// Fetch latest release from GitHub API (for release notes, published date, etc.)
 				if (shouldFetchFresh) {

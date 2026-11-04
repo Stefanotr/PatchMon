@@ -23,6 +23,17 @@ export const isForkRepo = (repo) =>
 	repo.toLowerCase() !== UPSTREAM_REPO.toLowerCase();
 
 /**
+ * Link to the commit stamped in the build, built here from the checked
+ * repository and commit rather than taken as given, or null.
+ */
+export function commitUrl(info) {
+	const sha = info?.source_commit;
+	return typeof sha === "string" && /^[0-9a-f]{7,40}$/.test(sha)
+		? `${repoUrl(sourceRepo(info))}/commit/${sha}`
+		: null;
+}
+
+/**
  * Short commit stamped in the build, or null.
  */
 export function shortCommit(info) {

@@ -49,6 +49,25 @@ const renderModal = (props) =>
 describe("RestartHostModal", () => {
 	beforeEach(() => vi.clearAllMocks());
 
+	it("only cancels when the host refuses new restarts", async () => {
+		adminHostsAPI.cancelHostReboot.mockResolvedValue({
+			status: 200,
+			data: { message: "Scheduled restart cancelled" },
+		});
+		renderModal({ restartsDisabled: true });
+		expect(screen.getByText(/so it refuses new ones/)).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "Schedule restart" }),
+		).toBeDisabled();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Cancel scheduled restart" }),
+		);
+		await waitFor(() =>
+			expect(adminHostsAPI.cancelHostReboot).toHaveBeenCalledWith("h1"),
+		);
+		expect(adminHostsAPI.rebootHost).not.toHaveBeenCalled();
+	});
+
 	it("says a restart is optional when none is pending", () => {
 		renderModal({ needsReboot: false });
 		expect(

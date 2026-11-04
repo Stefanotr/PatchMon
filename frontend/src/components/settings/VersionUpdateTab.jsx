@@ -10,6 +10,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { formatDate, settingsAPI, versionAPI } from "../../utils/api";
 import {
+	commitUrl,
 	isForkRepo,
 	repoUrl,
 	shortCommit,
@@ -209,7 +210,7 @@ const VersionUpdateTab = () => {
 									<>
 										{" @ "}
 										<a
-											href={buildInfo.source_commit_url}
+											href={commitUrl(buildInfo)}
 											target="_blank"
 											rel="noopener noreferrer"
 											className="font-mono text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"

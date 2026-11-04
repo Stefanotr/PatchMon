@@ -78,10 +78,7 @@ import { useHostDetailTab } from "../hooks/useHostDetailTab";
 import { useHostLiveActivity } from "../hooks/useHostLiveActivity";
 
 import { usePageRefresh } from "../hooks/usePageRefresh";
-import {
-	REMOTE_RESTART_DISABLED_HINT,
-	useHostRemoteRestart,
-} from "../hooks/useRemoteRestart";
+import { useHostRemoteRestart } from "../hooks/useRemoteRestart";
 import { useTick } from "../hooks/useTick";
 import i18n, { tk } from "../i18n";
 import {
@@ -2091,13 +2088,15 @@ const HostDetail = () => {
 							<button
 								type="button"
 								onClick={() => setShowRestartModal(true)}
-								disabled={!wsStatus?.connected || restartRefused}
+								disabled={!wsStatus?.connected}
 								className="btn-outline flex items-center gap-2 text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
 								title={
-									restartRefused
-										? t(REMOTE_RESTART_DISABLED_HINT)
-										: !wsStatus?.connected
-											? t("Agent must be connected to restart the host")
+									!wsStatus?.connected
+										? t("Agent must be connected to restart the host")
+										: restartRefused
+											? t(
+													"Remote restarts are disabled on this host: cancel a scheduled restart",
+												)
 											: t(
 													"Restart this host now or later, or cancel a scheduled restart",
 												)
@@ -5889,6 +5888,7 @@ const HostDetail = () => {
 				onClose={() => setShowRestartModal(false)}
 				needsReboot={host?.needs_reboot}
 				rebootReason={host?.reboot_reason}
+				restartsDisabled={restartRefused}
 			/>
 
 			{/* Credentials Modal */}
