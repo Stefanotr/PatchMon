@@ -37,6 +37,8 @@ const (
 	MinDelay = 5 * time.Minute
 	// MaxDelay bounds how far ahead a restart can be scheduled.
 	MaxDelay = 7 * 24 * time.Hour
+	// maxDelayMinutes is MaxDelay in whole minutes.
+	maxDelayMinutes = int(MaxDelay / time.Minute)
 	// LateTolerance is how long an absolute time can have passed and still
 	// mean "now": a time picked a few seconds late, or delayed on its way by
 	// the network or a clock a little behind.
@@ -122,7 +124,9 @@ func (o Options) Validate() error {
 	default:
 		return fmt.Errorf("unknown restart mode %q", o.Mode)
 	}
-	if o.DelayMinutes < 0 || time.Duration(o.DelayMinutes)*time.Minute > MaxDelay {
+	// Compared in minutes: a huge value would overflow time.Duration and wrap
+	// to a short delay.
+	if o.DelayMinutes < 0 || o.DelayMinutes > maxDelayMinutes {
 		return fmt.Errorf("restart delay out of range: %d minutes", o.DelayMinutes)
 	}
 	if len(o.Message) > MaxMessageBytes || !utf8.ValidString(o.Message) {
@@ -159,8 +163,9 @@ var localZone = time.Local
 func (o Options) When(now time.Time) (time.Time, error) {
 	earliest := now.Add(MinDelay)
 	if o.At.IsZero() {
-		d := min(max(time.Duration(o.DelayMinutes)*time.Minute, MinDelay), MaxDelay)
-		return now.Add(d), nil
+		// Bounded in minutes first, so the conversion cannot overflow.
+		minutes := min(max(o.DelayMinutes, 0), maxDelayMinutes)
+		return now.Add(max(time.Duration(minutes)*time.Minute, MinDelay)), nil
 	}
 	at := o.At
 	if now.Sub(at) > LateTolerance {

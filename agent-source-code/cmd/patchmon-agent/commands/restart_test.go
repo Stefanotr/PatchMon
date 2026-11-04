@@ -81,7 +81,7 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 	oldSchedule, oldCancel, oldPending, oldReport := scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart
 	oldAgentRestart, oldAllowed := restartAgentService, remoteRestartsAllowed
 	oldRecordPath, oldOwner := restartRecordPath, pendingRestartOwner
-	oldCommandSchedule, oldWork, oldReply := scheduleCommandRestart, commandWorkLimit, commandReplyLimit
+	oldCommandSchedule, oldWork, oldReply, oldLate := scheduleCommandRestart, commandWorkLimit, commandReplyLimit, commandLateLimit
 	recordPath := filepath.Join(t.TempDir(), restartRecordFile)
 	restartRecordPath = func() string { return recordPath }
 	pendingRestartOwner = func(context.Context, reboot.Scheduled) reboot.Owner { return reboot.OwnerPatchMon }
@@ -99,7 +99,7 @@ func resetRestartState(t *testing.T) *scheduledRestart {
 		scheduleHostRestart, cancelHostRestart, osPendingRestart, reportRunRestart = oldSchedule, oldCancel, oldPending, oldReport
 		restartAgentService, remoteRestartsAllowed = oldAgentRestart, oldAllowed
 		restartRecordPath, pendingRestartOwner = oldRecordPath, oldOwner
-		scheduleCommandRestart, commandWorkLimit, commandReplyLimit = oldCommandSchedule, oldWork, oldReply
+		scheduleCommandRestart, commandWorkLimit, commandReplyLimit, commandLateLimit = oldCommandSchedule, oldWork, oldReply, oldLate
 		clearGate()
 	})
 	return s
@@ -601,6 +601,30 @@ func TestRemoteRestartsDisabled(t *testing.T) {
 	}
 }
 
+// A config.yml that cannot be read or parsed counts as off, not as the value
+// loaded at startup.
+func TestRemoteRestartsOffWhenConfigUnreadable(t *testing.T) {
+	resetRestartState(t)
+	m := withTestConfig(t, "on-demand")
+	if err := m.SetLocalSwitch(config.RemoteRestartIntegration, true); err != nil {
+		t.Fatal(err)
+	}
+	if !remoteRestartsEnabledInConfig() || !m.IsIntegrationEnabled(config.RemoteRestartIntegration) {
+		t.Fatal("setup: the switch set in config.yml is not seen")
+	}
+	path := m.GetConfigFile()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(body, []byte("integrations: [broken\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if remoteRestartsEnabledInConfig() {
+		t.Fatal("remote restarts stay enabled while config.yml cannot be parsed")
+	}
+}
+
 // The opt-in is local: apply_config cannot turn it, or the other local-only
 // switches, on.
 func TestApplyConfigCannotEnableRemoteRestarts(t *testing.T) {
@@ -686,11 +710,11 @@ func TestCommandLimitsFitTheServersWait(t *testing.T) {
 	}
 }
 
-// A command answers within its limit even when the operating system never
+// A command answers at its last limit even when the operating system never
 // does, and says the outcome is unknown.
 func TestCommandAnswersWhenTheSystemHangs(t *testing.T) {
 	resetRestartState(t)
-	commandWorkLimit, commandReplyLimit = 50*time.Millisecond, 200*time.Millisecond
+	commandWorkLimit, commandReplyLimit, commandLateLimit = 50*time.Millisecond, 100*time.Millisecond, 200*time.Millisecond
 	release := make(chan struct{})
 	scheduleCommandRestart = func(context.Context, time.Duration, string) error {
 		<-release // ignores its deadline
@@ -712,6 +736,98 @@ func TestCommandAnswersWhenTheSystemHangs(t *testing.T) {
 	r := restartCommandReply(reboot.Options{Mode: reboot.ModeAlways})
 	if elapsed := time.Since(start); elapsed > time.Second || r.OK || !strings.Contains(r.Error, "may still be scheduled") || r.Action != "reboot" {
 		t.Fatalf("after %s: %+v", elapsed, r)
+	}
+}
+
+// An operating system that answers after the reply limit still gives the
+// real outcome, which reaches the server late, rather than a guess.
+func TestCommandAnswersLateWithTheRealOutcome(t *testing.T) {
+	s := resetRestartState(t)
+	commandWorkLimit, commandReplyLimit, commandLateLimit = 50*time.Millisecond, 100*time.Millisecond, 5*time.Second
+	scheduleCommandRestart = func(_ context.Context, d time.Duration, msg string) error {
+		time.Sleep(300 * time.Millisecond) // past the reply limit, ignoring its deadline
+		return s.schedule(d, msg)
+	}
+	r := restartCommandReply(reboot.Options{Mode: reboot.ModeAlways})
+	if !r.OK || r.RebootAt == "" {
+		t.Fatalf("reply %+v, want the scheduled restart", r)
+	}
+	if _, ok := recordedRestart(); !ok {
+		t.Fatal("the restart was not recorded")
+	}
+}
+
+// A restart command waits while the agent updates or restarts itself: the
+// process may end before the restart is recorded.
+func TestRestartCommandRefusedWhileTheAgentRestarts(t *testing.T) {
+	s := resetRestartState(t)
+	updateInFlight.Store(true)
+	_, err := restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways})
+	updateInFlight.Store(false)
+	if err == nil || !strings.Contains(err.Error(), "updating or restarting itself") {
+		t.Fatalf("during an update: %v", err)
+	}
+	restartGate.Lock()
+	restartGate.agentRestartWaiting = true
+	restartGate.Unlock()
+	_, err = restartCommand(context.Background(), reboot.Options{Mode: reboot.ModeAlways})
+	if err == nil || !strings.Contains(err.Error(), "updating or restarting itself") {
+		t.Fatalf("during a configuration restart: %v", err)
+	}
+	if s.calls != 0 {
+		t.Fatal("the host was restarted")
+	}
+}
+
+// A stop that arrives after the run's last step still keeps the restart out.
+func TestLateStopKeepsTheRestartOut(t *testing.T) {
+	s := resetRestartState(t)
+	patchRunStopped.Store("run-late", true)
+	var out strings.Builder
+	if err := scheduleRestart(&out, "run-late", reboot.Options{Mode: reboot.ModeAlways}, true, "", s.schedule); err != nil {
+		t.Fatal(err)
+	}
+	if s.calls != 0 || out.String() != "Restart: not scheduled, the run was stopped\n" {
+		t.Fatalf("calls %d, output %q", s.calls, out.String())
+	}
+	if _, left := patchRunStopped.Load("run-late"); left {
+		t.Fatal("the stop flag was left behind")
+	}
+}
+
+// Restart and cancel commands run in the order they arrived.
+func TestRestartCommandsRunInArrivalOrder(t *testing.T) {
+	resetRestartState(t)
+	var mu sync.Mutex
+	var order []string
+	done := make(chan struct{}, 2)
+	startRestartCommand = func(_ reboot.Options, id string) {
+		time.Sleep(50 * time.Millisecond)
+		mu.Lock()
+		order = append(order, id)
+		mu.Unlock()
+		done <- struct{}{}
+	}
+	startRestartCancel = func(id string) {
+		mu.Lock()
+		order = append(order, id)
+		mu.Unlock()
+		done <- struct{}{}
+	}
+	defer func() { startRestartCommand, startRestartCancel = handleRestartCommand, handleRestartCancel }()
+	handleRestartMessage("reboot", "req-a", &reboot.Options{Mode: reboot.ModeAlways})
+	handleRestartMessage("reboot_cancel", "req-b", nil)
+	for range 2 {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("a command did not run")
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) != 2 || order[0] != "req-a" || order[1] != "req-b" {
+		t.Fatalf("order %v, want [req-a req-b]", order)
 	}
 }
 

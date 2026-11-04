@@ -569,7 +569,9 @@ func localOnlyOnDisk(path string) (map[string]interface{}, bool) {
 	v := viper.New()
 	v.SetConfigFile(path)
 	v.SetConfigType("yaml")
-	if err := v.ReadInConfig(); err != nil {
+	// Retried like LoadConfig: on Windows a save in progress briefly locks
+	// the file, and a switch read as unreadable counts as off.
+	if err := retryTransientFile(v.ReadInConfig); err != nil {
 		return nil, false
 	}
 	integrations, _ := v.Get("integrations").(map[string]interface{})
