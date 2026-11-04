@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -66,6 +67,9 @@ func fakeShutdownProcess(t *testing.T, pid string, args ...string) string {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(p, "cmdline"), []byte(strings.Join(args, "\x00")+"\x00"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p, "status"), []byte("Name:\tshutdown\nUid:\t0\t0\t0\t0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -141,6 +145,28 @@ func TestShutdownNotFound(t *testing.T) {
 	defer func() { shutdownCandidates = old }()
 	if err := Schedule(context.Background(), MinDelay, "PatchMon: x"); err == nil {
 		t.Fatal("no error without shutdown(8)")
+	}
+}
+
+// A process another user named "shutdown" is not a pending restart: it
+// would otherwise hold every patch run and restart back.
+func TestOtherUsersShutdownProcessIsIgnored(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("reads /proc")
+	}
+	fakeShutdown(t, "exit 0")
+	p := fakeShutdownProcess(t, "4242", patchMonShutdown...)
+	if err := os.WriteFile(filepath.Join(p, "status"), []byte("Name:\tshutdown\nUid:\t1001\t0\t0\t0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := Pending(); ok {
+		t.Fatal("a non-root process named shutdown counts as a pending restart")
+	}
+	if err := os.Remove(filepath.Join(p, "status")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := Pending(); ok {
+		t.Fatal("a process whose owner cannot be read counts as a pending restart")
 	}
 }
 
@@ -263,7 +289,7 @@ func TestCancelScheduledSysV(t *testing.T) {
 		log := fakeShutdown(t, "")
 		proc := fakeShutdownProcess(t, "4242", patchMonShutdown...)
 		// The fake cancels the way SysV init does: the waiting process ends.
-		if err := os.WriteFile(shutdownCandidates[1], []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >> '"+log+"'\nrm -f '"+proc+"/comm' '"+proc+"/cmdline'\nrmdir '"+proc+"'\n"), 0o755); err != nil {
+		if err := os.WriteFile(shutdownCandidates[1], []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >> '"+log+"'\nrm -f '"+proc+"/comm' '"+proc+"/cmdline' '"+proc+"/status'\nrmdir '"+proc+"'\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := CancelScheduled(context.Background(), s); err != nil {
@@ -360,10 +386,11 @@ func TestCancelOnSystemd(t *testing.T) {
 // the arguments ps joins with spaces.
 func TestShutdownProcessesFromPS(t *testing.T) {
 	out := strings.Join([]string{
-		"    1 init     /sbin/init",
-		" 4242 shutdown shutdown -r +6 PatchMon: this computer restarts to finish installing updates",
-		" 4343 shutdown /sbin/shutdown -p +30 disk swap",
-		" 4444 sh       /bin/sh -c shutdown -r +5 PatchMon: x",
+		"    1     0 init     /sbin/init",
+		" 4242     0 shutdown shutdown -r +6 PatchMon: this computer restarts to finish installing updates",
+		" 4343     0 shutdown /sbin/shutdown -p +30 disk swap",
+		" 4444     0 sh       /bin/sh -c shutdown -r +5 PatchMon: x",
+		" 4545  1001 shutdown /home/u/shutdown -r +5 PatchMon: x",
 		"garbage",
 		"",
 	}, "\n")

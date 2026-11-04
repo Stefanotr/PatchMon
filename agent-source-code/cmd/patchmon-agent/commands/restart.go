@@ -54,9 +54,13 @@ var (
 	// commandWorkLimit bounds what the command does: waiting for the lock,
 	// asking the operating system, recording the restart.
 	commandWorkLimit = 12 * time.Second
-	// commandReplyLimit is when the answer leaves at the latest, the work
-	// done or not.
+	// commandReplyLimit is when the answer should have left. Past it, the
+	// answer still goes out once the work is done: the server records an
+	// answer that comes after its wait.
 	commandReplyLimit = 15 * time.Second
+	// commandLateLimit is when an answer leaves at the latest, saying the
+	// outcome is unknown, should the operating system never answer.
+	commandLateLimit = 2 * time.Minute
 )
 
 // errRestartBusy: another restart decision held the lock for all the time a
@@ -138,16 +142,19 @@ func ownRestartLocked(ctx context.Context, now time.Time) (s reboot.Scheduled, p
 
 // remoteRestartsEnabledInConfig reads the switch from config.yml at each
 // decision: turning it on or off (by hand, or with config remote-restart)
-// applies without restarting the agent. The values loaded at startup stand
-// in when the file cannot be read.
+// applies without restarting the agent. A file that cannot be read or parsed
+// counts as off, not as the value loaded at startup: an administrator who
+// turned restarts off and left a typo must not have them on.
 func remoteRestartsEnabledInConfig() bool {
 	if cfgManager == nil {
 		return false
 	}
-	if on, ok := config.LocalSwitchOnDisk(cfgManager.GetConfigFile(), config.RemoteRestartIntegration); ok {
-		return on
+	on, ok := config.LocalSwitchOnDisk(cfgManager.GetConfigFile(), config.RemoteRestartIntegration)
+	if !ok {
+		logger.WithField("path", cfgManager.GetConfigFile()).Warn("config.yml could not be read; remote restarts count as disabled until it can")
+		return false
 	}
-	return cfgManager.IsIntegrationEnabled(config.RemoteRestartIntegration)
+	return on
 }
 
 // remoteRestartHeader is the header in which the agent tells the server, on
@@ -251,7 +258,10 @@ func registerPatchRun(id string, cancel context.CancelFunc, dryRun bool) (*patch
 // configuration waits for it.
 func unregisterPatchRun(id string, run *patchRun) {
 	restartGate.Lock()
-	patchRunCancels.CompareAndDelete(id, run)
+	if patchRunCancels.CompareAndDelete(id, run) {
+		// A stop that came after the run read its flag.
+		patchRunStopped.Delete(id)
+	}
 	restartNow := restartGate.agentRestartWaiting && !otherPatchRunInProgress("")
 	restartGate.Unlock()
 	if restartNow {
@@ -450,6 +460,12 @@ func scheduleRestart(out io.Writer, runID string, opts reboot.Options, needed bo
 	ctx, cancel := context.WithTimeout(context.Background(), ownerCheckTimeout)
 	defer cancel()
 	now := time.Now()
+	// A stop that arrived after the run's last step still keeps the restart
+	// out: the run was stopped to avoid it.
+	if _, late := patchRunStopped.LoadAndDelete(runID); late {
+		skip("Restart: not scheduled, the run was stopped", "the run was stopped")
+		return nil
+	}
 	if otherPatchRunInProgress(runID) {
 		skip("Restart: not scheduled, another patch run is in progress on this host; restart it once that run is over",
 			"another patch run is in progress on this host")
@@ -508,6 +524,11 @@ func restartCommand(ctx context.Context, opts reboot.Options) (time.Time, error)
 	}
 	defer restartGate.Unlock()
 	now := time.Now()
+	// The process may end before the restart is recorded and answered:
+	// cancelling it would then be refused.
+	if updateInFlight.Load() || restartGate.agentRestartWaiting {
+		return time.Time{}, errors.New("the agent is updating or restarting itself; try again in a minute")
+	}
 	if otherPatchRunInProgress("") {
 		return time.Time{}, errors.New("a patch run is in progress on this host; try again once it is over")
 	}
@@ -617,10 +638,11 @@ func writeRestartMessage(r restartReply) {
 	}
 }
 
-// answerCommand runs a restart or cancel command and returns its answer
-// within commandReplyLimit, whatever happens: the work has commandWorkLimit,
-// and should something not honour it, an answer still goes out at the limit
-// (the work carries on and logs its outcome).
+// answerCommand runs a restart or cancel command and returns its answer. The
+// work has commandWorkLimit. Should something not honour it, the real
+// outcome is still awaited, and reaches the server late, until
+// commandLateLimit: then the answer says the outcome is unknown (the work
+// carries on and logs it).
 func answerCommand(action, late string, work func(context.Context) restartReply) restartReply {
 	ctx, cancel := context.WithTimeout(context.Background(), commandWorkLimit)
 	done := make(chan restartReply, 1)
@@ -628,13 +650,22 @@ func answerCommand(action, late string, work func(context.Context) restartReply)
 		defer cancel()
 		done <- work(ctx)
 	}()
-	timer := time.NewTimer(commandReplyLimit)
-	defer timer.Stop()
+	start := time.Now()
+	reply := time.NewTimer(commandReplyLimit)
+	defer reply.Stop()
 	select {
 	case r := <-done:
 		return r
-	case <-timer.C:
-		logger.WithField("action", action).Warn("Restart command still running at its time limit; answering the server now")
+	case <-reply.C:
+		logger.WithField("action", action).Warn("Restart command still running at its time limit; its answer will reach the server late")
+	}
+	giveUp := time.NewTimer(commandLateLimit - time.Since(start))
+	defer giveUp.Stop()
+	select {
+	case r := <-done:
+		return r
+	case <-giveUp.C:
+		logger.WithField("action", action).Warn("Restart command still running; answering the server that its outcome is unknown")
 		return restartReply{Action: action, Error: late}
 	}
 }
@@ -688,12 +719,37 @@ var (
 	startRestartCancel  = handleRestartCancel
 )
 
+// restartQueue runs restart and cancel commands one at a time, in the order
+// they arrived: started each on its own, a cancel sent right after a restart
+// could take the lock first, find nothing to cancel, and the restart happen.
+var restartQueue = struct {
+	once sync.Once
+	jobs chan func()
+}{jobs: make(chan func(), 8)}
+
+// queueRestartCommand hands a command to the queue's worker without waiting.
+// A full queue answers busy, through busy, rather than block the reader.
+func queueRestartCommand(job, busy func()) {
+	restartQueue.once.Do(func() {
+		go func() {
+			for job := range restartQueue.jobs {
+				job()
+			}
+		}()
+	})
+	select {
+	case restartQueue.jobs <- job:
+	default:
+		go busy()
+	}
+}
+
 // handleRestartMessage takes a "reboot" or "reboot_cancel" message from the
-// WebSocket reader and starts its handler at once. It does not go through
+// WebSocket reader and queues its handler at once. It does not go through
 // the service loop, which runs check-ins, reports, agent updates and
 // apply_config inline: the answer could miss the 20 seconds the server
 // waits, or the command be dropped while the loop's buffer is full. The
-// handlers are serialised by restartGate and bounded in time.
+// handlers run in arrival order and are bounded in time.
 func handleRestartMessage(msgType, requestID string, opts *reboot.Options) {
 	if requestID != "" && !requestIDPattern.MatchString(requestID) {
 		logger.Warn("Ignoring restart command with an invalid request_id")
@@ -701,7 +757,10 @@ func handleRestartMessage(msgType, requestID string, opts *reboot.Options) {
 	}
 	if msgType == "reboot_cancel" {
 		logger.Info("reboot_cancel received")
-		go startRestartCancel(requestID)
+		cancel := startRestartCancel
+		queueRestartCommand(func() { cancel(requestID) }, func() {
+			sendRestartReply(restartReply{RequestID: requestID, Action: "cancel", Error: errRestartBusy.Error()})
+		})
 		return
 	}
 	var restart reboot.Options
@@ -714,7 +773,10 @@ func handleRestartMessage(msgType, requestID string, opts *reboot.Options) {
 		return
 	}
 	logger.Info("reboot received")
-	go startRestartCommand(restart, requestID)
+	run := startRestartCommand
+	queueRestartCommand(func() { run(restart, requestID) }, func() {
+		sendRestartReply(restartReply{RequestID: requestID, Action: "reboot", Error: errRestartBusy.Error()})
+	})
 }
 
 // handleRestartCommand runs the server's restart command and answers it.

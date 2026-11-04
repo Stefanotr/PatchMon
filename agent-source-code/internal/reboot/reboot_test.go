@@ -1,6 +1,7 @@
 package reboot
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,9 @@ func TestValidate(t *testing.T) {
 		{Mode: "now"},
 		{Mode: ModeAlways, DelayMinutes: -1},
 		{Mode: ModeAlways, DelayMinutes: int(MaxDelay/time.Minute) + 1},
+		// Times a minute, these overflow time.Duration and would wrap.
+		{Mode: ModeAlways, DelayMinutes: 1 << 53},
+		{Mode: ModeAlways, DelayMinutes: math.MaxInt},
 		{Mode: ModeAlways, Message: strings.Repeat("a", MaxMessageBytes+1)},
 		{Mode: ModeAlways, Message: string([]byte{0xff})},
 	}
@@ -71,6 +75,7 @@ func TestWhen(t *testing.T) {
 		{"default is the minimum", Options{}, now.Add(MinDelay)},
 		{"minutes", Options{DelayMinutes: 15}, now.Add(15 * time.Minute)},
 		{"too short is raised", Options{DelayMinutes: 1}, now.Add(MinDelay)},
+		{"too long is capped", Options{DelayMinutes: 1 << 53}, now.Add(MaxDelay)},
 		{"absolute time wins", Options{DelayMinutes: 15, At: now.Add(3 * time.Hour)}, now.Add(3 * time.Hour)},
 		// "at 03:00" chosen yesterday for a run that only ran now.
 		{"past time waits for the next day", Options{At: time.Date(2026, 10, 9, 3, 0, 0, 0, time.UTC)}, time.Date(2026, 10, 10, 3, 0, 0, 0, time.UTC)},

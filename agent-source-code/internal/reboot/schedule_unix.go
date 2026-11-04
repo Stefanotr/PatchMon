@@ -205,6 +205,12 @@ func procShutdownProcesses() ([]shutdownProcess, error) {
 		if err != nil || strings.TrimSpace(string(comm)) != "shutdown" {
 			continue
 		}
+		// Root's only: any user can name a process "shutdown", and one left
+		// waiting would hold every patch run and restart back. The real user
+		// ID, so a setuid program started under that name does not count.
+		if uid, ok := procRealUID(filepath.Join(procDir, e.Name())); !ok || uid != 0 {
+			continue
+		}
 		cmdline, _ := os.ReadFile(filepath.Join(procDir, e.Name(), "cmdline"))
 		args := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
 		patchMon := len(args) > 1 && slices.ContainsFunc(args[1:], func(a string) bool {
@@ -215,34 +221,54 @@ func procShutdownProcesses() ([]shutdownProcess, error) {
 	return procs, nil
 }
 
+// procRealUID returns a process's real user ID, from /proc/PID/status.
+func procRealUID(pidDir string) (int, bool) {
+	b, err := os.ReadFile(filepath.Join(pidDir, "status"))
+	if err != nil {
+		return 0, false
+	}
+	for line := range strings.SplitSeq(string(b), "\n") {
+		if rest, ok := strings.CutPrefix(line, "Uid:"); ok {
+			f := strings.Fields(rest)
+			if len(f) == 0 {
+				return 0, false
+			}
+			uid, err := strconv.Atoi(f[0])
+			return uid, err == nil
+		}
+	}
+	return 0, false
+}
+
 // psShutdownProcesses reads them from ps(1).
 func psShutdownProcesses(ctx context.Context) ([]shutdownProcess, error) {
 	ctx, cancel := context.WithTimeout(ctx, processListTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, psPath, "-ax", "-ww", "-o", "pid=", "-o", "comm=", "-o", "args=").Output()
+	out, err := exec.CommandContext(ctx, psPath, "-ax", "-ww", "-o", "pid=", "-o", "ruid=", "-o", "comm=", "-o", "args=").Output()
 	if err != nil {
 		return nil, fmt.Errorf("ps: %w", err)
 	}
 	return parseShutdownProcesses(out), nil
 }
 
-// parseShutdownProcesses reads ps(1) lines of pid, command name and
-// arguments. ps joins the arguments with spaces, so the message is found as
-// its first word.
+// parseShutdownProcesses reads ps(1) lines of pid, real user ID, command
+// name and arguments, keeping root's shutdown processes only (see
+// procShutdownProcesses). ps joins the arguments with spaces, so the message
+// is found as its first word.
 func parseShutdownProcesses(out []byte) []shutdownProcess {
 	word := strings.TrimSpace(messagePrefix)
 	var procs []shutdownProcess
 	for line := range strings.SplitSeq(string(out), "\n") {
 		f := strings.Fields(line)
-		if len(f) < 2 || f[1] != "shutdown" {
+		if len(f) < 3 || f[1] != "0" || f[2] != "shutdown" {
 			continue
 		}
 		pid, err := strconv.Atoi(f[0])
 		if err != nil || pid <= 0 {
 			continue
 		}
-		// f[2] is the program, the arguments follow.
-		procs = append(procs, shutdownProcess{pid: pid, patchMon: len(f) > 3 && slices.Contains(f[3:], word)})
+		// f[3] is the program, the arguments follow.
+		procs = append(procs, shutdownProcess{pid: pid, patchMon: len(f) > 4 && slices.Contains(f[4:], word)})
 	}
 	return procs
 }
