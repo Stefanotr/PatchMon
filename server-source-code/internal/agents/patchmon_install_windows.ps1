@@ -182,10 +182,69 @@ New-Item -ItemType Directory -Force -Path $InstallPath | Out-Null
 # at that path is removed, not followed, so the credentials never land where
 # it points.
 Write-Host "Creating configuration directory..." -ForegroundColor Yellow
+# A folder that a non-administrator created before this installation (any
+# local user can create one under ProgramData) is not adopted either: its owner
+# could have kept permissions on it or on its files, and its config.yml says
+# where the agent, running as SYSTEM, writes the credentials and the log, and
+# which local-only switches (remote shell, remote desktop, remote restarts) are
+# on. Such a folder, or one holding a link or anything a non-administrator
+# owns, is moved aside and a new one is created.
+$trustedOwners = @(
+    'S-1-5-18',
+    'S-1-5-32-544',
+    'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464',
+    [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+)
+function Test-TrustedOwner([string]$Path) {
+    try {
+        $owner = (Get-Acl -LiteralPath $Path).GetOwner([Security.Principal.SecurityIdentifier]).Value
+        return ($trustedOwners -contains $owner)
+    } catch {
+        return $false
+    }
+}
+function Test-TrustedConfigDir([string]$Path) {
+    if (-not (Test-TrustedOwner $Path)) { return $false }
+    # Walked by hand: Get-ChildItem -Recurse would follow a junction.
+    $pending = New-Object System.Collections.Stack
+    $pending.Push($Path)
+    try {
+        while ($pending.Count -gt 0) {
+            foreach ($item in (Get-ChildItem -LiteralPath $pending.Pop() -Force -ErrorAction Stop)) {
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+                if (-not (Test-TrustedOwner $item.FullName)) { return $false }
+                if ($item.PSIsContainer) { $pending.Push($item.FullName) }
+            }
+        }
+    } catch {
+        return $false
+    }
+    return $true
+}
 $existingConfigDir = Get-Item -LiteralPath $ConfigPath -Force -ErrorAction SilentlyContinue
 if ($existingConfigDir -and ($existingConfigDir.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
     Write-Host "Removing the link found at $ConfigPath..." -ForegroundColor Yellow
     $existingConfigDir.Delete()
+} elseif ($existingConfigDir -and -not (Test-TrustedConfigDir $ConfigPath)) {
+    $asidePath = "$ConfigPath.untrusted-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    Write-Warning "$ConfigPath was not created by an administrator, or holds something that was not: moving it to $asidePath so that nothing in it is used. Check its content, then delete it."
+    try {
+        Move-Item -LiteralPath $ConfigPath -Destination $asidePath -ErrorAction Stop
+    } catch {
+        Write-Error "Could not move $ConfigPath aside: $_. Move or delete it, after checking its content, and run the installation again."
+        exit 1
+    }
+}
+if (-not (Test-Path -LiteralPath $ConfigPath)) {
+    # Created with its final owner and permissions in one step, so no other
+    # user can open it in between.
+    $configDirSecurity = New-Object System.Security.AccessControl.DirectorySecurity
+    $configDirSecurity.SetSecurityDescriptorSddlForm('O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)')
+    [void][IO.Directory]::CreateDirectory($ConfigPath, $configDirSecurity)
+    if (-not (Test-TrustedConfigDir $ConfigPath) -or (Get-ChildItem -LiteralPath $ConfigPath -Force)) {
+        Write-Error "$ConfigPath was created or filled by someone else while the installation ran. Check its content, delete it, and run the installation again."
+        exit 1
+    }
 }
 New-Item -ItemType Directory -Force -Path $ConfigPath | Out-Null
 $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'

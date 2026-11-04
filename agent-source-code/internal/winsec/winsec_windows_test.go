@@ -68,3 +68,57 @@ func TestSecureDirHealsAnExistingDir(t *testing.T) {
 		t.Errorf("directory not secure after healing: %v", err)
 	}
 }
+
+func TestInDataDir(t *testing.T) {
+	t.Setenv("ProgramData", `C:\ProgramData`)
+	for path, want := range map[string]bool{
+		`C:\ProgramData\PatchMon`:             true,
+		`c:\programdata\patchmon\`:            true,
+		`C:\ProgramData\PatchMon\logs`:        true,
+		`C:\ProgramData\PatchMon\..\Other`:    false,
+		`C:\ProgramData\PatchMonEvil`:         false,
+		`C:\Users\Public`:                     false,
+		`C:\ProgramData`:                      false,
+		`C:\ProgramData\PatchMon.untrusted-1`: false,
+	} {
+		if got := InDataDir(path); got != want {
+			t.Errorf("InDataDir(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+func TestVerifyPrivateLocationRefusesAUserFolder(t *testing.T) {
+	t.Setenv("ProgramData", filepath.Join(t.TempDir(), "pd"))
+	dir := t.TempDir()
+	if err := VerifyPrivateLocation(dir); err == nil {
+		t.Fatalf("%s, a folder with the user's permissions, was accepted", dir)
+	}
+	if err := VerifyPrivateLocation(filepath.Join(dir, "missing")); err == nil {
+		t.Fatal("a folder that does not exist was accepted")
+	}
+}
+
+func TestVerifyPrivateLocationAcceptsPrivateFolders(t *testing.T) {
+	requireWindowsIntegration(t)
+	base := t.TempDir()
+	t.Setenv("ProgramData", base)
+	if err := EnsureDataDir(); err != nil {
+		t.Fatal(err)
+	}
+	logs := filepath.Join(base, "PatchMon", "logs")
+	if err := os.Mkdir(logs, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{filepath.Join(base, "PatchMon"), logs} {
+		if err := VerifyPrivateLocation(dir); err != nil {
+			t.Errorf("%s was refused: %v", dir, err)
+		}
+	}
+	elsewhere := filepath.Join(base, "elsewhere")
+	if err := CreatePrivateDir(elsewhere); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyPrivateLocation(elsewhere); err != nil {
+		t.Errorf("%s, created private, was refused: %v", elsewhere, err)
+	}
+}

@@ -1144,11 +1144,19 @@ func (m *Manager) setupDirectories() error {
 		}
 	}
 
-	// Windows ignores file modes, so lock the standard data directory to SYSTEM
-	// and Administrators by ACL. Guarded to the default path; a no-op off Windows.
-	if m.config.CredentialsFile == DefaultCredentialsFileWindows {
+	// Windows ignores file modes: lock the standard data directory to SYSTEM and
+	// Administrators by ACL, and refuse a credentials or log directory that
+	// other local users could write, since config.yml can point them anywhere
+	// and the service writes them as SYSTEM. No-ops off Windows.
+	private := []string{filepath.Dir(m.config.CredentialsFile), filepath.Dir(m.config.LogFile)}
+	if slices.ContainsFunc(private, winsec.InDataDir) {
 		if err := winsec.EnsureDataDir(); err != nil {
 			return fmt.Errorf("error securing data directory: %w", err)
+		}
+	}
+	for _, dir := range private {
+		if err := winsec.VerifyPrivateLocation(dir); err != nil {
+			return fmt.Errorf("refusing %s, which other local users may be able to write: %w", dir, err)
 		}
 	}
 
