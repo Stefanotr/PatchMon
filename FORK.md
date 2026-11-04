@@ -88,6 +88,7 @@ Les étapes 1 à 5 sont faites. Elles restent ici pour refaire un fork de zéro.
      git remote set-head origin -a
      ```
    - Laisse `main` identique à PatchMon. Le bouton *Sync fork* le met à jour quand tu es sur `main`.
+   - Chaque push sur `main`, *Sync fork* compris, lance le `docker.yml` de PatchMon avec les droits du fork : il publie `ghcr.io/stefanotr/patchmon-server:edge`, construit depuis du code PatchMon pas encore sorti. Ne déploie jamais `:edge` ; la vérification de l'image (`--source-ref` sur le tag) le refuse.
 2. **Activer les Actions.** Ça se fait dans l'onglet *Actions* du dépôt, à côté de *Pull requests*, pas dans *Settings*. Un fork y affiche « Workflows aren't being run on this forked repository » : clique sur *I understand my workflows, go ahead and enable them*.
    - Sans ce bandeau, va dans *Settings > Actions > General > Actions permissions*, choisis *Allow all actions and reusable workflows*, puis *Save*.
    - GitHub ne liste un nouveau workflow qu'après un push sur la branche par défaut. Une fois `fork` poussée, ouvre « Upstream release watch » dans la liste à gauche. S'il affiche « This scheduled workflow is disabled », clique sur *Enable workflow*. Lance-le une fois avec *Run workflow* pour vérifier.
@@ -95,7 +96,7 @@ Les étapes 1 à 5 sont faites. Elles restent ici pour refaire un fork de zéro.
 3. **Désactiver les workflows réservés à PatchMon**. Sans leurs secrets ils échouent, et ils n'ont rien à faire dans un fork. Dans l'interface : chaque workflow, menu *...*, puis *Disable workflow*. Ou :
    ```bash
    for wf in agent-release.yml discord-activity.yml discord-release.yml \
-             notify-website.yml vcheck-dns.yml ensure-labels.yml; do
+             notify-website.yml notify-ops.yml vcheck-dns.yml ensure-labels.yml; do
      gh workflow disable "$wf" -R Stefanotr/PatchMon
    done
    ```
@@ -152,7 +153,7 @@ Dans `cmd`, appelle-le par son chemin : `"%LOCALAPPDATA%\Programs\Git\bin\bash.e
 "%LOCALAPPDATA%\Programs\Git\bin\bash.exe" tools/fork-release.sh --push
 ```
 
-Le script calcule le tag suivant, le crée sur `HEAD` et le pousse. Il refuse un commit déjà publié, et un fork qui contient du code PatchMon non publié sans `--unreleased-base` (voir « La base réelle »). `--dry-run` affiche le tag et ses notes sans rien créer : lance-le d'abord pour relire les notes.
+Le script calcule le tag suivant, le crée sur `HEAD` et le pousse. `HEAD` doit être `origin/fork` tel qu'il est : lance-le depuis `fork` à jour (`git checkout fork && git pull`), jamais depuis une branche `feat/` ou `sync/`, dont le code n'est pas passé par la PR et ses checks. La CI refuse aussi un tag qui n'est pas sur `fork`. Il refuse un commit déjà publié, et un fork qui contient du code PatchMon non publié sans `--unreleased-base` (voir « La base réelle »). `--dry-run` affiche le tag et ses notes sans rien créer : lance-le d'abord pour relire les notes.
 
 Le message du tag, ce sont les notes de la release :
 
@@ -163,8 +164,8 @@ La page de connexion affiche les trois premières lignes : les nouveautés passe
 
 La CI construit alors :
 
-- l'image `ghcr.io/stefanotr/patchmon-server:<version>` et le tag flottant `:fork`, avec les agents de toutes les plateformes ;
-- la release GitHub avec les binaires, les sommes de contrôle et l'attestation de provenance. Ses notes reprennent le message du tag.
+- l'image `ghcr.io/stefanotr/patchmon-server:<version>` et le tag flottant `:fork`, avec les agents de toutes les plateformes. `:fork` ne suit que la release la plus récente : reconstruire une ancienne release ne le fait pas reculer ;
+- la release GitHub avec les binaires, les sommes de contrôle et l'attestation de provenance, une fois l'image publiée. Ses notes reprennent le message du tag.
 
 Pour corriger les notes d'une release déjà publiée, modifie la release, pas le tag (le ruleset `tags` le protège) : `gh release edit v2.1.4-fork.N --notes-file notes.md`.
 
@@ -176,9 +177,11 @@ Les serveurs jusqu'à `2.1.4-fork.4` gardent leur réponse un quart d'heure, mê
 
 On installe une release précise du fork. Le script d'installation, le `docker-compose.yml` et l'image viennent tous du même tag : rien ne dépend de `main`, ni du tag flottant `:fork`.
 
-1. Vérifie l'image depuis ton poste, avec `gh`. L'attestation prouve qu'elle a été construite par la CI du fork, depuis ce tag :
+1. Vérifie l'image depuis ton poste, avec `gh`. L'attestation prouve qu'elle a été construite par le workflow `docker.yml` du fork, depuis ce tag. Sans `--source-ref` et `--signer-workflow`, la commande accepterait aussi une image construite depuis une autre branche, `:edge` compris (voir `main` plus haut) :
    ```bash
-   gh attestation verify oci://ghcr.io/stefanotr/patchmon-server:2.1.5-fork.1 --repo Stefanotr/PatchMon
+   VERSION=2.1.5-fork.1
+   gh attestation verify "oci://ghcr.io/stefanotr/patchmon-server:$VERSION" --repo Stefanotr/PatchMon \
+     --source-ref "refs/tags/v$VERSION" --signer-workflow Stefanotr/PatchMon/.github/workflows/docker.yml
    ```
 2. Installe sur le serveur :
    ```bash
@@ -222,7 +225,7 @@ rm -rf custom custom.old custom.new custom-src
 
 On change de version explicitement, après avoir vérifié la nouvelle image :
 
-1. Sur ton poste : `gh attestation verify oci://ghcr.io/stefanotr/patchmon-server:<version> --repo Stefanotr/PatchMon`. Lis aussi les notes de la release, en particulier sa base réelle.
+1. Sur ton poste, vérifie l'image comme à l'installation (avec `--source-ref` et `--signer-workflow`). Lis aussi les notes de la release, en particulier sa base réelle.
 2. Sur le serveur :
    ```bash
    cd /opt/patchmon
