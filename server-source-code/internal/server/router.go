@@ -201,7 +201,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 	// live part of a host's activity.
 	agentUpdateStore := store.NewAgentUpdateStore(dbProvider)
 	complianceProgress := handler.NewComplianceProgressTracker()
-	liveActivityHandler := handler.NewHostLiveActivityHandler(hostsStore, store.NewLiveActivityStore(dbProvider), queueInspector, complianceProgress, permissionsStore)
+	liveActivityHandler := handler.NewHostLiveActivityHandler(hostsStore, store.NewLiveActivityStore(dbProvider), queueInspector, complianceProgress, permissionsStore, agentUpdateStore)
 	hostGroupsHandler := handler.NewHostGroupsHandler(hostGroupsStore, hostsStore)
 	dashboardPrefsHandler := handler.NewDashboardPreferencesHandler(dashboardPrefsStore)
 	dockerHandler := handler.NewDockerHandler(dockerStore, registry)

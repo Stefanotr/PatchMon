@@ -231,3 +231,32 @@ func TestRecordAgentUpdateConnectedWithNothingToClose(t *testing.T) {
 		t.Fatalf("err=%v lookups=%d", err, len(f.lookups))
 	}
 }
+
+// A check-in on another version closes the update as done; the old version
+// or none tells nothing, since the check-in may predate the restart.
+func TestRecordAgentUpdateVersionSeen(t *testing.T) {
+	cases := []struct {
+		name, output, version string
+		done                  bool
+	}{
+		{"new version", `{"stage":"sent","from_version":"1.4.0"}`, "v1.5.0", true},
+		{"still the old version, restarting", `{"stage":"restarting","from_version":"1.4.0"}`, "1.4.0", false},
+		{"from version not known", `{"stage":"sent"}`, "1.5.0", false},
+		{"no version reported", `{"stage":"sent","from_version":"1.4.0"}`, "", false},
+	}
+	for _, c := range cases {
+		f := &fakeAgentUpdates{open: openUpdate("job-1", c.output)}
+		if err := RecordAgentUpdateVersionSeen(context.Background(), f, "api-1", c.version, updateNow); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		switch {
+		case !c.done && len(f.stages) != 0:
+			t.Errorf("%s: recorded %+v, want nothing", c.name, f.stages[0])
+		case c.done && (len(f.stages) != 1 || f.stages[0].Stage != AgentUpdateDone || f.stages[0].Status != JobCompleted || patchOf(t, f.stages[0])["to_version"] != "1.5.0"):
+			t.Errorf("%s: recorded %+v", c.name, f.stages)
+		}
+	}
+	if err := RecordAgentUpdateVersionSeen(context.Background(), &fakeAgentUpdates{}, "api-1", "1.5.0", updateNow); err != nil {
+		t.Fatalf("nothing open: %v", err)
+	}
+}

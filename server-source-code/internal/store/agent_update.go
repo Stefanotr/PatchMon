@@ -89,13 +89,26 @@ func NewAgentUpdateStore(db database.DBProvider) *AgentUpdateStore {
 	return &AgentUpdateStore{db: db, now: time.Now}
 }
 
-// Open reports whether the agent has an update open.
+// Open reports whether the agent has an update open. An update the host's
+// check-in already shows finished is closed first.
 func (s *AgentUpdateStore) Open(ctx context.Context, apiID string) (bool, error) {
-	_, err := openAgentUpdate(ctx, s.db.DB(ctx).Queries, apiID, s.now())
+	q := s.db.DB(ctx).Queries
+	if h, err := q.GetHostByApiID(ctx, apiID); err == nil && h.AgentVersion != nil {
+		// Best effort: the update is still reported open if this fails.
+		_ = RecordAgentUpdateVersionSeen(ctx, q, apiID, *h.AgentVersion, s.now())
+	}
+	_, err := openAgentUpdate(ctx, q, apiID, s.now())
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	return err == nil, err
+}
+
+// CloseIfVersionChanged closes the open update of an agent whose host now
+// reports version, when the update left another one (see
+// RecordAgentUpdateVersionSeen).
+func (s *AgentUpdateStore) CloseIfVersionChanged(ctx context.Context, apiID, version string) error {
+	return RecordAgentUpdateVersionSeen(ctx, s.db.DB(ctx).Queries, apiID, version, s.now())
 }
 
 // RecordProgress records a stage the agent of hostID reported.
@@ -233,6 +246,38 @@ func RecordAgentUpdateConnected(ctx context.Context, q AgentUpdateQueries, apiID
 	}
 	patch := map[string]any{"stage": stage, "percent": nil, "to_version": version}
 	return recordAgentUpdateStage(ctx, q, open.JobID, apiID, stage, status, failure, patch, now)
+}
+
+// RecordAgentUpdateVersionSeen closes the open update of an agent whose host
+// reports version (its check-in), when the update was sent to an agent on
+// another one: done. Agents that do not report their updates (older than
+// this server, or official PatchMon ones) are closed this way as soon as
+// they check in on the new version, instead of failing at
+// AgentUpdateDeadline. Unlike a reconnection, the old version tells nothing:
+// the check-in may predate the restart.
+func RecordAgentUpdateVersionSeen(ctx context.Context, q AgentUpdateQueries, apiID, version string, now time.Time) error {
+	version = NormalizeAgentVersion(version)
+	if version == "" {
+		return nil
+	}
+	open, err := openAgentUpdate(ctx, q, apiID, now)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var out struct {
+		FromVersion string `json:"from_version"`
+	}
+	if len(open.Output) > 0 {
+		_ = json.Unmarshal(open.Output, &out)
+	}
+	if from := NormalizeAgentVersion(out.FromVersion); from == "" || from == version {
+		return nil
+	}
+	patch := map[string]any{"stage": AgentUpdateDone, "percent": nil, "to_version": version}
+	return recordAgentUpdateStage(ctx, q, open.JobID, apiID, AgentUpdateDone, JobCompleted, "", patch, now)
 }
 
 // agentUpdateOnReconnect decides what an agent connecting on version means
