@@ -140,6 +140,12 @@ func (h *HostsHandler) sendRebootCommand(w http.ResponseWriter, r *http.Request,
 		Error(w, http.StatusNotFound, "Host not found")
 		return
 	}
+	if job == restartJobName {
+		if reason := h.restartBlocked(r.Context(), host); reason != "" {
+			Error(w, http.StatusConflict, reason)
+			return
+		}
+	}
 	requestID := uuid.NewString()
 	userID, _ := r.Context().Value(middleware.UserIDKey).(string)
 	log := slog.With("host_id", host.ID, "user_id", userID, "command", msg["type"], "request_id", requestID)
@@ -197,6 +203,32 @@ func (h *HostsHandler) sendRebootCommand(w http.ResponseWriter, r *http.Request,
 		}
 		JSON(w, http.StatusOK, resp)
 	}
+}
+
+// restartBlocked says why a restart must not be sent now ("" when it may),
+// like ForceAgentUpdate does: during a patch run or an agent update. The
+// agent refuses those too; the server does not count on it. A check that
+// fails leaves the decision to the agent.
+func (h *HostsHandler) restartBlocked(ctx context.Context, host *models.Host) string {
+	if h.hosts != nil {
+		active, err := h.hosts.HasActivePatchRun(ctx, host.ID)
+		switch {
+		case err != nil:
+			slog.Warn("hosts: active patch run check failed before a restart", "host_id", host.ID, "error", err)
+		case active:
+			return store.PatchRunInProgressMessage
+		}
+	}
+	if h.db != nil {
+		open, err := store.NewAgentUpdateStore(h.db).Open(ctx, host.ApiID)
+		switch {
+		case err != nil:
+			slog.Warn("hosts: open agent update check failed before a restart", "host_id", host.ID, "error", err)
+		case open:
+			return "An agent update is in progress on this host. Try again when it finishes."
+		}
+	}
+	return ""
 }
 
 // awaitReply waits for the agent's answer, up to timeout or the end of the
