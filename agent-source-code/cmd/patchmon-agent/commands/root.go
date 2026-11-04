@@ -91,10 +91,13 @@ func initialiseAgent() {
 		logFile = config.DefaultLogFilePath()
 	}
 	// config.yml can point the log anywhere, and the Windows service writes it
-	// as SYSTEM: a log directory outside the data directory that other local
-	// users could write is not used, nor created. No-op off Windows.
+	// as SYSTEM: a log directory outside the data directory and the one of
+	// config.yml, that other local users could write, is not used, nor
+	// created. No-op off Windows.
 	refused := ""
-	if dir := filepath.Dir(logFile); !winsec.InDataDir(dir) && winsec.VerifyPrivateLocation(dir) != nil {
+	if dir := filepath.Dir(logFile); !winsec.InDataDir(dir) &&
+		!config.IsWithin(dir, filepath.Dir(cfgManager.GetConfigFile())) &&
+		winsec.VerifyPrivateLocation(dir) != nil {
 		refused, logFile = logFile, config.DefaultLogFilePath()
 	}
 	// SECURITY: Use 0750 for log directory (no world access)

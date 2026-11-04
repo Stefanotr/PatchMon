@@ -1129,6 +1129,13 @@ func (m *Manager) SetComplianceScanInterval(minutes int) error {
 	return m.saveConfigLocked()
 }
 
+// IsWithin reports whether path is dir or below it (case-insensitively on
+// Windows, like the file system).
+func IsWithin(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // setupDirectories creates necessary directories
 // SECURITY: Use restrictive permissions (0750) for config directories
 // This prevents unauthorized users from reading agent configuration
@@ -1149,7 +1156,8 @@ func (m *Manager) setupDirectories() error {
 	// Windows ignores file modes: lock the standard data directory to SYSTEM and
 	// Administrators by ACL, and refuse a credentials or log directory that
 	// other local users could write, since config.yml can point them anywhere
-	// and the service writes them as SYSTEM. No-ops off Windows.
+	// and the service writes them as SYSTEM. The directory of config.yml, and
+	// below, is as trusted as the file that names them. No-ops off Windows.
 	private := []string{filepath.Dir(m.config.CredentialsFile), filepath.Dir(m.config.LogFile)}
 	if slices.ContainsFunc(private, winsec.InDataDir) {
 		if err := winsec.EnsureDataDir(); err != nil {
@@ -1157,6 +1165,9 @@ func (m *Manager) setupDirectories() error {
 		}
 	}
 	for _, dir := range private {
+		if IsWithin(dir, filepath.Dir(m.configFile)) {
+			continue
+		}
 		if err := winsec.VerifyPrivateLocation(dir); err != nil {
 			return fmt.Errorf("refusing %s, which other local users may be able to write: %w", dir, err)
 		}
