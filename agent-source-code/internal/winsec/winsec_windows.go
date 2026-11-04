@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -54,6 +55,41 @@ func secureDir(dir string) error {
 		return fmt.Errorf("harden %s: %w", dir, err)
 	}
 	return VerifySecureDir(dir)
+}
+
+// InDataDir reports whether path is %ProgramData%\PatchMon or below it.
+func InDataDir(path string) bool {
+	data := strings.ToLower(filepath.Clean(dataDir()))
+	p := strings.ToLower(filepath.Clean(path))
+	return p == data || strings.HasPrefix(p, data+`\`)
+}
+
+// VerifyPrivateLocation reports an error unless only SYSTEM and Administrators
+// can write to dir: a plain directory in the data directory (which EnsureDataDir
+// locks, and which the caller must have run), with no link on the way down, or
+// a plain directory elsewhere that passes VerifySecureDir. config.yml decides
+// where the credentials and the log go and the service writes them as SYSTEM,
+// so a folder another local user controls is refused rather than written to.
+func VerifyPrivateLocation(dir string) error {
+	dir = filepath.Clean(dir)
+	if !InDataDir(dir) {
+		if !IsPlainDir(dir) {
+			return fmt.Errorf("%s is a link or not a directory", dir)
+		}
+		return VerifySecureDir(dir)
+	}
+	data := filepath.Clean(dataDir())
+	for d := dir; ; d = filepath.Dir(d) {
+		if !IsPlainDir(d) {
+			return fmt.Errorf("%s is a link or not a directory", d)
+		}
+		if strings.EqualFold(d, data) {
+			return VerifySecureDir(d)
+		}
+		if filepath.Dir(d) == d {
+			return fmt.Errorf("%s is not below %s", dir, data)
+		}
+	}
 }
 
 // SecureUpdateDir returns %ProgramData%\PatchMon\update, a directory only SYSTEM

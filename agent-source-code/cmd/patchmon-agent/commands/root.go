@@ -10,6 +10,7 @@ import (
 	"patchmon-agent/internal/constants"
 	"patchmon-agent/internal/pkgversion"
 	"patchmon-agent/internal/utils"
+	"patchmon-agent/internal/winsec"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -89,9 +90,19 @@ func initialiseAgent() {
 	if logFile == "" {
 		logFile = config.DefaultLogFilePath()
 	}
+	// config.yml can point the log anywhere, and the Windows service writes it
+	// as SYSTEM: a log directory outside the data directory that other local
+	// users could write is not used, nor created. No-op off Windows.
+	refused := ""
+	if dir := filepath.Dir(logFile); !winsec.InDataDir(dir) && winsec.VerifyPrivateLocation(dir) != nil {
+		refused, logFile = logFile, config.DefaultLogFilePath()
+	}
 	// SECURITY: Use 0750 for log directory (no world access)
 	_ = os.MkdirAll(filepath.Dir(logFile), 0750)
 	logger.SetOutput(&lumberjack.Logger{Filename: logFile, MaxSize: 10, MaxBackups: 5, MaxAge: 14, Compress: true})
+	if refused != "" {
+		logger.Warnf("log_file %s is in a folder other local users may be able to write, or that does not exist; logging to %s instead", refused, logFile)
+	}
 }
 
 // updateLogLevel sets the logger level based on the flag value
