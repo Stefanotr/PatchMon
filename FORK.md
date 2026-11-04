@@ -91,6 +91,7 @@ Les étapes 1 à 5 sont faites. Elles restent ici pour refaire un fork de zéro.
 2. **Activer les Actions.** Ça se fait dans l'onglet *Actions* du dépôt, à côté de *Pull requests*, pas dans *Settings*. Un fork y affiche « Workflows aren't being run on this forked repository » : clique sur *I understand my workflows, go ahead and enable them*.
    - Sans ce bandeau, va dans *Settings > Actions > General > Actions permissions*, choisis *Allow all actions and reusable workflows*, puis *Save*.
    - GitHub ne liste un nouveau workflow qu'après un push sur la branche par défaut. Une fois `fork` poussée, ouvre « Upstream release watch » dans la liste à gauche. S'il affiche « This scheduled workflow is disabled », clique sur *Enable workflow*. Lance-le une fois avec *Run workflow* pour vérifier.
+   - Ce workflow prévient en ouvrant une issue, et GitHub désactive les issues sur un fork. Active-les dans *Settings > General > Features > Issues*, ou avec `gh repo edit <toi>/PatchMon --enable-issues`. Sans elles, le workflow échoue dès sa première étape.
 3. **Désactiver les workflows réservés à PatchMon**. Sans leurs secrets ils échouent, et ils n'ont rien à faire dans un fork. Dans l'interface : chaque workflow, menu *...*, puis *Disable workflow*. Ou :
    ```bash
    for wf in agent-release.yml discord-activity.yml discord-release.yml \

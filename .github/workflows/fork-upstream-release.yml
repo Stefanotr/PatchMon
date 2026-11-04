@@ -35,9 +35,24 @@ jobs:
       FORK_BRANCH: ${{ vars.FORK_BRANCH }}
       LABEL: upstream-release
     steps:
+      # Both checks report by opening an issue, and GitHub disables issues on
+      # a new fork. Say so up front rather than through gh's error deep in a
+      # step, which only the signed-in log shows.
+      - name: Check that issues are enabled
+        id: issues
+        run: |
+          set -euo pipefail
+          if [ "$(gh api "repos/$FORK" --jq .has_issues)" != "true" ]; then
+            echo "::error::issues are disabled on $FORK; enable them in Settings > General > Features, or run: gh repo edit $FORK --enable-issues"
+            exit 1
+          fi
+
       - name: Open an issue for a new upstream release
         run: |
           set -euo pipefail
+          # Name the failing command in the annotation, which the failure
+          # mail and the public run page show; the log needs a sign-in.
+          trap 'echo "::error::line $LINENO failed: $BASH_COMMAND"' ERR
 
           # Every value below comes from the API or a variable and reaches the
           # shell through env; each is checked before it is used.
@@ -116,9 +131,10 @@ jobs:
       # database that ran the old file would then never run the new one. The
       # fork adds no migration of its own (its schema changes are steps in
       # internal/forkschema), so every file here must match PatchMon's main.
-      # Runs even when the release check failed (an API error, say).
+      # Runs even when the release check failed (an API error, say), as long
+      # as an issue can be opened.
       - name: Check out the fork branch
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.issues.outcome == 'success' }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           ref: ${{ vars.FORK_BRANCH || github.event.repository.default_branch }}
@@ -126,12 +142,13 @@ jobs:
           persist-credentials: false
 
       - name: Open an issue when PatchMon changed a migration the fork has
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.issues.outcome == 'success' }}
         env:
           MIGRATION_LABEL: upstream-migration
           MIGRATIONS: server-source-code/internal/migrate/migrations
         run: |
           set -euo pipefail
+          trap 'echo "::error::line $LINENO failed: $BASH_COMMAND"' ERR
           git fetch -q --depth=1 --no-tags "https://github.com/$UPSTREAM.git" main
           changed=()
           while IFS= read -r -d '' f; do
