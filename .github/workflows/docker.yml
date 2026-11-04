@@ -316,6 +316,35 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # A fork release is the fork branch as merged, after its pull requests
+      # and checks: tools/fork-release.sh checks it before tagging, and this
+      # refuses a tag pushed by hand on another commit, before anything is
+      # published (release-assets waits for this job). :fork moves only to
+      # the newest fork release, never back to an older one rebuilt.
+      - name: Check a fork release
+        id: fork-release
+        if: github.ref_type == 'tag' && contains(github.ref_name, '-fork.')
+        env:
+          TAG: ${{ github.ref_name }}
+          FORK_BRANCH: ${{ vars.FORK_BRANCH || github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-fork\.[0-9]+$'; then
+            echo "::error::unexpected fork tag ${TAG}"
+            exit 1
+          fi
+          if ! printf '%s' "$FORK_BRANCH" | grep -qE '^[A-Za-z0-9._/-]+$' || [[ "$FORK_BRANCH" == *..* ]]; then
+            echo "::error::invalid branch name '${FORK_BRANCH}'"
+            exit 1
+          fi
+          git fetch -q --no-tags origin "+refs/heads/${FORK_BRANCH}:refs/remotes/origin/${FORK_BRANCH}"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/${FORK_BRANCH}"; then
+            echo "::error::${TAG} is not on ${FORK_BRANCH}: release only what was merged there (tools/fork-release.sh)"
+            exit 1
+          fi
+          newest="$(git tag -l 'v*-fork.*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-fork\.[0-9]+$' | sort -V | tail -n 1)"
+          echo "newest=$([ "$newest" = "$TAG" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       # Trusted copy of the release-context action; see build-agents (GHSA-6p8v).
       - name: Check out trusted release-context action
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
@@ -379,7 +408,7 @@ jobs:
             type=raw,value=edge,enable=${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
             # Fork releases (vX.Y.Z-fork.N) are pre-releases, which never get
             # :latest; :fork follows the newest one (see FORK.md).
-            type=raw,value=fork,enable=${{ github.ref_type == 'tag' && contains(github.ref_name, '-fork.') }}
+            type=raw,value=fork,enable=${{ steps.fork-release.outputs.newest == 'true' }}
 
       # Harbor is staging only: PR previews and the `main` edge build. Releases
       # go to GHCR alone, hence the ref_type gate here and on every Harbor step
@@ -634,7 +663,9 @@ jobs:
   # race over which assets exist yet.
   release-assets:
     name: Publish release binaries, checksums and provenance
-    needs: [build-agents, build-server-binaries]
+    # build-server too: the GitHub release is what fork instances follow, so
+    # it is published only once its image is, and the fork release checked.
+    needs: [build-agents, build-server-binaries, build-server]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:

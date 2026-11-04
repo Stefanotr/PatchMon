@@ -85,6 +85,9 @@ jobs:
   frontend-test:
     name: Frontend Tests
     runs-on: ubuntu-latest
+    # npm ci runs the dependencies' install scripts: no write scope here.
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code

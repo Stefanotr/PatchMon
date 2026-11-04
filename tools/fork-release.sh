@@ -26,6 +26,7 @@
 #
 # Usage: tools/fork-release.sh [--push] [--unreleased-base] [--dry-run]
 #   --dry-run prints the tag and its message, and creates nothing.
+#   HEAD must be origin/fork as it is now (FORK_BRANCH names another branch).
 #   Windows: run it with the bash of Git for Windows, not the WSL one.
 set -euo pipefail
 
@@ -126,8 +127,20 @@ git fetch -q --tags upstream
 git fetch -q upstream main
 git fetch -q --tags origin
 
-$dry_run || git branch -r --contains HEAD | grep -q '^ *origin/' ||
-  die "HEAD is not on any branch of origin; push it first"
+# A release is the fork branch as merged, after its pull requests and
+# checks: not a commit of a feature or sync branch, nor an older one. The
+# CI refuses a tag that is not on that branch, too. FORK_BRANCH names
+# another branch than the default one (fork).
+fork_branch="${FORK_BRANCH:-fork}"
+printf '%s' "$fork_branch" | grep -qE '^[A-Za-z0-9._/-]+$' && [[ "$fork_branch" != *..* ]] ||
+  die "invalid FORK_BRANCH $fork_branch"
+git fetch -q origin "+refs/heads/$fork_branch:refs/remotes/origin/$fork_branch" ||
+  die "cannot fetch origin/$fork_branch"
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$fork_branch")" ]; then
+  msg="HEAD ($(git rev-parse --short HEAD)) is not origin/$fork_branch ($(git rev-parse --short "origin/$fork_branch")): check out $fork_branch and pull, then run this again"
+  $dry_run || die "$msg"
+  echo "warning: $msg" >&2
+fi
 
 # Tagging a commit already released publishes the same code under a new
 # version, typically because the pull request was not merged yet.
