@@ -15,7 +15,9 @@ import (
 type fakeDB struct {
 	hasColumn bool
 	failOn    string
-	txs       []*fakeTx
+	// lockTimeouts: how many ALTERs give up on lock_timeout.
+	lockTimeouts int
+	txs          []*fakeTx
 }
 
 func (d *fakeDB) Begin(context.Context) (pgx.Tx, error) {
@@ -36,6 +38,10 @@ func (t *fakeTx) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTa
 	t.stmts = append(t.stmts, sql)
 	if t.db.failOn != "" && strings.Contains(sql, t.db.failOn) {
 		return pgconn.CommandTag{}, errors.New("boom")
+	}
+	if t.db.lockTimeouts > 0 && strings.HasPrefix(sql, "ALTER TABLE") {
+		t.db.lockTimeouts--
+		return pgconn.CommandTag{}, &pgconn.PgError{Code: "55P03", Message: "canceling statement due to lock timeout"}
 	}
 	return pgconn.CommandTag{}, nil
 }
@@ -143,5 +149,36 @@ func TestLeavesAnExistingRemoteRestartTableAlone(t *testing.T) {
 	}
 	if tx := db.txs[1]; tx.ran("CREATE TABLE") {
 		t.Fatalf("an existing table was recreated: %q", tx.stmts)
+	}
+}
+
+// A table busy for longer than the lock timeout is waited for again, a few
+// times, each attempt bounded; the lock timeout is set after the advisory
+// lock, so instances still wait for each other.
+func TestABusyTableIsRetried(t *testing.T) {
+	old := lockRetryDelay
+	lockRetryDelay = 0
+	defer func() { lockRetryDelay = old }()
+
+	d := &fakeDB{lockTimeouts: 2}
+	if err := Apply(context.Background(), d, nil); err != nil {
+		t.Fatal(err)
+	}
+	alters := 0
+	for _, tx := range d.txs {
+		if tx.ran("ALTER TABLE role_permissions") {
+			alters++
+		}
+		if len(tx.stmts) < 2 || !strings.Contains(tx.stmts[0], "pg_advisory_xact_lock") || !strings.Contains(tx.stmts[1], "lock_timeout") {
+			t.Fatalf("statements %q", tx.stmts)
+		}
+	}
+	if alters != 3 {
+		t.Fatalf("%d ALTER attempts, want 3", alters)
+	}
+
+	d = &fakeDB{lockTimeouts: lockAttempts}
+	if err := Apply(context.Background(), d, nil); err == nil {
+		t.Fatal("a table busy on every attempt did not fail the start")
 	}
 }

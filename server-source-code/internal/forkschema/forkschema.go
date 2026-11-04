@@ -25,8 +25,10 @@ package forkschema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -56,6 +58,22 @@ var steps = []step{
 	{name: "host_remote_restart", apply: addHostRemoteRestart},
 }
 
+// Waiting for a table a step changes: at most lockTimeout per attempt,
+// lockAttempts attempts lockRetryDelay apart.
+const (
+	lockTimeout  = "5s"
+	lockAttempts = 5
+)
+
+// lockRetryDelay is a variable for tests.
+var lockRetryDelay = 2 * time.Second
+
+// isLockTimeout reports a step given up on lock_timeout (lock_not_available).
+func isLockTimeout(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "55P03"
+}
+
 // lockKey is the transaction-level advisory lock taken by every step. Any
 // fixed value works, as long as nothing else uses it ("pmfork01").
 const lockKey int64 = 0x706d666f726b3031
@@ -77,6 +95,17 @@ func Apply(ctx context.Context, db beginner, log *slog.Logger) error {
 	}
 	for _, s := range steps {
 		changed, err := applyStep(ctx, db, s)
+		// A table busy for longer than lockTimeout: let go, and try again a
+		// few times rather than fail the start.
+		for attempt := 1; attempt < lockAttempts && isLockTimeout(err); attempt++ {
+			log.Warn("fork schema step waiting for a busy table", "step", s.name, "attempt", attempt)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(lockRetryDelay):
+			}
+			changed, err = applyStep(ctx, db, s)
+		}
 		if err != nil {
 			return fmt.Errorf("step %s: %w", s.name, err)
 		}
@@ -95,6 +124,13 @@ func applyStep(ctx context.Context, db beginner, s step) (bool, error) {
 	// A no-op once the transaction is committed.
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
+		return false, err
+	}
+	// Set once the advisory lock is held, so instances still wait for each
+	// other. An ALTER queued behind a long transaction would otherwise hold
+	// back every query on that table, every request reading permissions
+	// included, for as long as it waits.
+	if _, err := tx.Exec(ctx, "SET LOCAL lock_timeout = '"+lockTimeout+"'"); err != nil {
 		return false, err
 	}
 	changed, err := s.apply(ctx, tx)
