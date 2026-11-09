@@ -558,6 +558,9 @@ func (m *Manager) saveConfigWithLocalLocked(local map[string]interface{}) error 
 	configViper.Set("apk_secdb", map[string]interface{}{
 		"enabled": m.apkSecDBEnabledLocked(),
 	})
+	configViper.Set("apt", map[string]interface{}{
+		"disable_retries": m.aptDisableRetriesLocked(),
+	})
 
 	return writeConfigAtomically(configViper, m.configFile)
 }
@@ -785,6 +788,14 @@ func (m *Manager) SetPackageCacheRefresh(mode string, maxAge int) error {
 	return m.saveConfigLocked()
 }
 
+// SetAptDisableRetries saves the apt retries toggle.
+func (m *Manager) SetAptDisableRetries(disable bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config.Apt.DisableRetries = &disable
+	return m.saveConfigLocked()
+}
+
 // GetPackageCacheRefreshMode returns the package cache refresh mode, defaulting to "always"
 func (m *Manager) GetPackageCacheRefreshMode() string {
 	m.mu.RLock()
@@ -835,6 +846,17 @@ func (m *Manager) GetAPKSecDBEnabled() bool {
 
 func (m *Manager) apkSecDBEnabledLocked() bool {
 	return m.config.APKSecDB.Enabled == nil || *m.config.APKSecDB.Enabled
+}
+
+// GetAptDisableRetries defaults to true when the key is absent.
+func (m *Manager) GetAptDisableRetries() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.aptDisableRetriesLocked()
+}
+
+func (m *Manager) aptDisableRetriesLocked() bool {
+	return m.config.Apt.DisableRetries == nil || *m.config.Apt.DisableRetries
 }
 
 // IsIntegrationEnabled checks if an integration is enabled

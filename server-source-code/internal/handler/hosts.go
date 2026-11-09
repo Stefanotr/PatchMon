@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -36,6 +37,7 @@ type HostsHandler struct {
 	pendingConfig     *store.PendingConfigStore
 	db                database.DBProvider
 	notify            *notifications.Emitter
+	queueInspector    *asynq.Inspector
 }
 
 // NewHostsHandler creates a new hosts handler.
@@ -51,6 +53,11 @@ func NewHostsHandler(hosts *store.HostsStore, hostGroups *store.HostGroupsStore,
 		db:                db,
 		notify:            notify,
 	}
+}
+
+func (h *HostsHandler) WithQueueInspector(i *asynq.Inspector) *HostsHandler {
+	h.queueInspector = i
+	return h
 }
 
 // List handles GET /hosts.
@@ -1031,6 +1038,9 @@ func (h *HostsHandler) GetIntegrationStatus(w http.ResponseWriter, r *http.Reque
 	if h.integrationStatus != nil {
 		status, err := h.integrationStatus.Get(r.Context(), host.ApiID, integrationName)
 		if err == nil && status != nil {
+			if integrationName == "compliance" {
+				status = h.overlayInstallInProgress(r.Context(), host, status)
+			}
 			JSON(w, http.StatusOK, map[string]interface{}{
 				"success": true,
 				"status":  status,
@@ -1044,7 +1054,7 @@ func (h *HostsHandler) GetIntegrationStatus(w http.ResponseWriter, r *http.Reque
 		if err := json.Unmarshal(host.ComplianceScannerStatus, &status); err == nil {
 			resp := map[string]interface{}{
 				"success": true,
-				"status":  status,
+				"status":  h.overlayInstallInProgress(r.Context(), host, status),
 				"source":  "cached",
 			}
 			if host.ComplianceScannerUpdatedAt != nil {
@@ -1059,6 +1069,26 @@ func (h *HostsHandler) GetIntegrationStatus(w http.ResponseWriter, r *http.Reque
 		"status":  nil,
 		"message": "No status available",
 	})
+}
+
+func (h *HostsHandler) overlayInstallInProgress(ctx context.Context, host *models.Host, status map[string]interface{}) map[string]interface{} {
+	if !complianceInstallInProgress(ctx, h.queueInspector, h.integrationStatus, host.ID, host.ApiID) {
+		return status
+	}
+	out := make(map[string]interface{}, len(status)+1)
+	for k, v := range status {
+		out[k] = v
+	}
+	if reported, _ := status["status"].(string); reported != "installing" {
+		out["status"] = "installing"
+		out["reported_status"] = reported
+		out["message"] = "Installing compliance scanner..."
+	}
+	jobID, _ := h.integrationStatus.GetComplianceInstallJob(ctx, host.ID)
+	if eventsJobID, _ := status["install_job_id"].(string); eventsJobID != "" && jobID != "" && eventsJobID != jobID {
+		out["install_events"] = []interface{}{}
+	}
+	return out
 }
 
 // RequestComplianceStatus handles POST /hosts/:hostId/integrations/compliance/request-status.
@@ -1367,7 +1397,8 @@ func (h *HostsHandler) ApplyPendingConfig(w http.ResponseWriter, r *http.Request
 	}
 
 	installQueued := false
-	if openscapNewlyEnabled(host, complianceEnabled, openscapEnabled) && openscapInstallSupported(host) {
+	if scannerInstallNeeded(host, complianceEnabled, openscapEnabled) && openscapInstallSupported(host) &&
+		!complianceInstallInProgress(r.Context(), h.queueInspector, h.integrationStatus, host.ID, host.ApiID) {
 		installQueued = h.queueScannerInstall(r, host)
 	}
 
@@ -1384,6 +1415,31 @@ const scannerInstallDelay = 30 * time.Second
 func openscapNewlyEnabled(before *models.Host, complianceEnabled, openscapEnabled bool) bool {
 	return complianceEnabled && openscapEnabled &&
 		(!before.ComplianceEnabled || !before.ComplianceOpenscapEnabled)
+}
+
+func scannerInstallNeeded(before *models.Host, complianceEnabled, openscapEnabled bool) bool {
+	if !complianceEnabled || !openscapEnabled {
+		return false
+	}
+	return openscapNewlyEnabled(before, complianceEnabled, openscapEnabled) || !openscapReported(before.ComplianceScannerStatus)
+}
+
+// openscapReported looks at OpenSCAP alone: a host whose Docker Bench is missing reports "partial"
+// overall while OpenSCAP works, and must not be reinstalled on every Apply.
+func openscapReported(raw []byte) bool {
+	var s struct {
+		Components  map[string]interface{} `json:"components"`
+		ScannerInfo *struct {
+			OpenSCAPAvailable bool `json:"openscap_available"`
+		} `json:"scanner_info"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &s) != nil {
+		return false
+	}
+	if c, _ := s.Components["openscap"].(string); c == "ready" {
+		return true
+	}
+	return s.ScannerInfo != nil && s.ScannerInfo.OpenSCAPAvailable
 }
 
 // openscapInstallSupported skips platforms the agent cannot install OpenSCAP on.
@@ -1403,7 +1459,7 @@ func (h *HostsHandler) queueScannerInstall(r *http.Request, host *models.Host) b
 	if h.queueClient == nil {
 		return false
 	}
-	task, err := queue.NewInstallComplianceToolsTask(host.ID, host.ApiID, hostFromRequest(r))
+	task, err := queue.NewInstallComplianceToolsTask(host.ID, host.ApiID, hostctx.TenantHostKey(r.Context()))
 	if err != nil {
 		slog.Error("apply-pending-config: failed to build scanner install task", "host_id", host.ID, "error", err)
 		return false

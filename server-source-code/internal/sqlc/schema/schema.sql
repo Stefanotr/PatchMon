@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS settings (
     compliance_scan_interval INTEGER NOT NULL DEFAULT 1440,
     package_cache_refresh_mode TEXT NOT NULL DEFAULT 'always',
     package_cache_refresh_max_age INTEGER NOT NULL DEFAULT 60,
+    apt_disable_retries BOOLEAN NOT NULL DEFAULT true,
     github_repo_url TEXT NOT NULL DEFAULT 'https://github.com/PatchMon/PatchMon.git',
     ssh_key_path TEXT,
     repository_type TEXT NOT NULL DEFAULT 'public',
@@ -592,6 +593,10 @@ CREATE TABLE IF NOT EXISTS job_history (
     updated_at TIMESTAMP(3) NOT NULL,
     completed_at TIMESTAMP(3)
 );
+CREATE INDEX IF NOT EXISTS idx_job_history_host_id_created_at
+    ON job_history (host_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_job_history_job_id_created_at
+    ON job_history (job_id, created_at DESC);
 
 -- release_notes_acceptances
 CREATE TABLE IF NOT EXISTS release_notes_acceptances (

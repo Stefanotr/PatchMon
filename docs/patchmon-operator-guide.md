@@ -452,7 +452,7 @@ If you use Nginx Proxy Manager, enable "Websockets Support" on the proxy host en
 
 #### Server fails to start: database connection refused
 
-The server waits for the database health check before starting, but if it still fails:
+The server waits for the database health check before starting. It then retries its first connection to the database, and then to Redis, logging a `[startup] database not ready (attempt n/max)` or `[startup] redis not ready` line for each failure, up to `PM_DB_CONN_MAX_ATTEMPTS` times, `PM_DB_CONN_WAIT_INTERVAL` seconds apart. When the connection is refused this takes about a minute by default. Each attempt can also wait up to `DB_CONNECT_TIMEOUT` seconds, so a database or Redis that drops packets instead of refusing them can take several minutes (up to about six each with the defaults) before the server gives up. A wrong password, a database that does not exist or a certificate error stops it straight away. If it still fails:
 
 ```bash
 # Check that the database container is healthy
@@ -477,6 +477,16 @@ At startup the server logs a `connecting to redis` line whose `addr` field shows
 #### Server exits straight after "[migrate] applied successfully"
 
 The server stopped on a fatal startup error, most often Redis being unreachable or rejecting `REDIS_PASSWORD`. Fatal startup errors are always printed to the container output as a line starting `[fatal]`, even when `ENABLE_LOGGING=false`, so check `docker compose logs server` for it.
+
+#### In-browser RDP stops working after a host reboot (guacd shows `Exited`)
+
+On 2.1.6 and earlier, the server could exit when the host rebooted because the database was not yet accepting connections, and Docker then left `guacd` stopped, since it shares the server container's network. `docker compose ps -a` shows `guacd` as `Exited`. Bring it back with:
+
+```bash
+docker compose up -d
+```
+
+or `docker start <guacd container name>`. From 2.1.7 the server waits for the database and Redis at startup, so this no longer happens.
 
 #### Checking server logs
 
@@ -2222,11 +2232,11 @@ All timeout values are in seconds unless otherwise noted.
 
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
-| `PM_DB_CONN_MAX_ATTEMPTS` | `30` | No | How many times the server will retry connecting to the database on startup before giving up. Useful in containerised environments where the database may not be ready immediately. |
-| `PM_DB_CONN_WAIT_INTERVAL` | `2` | No | Seconds to wait between each connection retry attempt on startup. |
+| `PM_DB_CONN_MAX_ATTEMPTS` | `30` | No | How many times the server tries to connect to the database, and then to Redis, at startup before giving up. The database wait runs before migrations, so a server started before PostgreSQL is ready (for example after a host reboot) waits instead of exiting. Connection refused, DNS lookup failures, timeouts, "the database system is starting up" and "too many clients" are retried; a wrong password, a missing database, a certificate error or a Redis authentication or permission error stops the server at once. |
+| `PM_DB_CONN_WAIT_INTERVAL` | `2` | No | Seconds to wait between startup connection attempts, for both the database and Redis. |
 | `DB_CONNECTION_LIMIT` | `30` | No | Maximum number of concurrent database connections in the pool. |
 | `DB_POOL_TIMEOUT` | `20` | No | Seconds to wait for an available connection from the pool before returning a timeout error. |
-| `DB_CONNECT_TIMEOUT` | `10` | No | Seconds to wait when establishing a new individual connection to PostgreSQL. |
+| `DB_CONNECT_TIMEOUT` | `10` | No | Seconds to wait when establishing a new individual connection to PostgreSQL. Also the limit for each startup connection attempt to the database and to Redis, so the startup wait can last up to `PM_DB_CONN_MAX_ATTEMPTS` × (`DB_CONNECT_TIMEOUT` + `PM_DB_CONN_WAIT_INTERVAL`) seconds when the address drops packets. |
 | `DB_IDLE_TIMEOUT` | `300` | No | Seconds an idle connection is kept open before being closed and removed from the pool. |
 | `DB_MAX_LIFETIME` | `1800` | No | Maximum lifetime in seconds of any connection in the pool, regardless of activity. Connections are recycled after this time to prevent stale connections. |
 | `DB_TRANSACTION_MAX_WAIT` | `10000` | No | Milliseconds to wait for a transaction to acquire a database lock before giving up. |
@@ -2254,7 +2264,7 @@ Settings for JWT tokens, browser sessions, account lockout, two-factor authentic
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
 | `JWT_SECRET` | _(none)_ | **Yes** | See [Required Variables](#1-required-variables). |
-| `JWT_EXPIRES_IN` | `1h` | No | How long an access token is valid. Accepts duration strings: `30m`, `1h`, `2h`, `1d`. The web interface renews the token automatically in the background, so a short value is not visible to signed-in users; it only controls how quickly a stolen token becomes useless. |
+| `JWT_EXPIRES_IN` | `1h` | No | How long an access token is valid. A whole number followed by `m`, `h` or `d`: `30m`, `1h`, `2h`, `1d`. Any other value (`60`, `90s`, `1 h`) is rejected when saved in Settings, and from the environment it falls back to `1h` with a warning in the server log. The web interface renews the token automatically in the background, so a short value is not visible to signed-in users; it only controls how quickly a stolen token becomes useless. |
 | `AUTH_BROWSER_SESSION_COOKIES` | `false` | No | When set to `true`, the `token` and `refresh_token` cookies are issued without a `Max-Age` attribute, making them session cookies that are cleared when the browser is closed rather than persisting across browser restarts. |
 
 #### Account Lockout
@@ -3732,7 +3742,7 @@ The state cookie has a 10-minute TTL by default. If users take too long on the M
 
 The PatchMon agent is enrolled through the web UI's **Add Host** wizard. The wizard provisions a host record in the database, issues a one-time bootstrap token, and builds a ready-to-paste one-liner. Running that command on the target host downloads the platform-specific agent binary over an authenticated HTTPS channel, writes config and credentials, registers a system service, and opens a persistent WebSocket connection back to the server.
 
-This page covers the UI-driven install flow end to end. For everything that happens after the first check-in (CLI commands, service management, logs, updates), see [Managing the PatchMon Agent](#managing-the-patchmon-agent). For bulk enrolment on container hosts, see Proxmox LXC Auto-Enrollment Guide.
+This page covers the UI-driven install flow end to end. For everything that happens after the first check-in (CLI commands, service management, logs, updates), see [Managing the PatchMon Agent](#managing-the-patchmon-agent). For bulk enrolment on container hosts, see Proxmox LXC Auto-Enrollment Guide. To deploy the Windows agent to devices managed by Microsoft Intune, see the Intune chapter of the **API & Integrations Guide**.
 
 #### How it Works
 
@@ -5891,6 +5901,12 @@ docker_update_check:
 apk_secdb:
   # Default: true
   enabled: true
+
+# ─── Apt Download Retries ────────────────────────────────────────────
+# apt-based hosts only. Set from Settings → Agent Updates.
+apt:
+  # Default: true
+  disable_retries: true
 ```
 
 ### Parameters In Detail
@@ -6227,6 +6243,18 @@ The files are cached in `/var/cache/patchmon/apk-secdb/` and fetched again at mo
 
 Like `docker_update_check`, this block is **not server-pushable**: edit `config.yml` and restart the agent service to change it. The agent writes the block into `config.yml` with its current value whenever it saves its configuration.
 
+### Apt Download Retries (`apt`) {#apt-download-retries-apt}
+
+apt-based hosts (Debian, Ubuntu and derivatives) only, from agent 2.1.8. Other operating systems ignore this block.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `disable_retries` | Boolean | `true` | When `true`, PatchMon patch runs call `apt-get upgrade` and `apt-get --only-upgrade install` with `-o Acquire::Retries=0`. Set to `false` to restore apt's own retry behaviour. A missing key counts as `true`. |
+
+With retries off, apt does not retry a failed or redirected download, which protects PatchMon patch runs against CVE-2026-109518. A transient mirror failure then fails the patch run instead of being retried. `apt-get update` and dry runs keep apt's normal retries. The compliance scanner install always runs with retries off, whatever this key says. On Univention Corporate Server, **Patch all** runs `univention-upgrade`, which this setting does not cover; patching selected packages is covered.
+
+This block **is server-driven**: the value comes from **Settings → Agent Updates → Disable apt download retries**. The agent saves the server's value when it starts and when the setting changes, so a hand edit is replaced. A server older than 2.1.8 sends no value and leaves the key as it is.
+
 ### How `config.yml` Is Generated
 
 #### Initial Generation (Installation)
@@ -6289,7 +6317,9 @@ The agent updates `config.yml` automatically in several scenarios. These are in-
 |---------|-------------|-----|
 | **Agent startup** | `update_interval`, `report_offset` | Agent fetches the current interval from the server. If it differs from config, the agent updates config.yml. |
 | **Agent startup** | `integrations.docker`, `integrations.compliance` | Agent fetches integration status from the server. If it differs from config, the agent updates config.yml. |
+| **Agent startup** | `apt.disable_retries` | Agent fetches the global apt retries setting from the server. If it differs from config, the agent updates config.yml. |
 | **WebSocket: `settings_update`** | `update_interval`, `report_offset` | Server pushes a new interval. Agent saves it and recalculates the report offset. |
+| **WebSocket: `settings_update`** | `apt.disable_retries` | Server pushes the apt retries setting when it changes. Agent saves it; the next patch run uses it. |
 | **WebSocket: `apply_config`** | `integrations.docker`, `integrations.compliance.enabled`, `integrations.compliance.openscap_enabled`, `integrations.compliance.docker_bench_enabled` | Toggling an integration in the UI is staged, not sent. The server holds it as a pending change until you press **Apply** on the host detail page, then pushes the whole integration block in one message. The agent saves it to config.yml and restarts itself. |
 
 #### Agent-Calculated Updates

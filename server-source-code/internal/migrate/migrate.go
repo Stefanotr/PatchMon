@@ -33,9 +33,9 @@ func Run(databaseURL string, log *slog.Logger) error {
 	}
 
 	// The fork's schema steps connect with the URL as given, like the
-	// server's own pools; ensureSSLMode is for golang-migrate.
+	// server's own pools; EnsureSSLMode is for golang-migrate.
 	forkURL := databaseURL
-	databaseURL = ensureSSLMode(databaseURL)
+	databaseURL = EnsureSSLMode(databaseURL)
 
 	_, _ = fmt.Fprintln(os.Stdout, "[migrate] running migrations from embedded binary")
 	log.Info("running migrations", "path", "embedded")
@@ -93,7 +93,7 @@ func Open(databaseURL string) (*migrate.Migrate, error) {
 		return nil, fmt.Errorf("DATABASE_URL is required for migrations")
 	}
 
-	databaseURL = ensureSSLMode(databaseURL)
+	databaseURL = EnsureSSLMode(databaseURL)
 
 	source, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {
@@ -187,7 +187,8 @@ func databaseName(databaseURL string) string {
 	return "unknown"
 }
 
-func ensureSSLMode(databaseURL string) string {
+// EnsureSSLMode appends sslmode=disable when the URL sets no sslmode, as migrations require.
+func EnsureSSLMode(databaseURL string) string {
 	if !strings.Contains(databaseURL, "sslmode=") {
 		if strings.Contains(databaseURL, "?") {
 			databaseURL += "&sslmode=disable"
