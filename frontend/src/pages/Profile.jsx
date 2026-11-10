@@ -25,8 +25,8 @@ import {
 	Unlink,
 	User,
 } from "lucide-react";
-
 import { useEffect, useId, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import DiscordIcon from "../components/DiscordIcon";
 import { FORM_INPUT_CLASS } from "../components/FormInput";
 import LanguageSelect from "../components/LanguageSelect";
@@ -47,6 +47,7 @@ import {
 import { isRenderableAvatarSrc } from "../utils/avatar";
 
 const Profile = () => {
+	const { t } = useTranslation();
 	const usernameId = useId();
 	const emailId = useId();
 	const firstNameId = useId();
@@ -74,11 +75,11 @@ const Profile = () => {
 		try {
 			await authAPI.subscribeNewsletter();
 			await refetchUser?.();
-			toastSuccess("Subscribed to release & product notifications");
+			toastSuccess(t("Subscribed to release & product notifications"));
 		} catch (err) {
 			const apiMessage = err?.response?.data?.error;
 			toastError(
-				apiMessage || "Could not subscribe right now. Please try again.",
+				apiMessage || t("Could not subscribe right now. Please try again."),
 			);
 		} finally {
 			setNewsletterLoading(false);
@@ -113,13 +114,13 @@ const Profile = () => {
 		if (urlParams.get("discord_linked") === "true") {
 			setMessage({
 				type: "success",
-				text: "Discord account linked successfully!",
+				text: t("Discord account linked successfully!"),
 			});
 			setActiveTab("connections");
 			window.history.replaceState({}, document.title, "/settings/profile");
 			refetchUser?.();
 		}
-	}, [refetchUser]);
+	}, [refetchUser, t]);
 
 	const [passwordData, setPasswordData] = useState({
 		currentPassword: "",
@@ -143,7 +144,9 @@ const Profile = () => {
 		if (isOIDCUser) {
 			setMessage({
 				type: "error",
-				text: "Username, email, and name fields are managed by your OIDC provider and cannot be modified here.",
+				text: t(
+					"Username, email, and name fields are managed by your OIDC provider and cannot be modified here.",
+				),
 			});
 			return;
 		}
@@ -154,21 +157,26 @@ const Profile = () => {
 		try {
 			const result = await updateProfile(profileData);
 			if (result.success) {
-				setMessage({ type: "success", text: "Profile updated successfully!" });
+				setMessage({
+					type: "success",
+					text: t("Profile updated successfully!"),
+				});
 			} else {
 				setMessage({
 					type: "error",
-					text: result.error || "Failed to update profile",
+					text: result.error || t("Failed to update profile"),
 				});
 			}
 		} catch (error) {
 			if (isCorsError(error)) {
 				setMessage({
 					type: "error",
-					text: "CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					text: t(
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					),
 				});
 			} else {
-				setMessage({ type: "error", text: "Network error occurred" });
+				setMessage({ type: "error", text: t("Network error occurred") });
 			}
 		} finally {
 			setIsLoading(false);
@@ -181,7 +189,7 @@ const Profile = () => {
 		setMessage({ type: "", text: "" });
 
 		if (passwordData.newPassword !== passwordData.confirmPassword) {
-			setMessage({ type: "error", text: "New passwords do not match" });
+			setMessage({ type: "error", text: t("New passwords do not match") });
 			setIsLoading(false);
 			return;
 		}
@@ -189,7 +197,7 @@ const Profile = () => {
 		if (passwordData.newPassword.length < 6) {
 			setMessage({
 				type: "error",
-				text: "New password must be at least 6 characters",
+				text: t("New password must be at least 6 characters"),
 			});
 			setIsLoading(false);
 			return;
@@ -201,7 +209,10 @@ const Profile = () => {
 				passwordData.newPassword,
 			);
 			if (result.success) {
-				setMessage({ type: "success", text: "Password changed successfully!" });
+				setMessage({
+					type: "success",
+					text: t("Password changed successfully!"),
+				});
 				setPasswordData({
 					currentPassword: "",
 					newPassword: "",
@@ -210,17 +221,19 @@ const Profile = () => {
 			} else {
 				setMessage({
 					type: "error",
-					text: result.error || "Failed to change password",
+					text: result.error || t("Failed to change password"),
 				});
 			}
 		} catch (error) {
 			if (isCorsError(error)) {
 				setMessage({
 					type: "error",
-					text: "CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					text: t(
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					),
 				});
 			} else {
-				setMessage({ type: "error", text: "Network error occurred" });
+				setMessage({ type: "error", text: t("Network error occurred") });
 			}
 		} finally {
 			setIsLoading(false);
@@ -241,22 +254,28 @@ const Profile = () => {
 	};
 
 	const tabs = [
-		{ id: "profile", name: "Profile Information", icon: User },
-		{ id: "password", name: "Change Password", icon: Key },
+		{ id: "profile", name: t("Profile Information"), icon: User },
+		{ id: "password", name: t("Change Password"), icon: Key },
 		...(isOIDCUser
 			? []
-			: [{ id: "tfa", name: "Multi-Factor Authentication", icon: Smartphone }]), // Hide TFA tab for OIDC users
-		{ id: "sessions", name: "Active Sessions", icon: Monitor },
+			: [
+					{
+						id: "tfa",
+						name: t("Multi-Factor Authentication"),
+						icon: Smartphone,
+					},
+				]), // Hide TFA tab for OIDC users
+		{ id: "sessions", name: t("Active Sessions"), icon: Monitor },
 		...(isOIDCUser
 			? []
 			: [
 					{
 						id: "trusted-devices",
-						name: "Trusted Devices",
+						name: t("Trusted Devices"),
 						icon: ShieldCheck,
 					},
 				]),
-		{ id: "connections", name: "Connected Accounts", icon: Link2 },
+		{ id: "connections", name: t("Connected Accounts"), icon: Link2 },
 	];
 
 	return (
@@ -264,7 +283,7 @@ const Profile = () => {
 			{/* Header */}
 			<div>
 				<p className="text-sm text-secondary-600 dark:text-white">
-					Manage your account information and security settings
+					{t("Manage your account information and security settings")}
 				</p>
 			</div>
 
@@ -309,7 +328,7 @@ const Profile = () => {
 							>
 								<Shield className="h-3 w-3 mr-1" />
 								{user?.role === "superadmin"
-									? "Super Admin"
+									? t("Super Admin")
 									: user?.role?.charAt(0).toUpperCase() +
 										user?.role?.slice(1).replace("_", " ")}
 							</span>
@@ -408,7 +427,7 @@ const Profile = () => {
 							<form onSubmit={handleProfileSubmit} className="space-y-6">
 								<div>
 									<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-										Profile Information
+										{t("Profile Information")}
 									</h3>
 									<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
 										<div>
@@ -416,10 +435,10 @@ const Profile = () => {
 												htmlFor={usernameId}
 												className="block text-sm font-medium text-secondary-700 dark:text-secondary-200"
 											>
-												Username
+												{t("Username")}
 												{isOIDCUser && (
 													<span className="ml-2 text-xs text-secondary-500 dark:text-white italic">
-														(Managed by OIDC provider)
+														{t("(Managed by OIDC provider)")}
 													</span>
 												)}
 											</label>
@@ -447,10 +466,10 @@ const Profile = () => {
 												htmlFor={emailId}
 												className="block text-sm font-medium text-secondary-700 dark:text-secondary-200"
 											>
-												Email Address
+												{t("Email Address")}
 												{isOIDCUser && (
 													<span className="ml-2 text-xs text-secondary-500 dark:text-white italic">
-														(Managed by OIDC provider)
+														{t("(Managed by OIDC provider)")}
 													</span>
 												)}
 											</label>
@@ -478,10 +497,10 @@ const Profile = () => {
 												htmlFor={firstNameId}
 												className="block text-sm font-medium text-secondary-700 dark:text-secondary-200"
 											>
-												First Name
+												{t("First Name")}
 												{isOIDCUser && (
 													<span className="ml-2 text-xs text-secondary-500 dark:text-white italic">
-														(Managed by OIDC provider)
+														{t("(Managed by OIDC provider)")}
 													</span>
 												)}
 											</label>
@@ -507,10 +526,10 @@ const Profile = () => {
 												htmlFor={lastNameId}
 												className="block text-sm font-medium text-secondary-700 dark:text-secondary-200"
 											>
-												Last Name
+												{t("Last Name")}
 												{isOIDCUser && (
 													<span className="ml-2 text-xs text-secondary-500 dark:text-white italic">
-														(Managed by OIDC provider)
+														{t("(Managed by OIDC provider)")}
 													</span>
 												)}
 											</label>
@@ -538,7 +557,7 @@ const Profile = () => {
 								{/* Theme Settings */}
 								<div className="border-t border-secondary-200 dark:border-secondary-600 pt-4 md:pt-6">
 									<h4 className="text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-3">
-										Appearance
+										{t("Appearance")}
 									</h4>
 									<div className="max-w-md">
 										<div className="flex items-center justify-between gap-3">
@@ -552,12 +571,12 @@ const Profile = () => {
 												</div>
 												<div className="min-w-0">
 													<p className="text-sm font-medium text-secondary-900 dark:text-white truncate">
-														{isDark ? "Dark Mode" : "Light Mode"}
+														{isDark ? t("Dark Mode") : t("Light Mode")}
 													</p>
 													<p className="text-xs text-secondary-500 dark:text-white truncate">
 														{isDark
-															? "Switch to light mode"
-															: "Switch to dark mode"}
+															? t("Switch to light mode")
+															: t("Switch to dark mode")}
 													</p>
 												</div>
 											</div>
@@ -583,10 +602,12 @@ const Profile = () => {
 									{/* Color Theme Settings */}
 									<div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-secondary-200 dark:border-secondary-600">
 										<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
-											Color Theme
+											{t("Color Theme")}
 										</h4>
 										<p className="text-xs text-secondary-500 dark:text-white mb-4">
-											Choose your preferred color scheme for the application
+											{t(
+												"Choose your preferred color scheme for the application",
+											)}
 										</p>
 
 										<div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
@@ -626,9 +647,9 @@ const Profile = () => {
 																		className="w-4 h-4"
 																		fill="currentColor"
 																		viewBox="0 0 20 20"
-																		aria-label="Selected theme"
+																		aria-label={t("Selected theme")}
 																	>
-																		<title>Selected</title>
+																		<title>{t("Selected")}</title>
 																		<path
 																			fillRule="evenodd"
 																			d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -652,7 +673,7 @@ const Profile = () => {
 										className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 w-full sm:w-auto justify-center sm:justify-end"
 									>
 										<Save className="h-4 w-4 mr-2" />
-										{isLoading ? "Saving..." : "Save Changes"}
+										{isLoading ? t("Saving...") : t("Save Changes")}
 									</button>
 								</div>
 								{isOIDCUser && (
@@ -661,10 +682,9 @@ const Profile = () => {
 											<AlertCircle className="h-5 w-5 text-blue-400 dark:text-blue-300" />
 											<div className="ml-3">
 												<p className="text-sm font-medium text-blue-800 dark:text-blue-200">
-													Profile information is managed by your OIDC provider.
-													To update your username, email, or name, please
-													contact your administrator or update your information
-													in the OIDC provider.
+													{t(
+														"Profile information is managed by your OIDC provider. To update your username, email, or name, please contact your administrator or update your information in the OIDC provider.",
+													)}
 												</p>
 											</div>
 										</div>
@@ -679,10 +699,12 @@ const Profile = () => {
 										<Bell className="h-5 w-5 text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5" />
 										<div>
 											<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-												Email notifications
+												{t("Email notifications")}
 											</h3>
 											<p className="text-sm text-secondary-600 dark:text-white mt-1">
-												Stay informed about new releases and product updates.
+												{t(
+													"Stay informed about new releases and product updates.",
+												)}
 											</p>
 										</div>
 									</div>
@@ -691,28 +713,35 @@ const Profile = () => {
 										<div className="flex items-center gap-3 flex-wrap">
 											{isNewsletterSubscribed ? (
 												<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-													Subscribed
+													{t("Subscribed")}
 												</span>
 											) : (
 												<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
-													Not subscribed
+													{t("Not subscribed")}
 												</span>
 											)}
 											{isNewsletterSubscribed && newsletterSubscribedAt && (
 												<span className="text-xs text-secondary-500 dark:text-white">
-													since {formatDate(newsletterSubscribedAt)}
+													{t("since {{date}}", {
+														date: formatDate(newsletterSubscribedAt),
+													})}
 												</span>
 											)}
 										</div>
 										{isNewsletterSubscribed ? (
 											<span className="text-xs text-secondary-600 dark:text-secondary-300 sm:text-right">
-												To unsubscribe, email{" "}
-												<a
-													href="mailto:support@patchmon.net"
-													className="text-primary-600 dark:text-primary-400 hover:underline"
-												>
-													support@patchmon.net
-												</a>
+												<Trans
+													i18nKey="To unsubscribe, email <a>support@patchmon.net</a>"
+													components={{
+														a: (
+															// biome-ignore lint/a11y/useAnchorContent: Trans fills the link text
+															<a
+																href="mailto:support@patchmon.net"
+																className="text-primary-600 dark:text-primary-400 hover:underline"
+															/>
+														),
+													}}
+												/>
 											</span>
 										) : (
 											<button
@@ -724,10 +753,10 @@ const Profile = () => {
 												{newsletterLoading ? (
 													<>
 														<RefreshCw className="h-4 w-4 animate-spin" />
-														Subscribing...
+														{t("Subscribing...")}
 													</>
 												) : (
-													"Subscribe"
+													t("Subscribe")
 												)}
 											</button>
 										)}
@@ -742,7 +771,7 @@ const Profile = () => {
 						<form onSubmit={handlePasswordSubmit} className="space-y-6">
 							<div>
 								<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-									Change Password
+									{t("Change Password")}
 								</h3>
 								<div className="space-y-4">
 									<div>
@@ -750,7 +779,7 @@ const Profile = () => {
 											htmlFor={currentPasswordId}
 											className="block text-sm font-medium text-secondary-700 dark:text-secondary-200"
 										>
-											Current Password
+											{t("Current Password")}
 										</label>
 										<div className="mt-1 relative">
 											<input
@@ -782,7 +811,7 @@ const Profile = () => {
 											htmlFor={newPasswordId}
 											className="block text-sm font-medium text-secondary-700 dark:text-secondary-200"
 										>
-											New Password
+											{t("New Password")}
 										</label>
 										<div className="mt-1 relative">
 											<input
@@ -809,7 +838,7 @@ const Profile = () => {
 											</button>
 										</div>
 										<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-											Must be at least 6 characters long
+											{t("Must be at least 6 characters long")}
 										</p>
 									</div>
 
@@ -818,7 +847,7 @@ const Profile = () => {
 											htmlFor={confirmPasswordId}
 											className="block text-sm font-medium text-secondary-700 dark:text-secondary-200"
 										>
-											Confirm New Password
+											{t("Confirm New Password")}
 										</label>
 										<div className="mt-1 relative">
 											<input
@@ -855,7 +884,7 @@ const Profile = () => {
 									className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 w-full sm:w-auto justify-center sm:justify-end"
 								>
 									<Key className="h-4 w-4 mr-2" />
-									{isLoading ? "Changing..." : "Change Password"}
+									{isLoading ? t("Changing...") : t("Change Password")}
 								</button>
 							</div>
 						</form>
@@ -875,10 +904,10 @@ const Profile = () => {
 						<div className="space-y-6">
 							<div>
 								<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-1">
-									Connected Accounts
+									{t("Connected Accounts")}
 								</h3>
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Manage your linked external accounts
+									{t("Manage your linked external accounts")}
 								</p>
 							</div>
 
@@ -894,15 +923,16 @@ const Profile = () => {
 										</div>
 										<div>
 											<h4 className="font-medium text-secondary-900 dark:text-white">
-												Discord
+												{t("Discord")}
 											</h4>
 											{user?.discord_id ? (
 												<p className="text-sm text-secondary-500 dark:text-white">
-													{user.discord_username || `ID: ${user.discord_id}`}
+													{user.discord_username ||
+														t("ID: {{id}}", { id: user.discord_id })}
 												</p>
 											) : (
 												<p className="text-sm text-secondary-500 dark:text-white">
-													Not connected
+													{t("Not connected")}
 												</p>
 											)}
 										</div>
@@ -915,7 +945,9 @@ const Profile = () => {
 													if (!user?.has_password && !user?.oidc_sub) {
 														setMessage({
 															type: "error",
-															text: "Cannot unlink Discord - you need at least one login method. Set a password first.",
+															text: t(
+																"Cannot unlink Discord - you need at least one login method. Set a password first.",
+															),
 														});
 														return;
 													}
@@ -924,7 +956,7 @@ const Profile = () => {
 														await discordAPI.unlink();
 														setMessage({
 															type: "success",
-															text: "Discord account unlinked.",
+															text: t("Discord account unlinked."),
 														});
 														window.location.reload();
 													} catch (err) {
@@ -932,7 +964,7 @@ const Profile = () => {
 															type: "error",
 															text:
 																err.response?.data?.error ||
-																"Failed to unlink Discord account.",
+																t("Failed to unlink Discord account."),
 														});
 													} finally {
 														setDiscordUnlinking(false);
@@ -945,7 +977,9 @@ const Profile = () => {
 												className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
 												title={
 													!user?.has_password && !user?.oidc_sub
-														? "Cannot unlink - no other login method available"
+														? t(
+																"Cannot unlink - no other login method available",
+															)
 														: ""
 												}
 											>
@@ -954,7 +988,7 @@ const Profile = () => {
 												) : (
 													<Unlink className="h-4 w-4" />
 												)}
-												Unlink
+												{t("Unlink")}
 											</button>
 										) : (
 											<button
@@ -969,7 +1003,7 @@ const Profile = () => {
 															type: "error",
 															text:
 																err.response?.data?.error ||
-																"Failed to start Discord linking.",
+																t("Failed to start Discord linking."),
 														});
 														setDiscordLinking(false);
 													}
@@ -983,7 +1017,7 @@ const Profile = () => {
 												) : (
 													<Link2 className="h-4 w-4" />
 												)}
-												Link
+												{t("Link")}
 											</button>
 										)}
 									</div>
@@ -1000,15 +1034,15 @@ const Profile = () => {
 											</div>
 											<div>
 												<h4 className="font-medium text-secondary-900 dark:text-white">
-													SSO / OIDC
+													{t("SSO / OIDC")}
 												</h4>
 												<p className="text-sm text-secondary-500 dark:text-white">
-													{user.oidc_provider || "Connected"}
+													{user.oidc_provider || t("Connected")}
 												</p>
 											</div>
 										</div>
 										<span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-											Active
+											{t("Active")}
 										</span>
 									</div>
 								</div>
@@ -1023,6 +1057,7 @@ const Profile = () => {
 
 // TFA Tab Component
 const TfaTab = () => {
+	const { t } = useTranslation();
 	const { user } = useAuth();
 	const isOIDCUser = user?.oidc_sub || user?.oidc_provider;
 	const verificationTokenId = useId();
@@ -1047,13 +1082,15 @@ const TfaTab = () => {
 			setSetupStep("setup");
 			setMessage({
 				type: "info",
-				text: "Scan the QR code with your authenticator app and enter the verification code below.",
+				text: t(
+					"Scan the QR code with your authenticator app and enter the verification code below.",
+				),
 			});
 		},
 		onError: (error) => {
 			setMessage({
 				type: "error",
-				text: error.response?.data?.error || "Failed to setup TFA",
+				text: error.response?.data?.error || t("Failed to setup TFA"),
 			});
 		},
 	});
@@ -1066,13 +1103,13 @@ const TfaTab = () => {
 			setSetupStep("backup-codes");
 			setMessage({
 				type: "success",
-				text: "Two-factor authentication has been enabled successfully!",
+				text: t("Two-factor authentication has been enabled successfully!"),
 			});
 		},
 		onError: (error) => {
 			setMessage({
 				type: "error",
-				text: error.response?.data?.error || "Failed to verify TFA setup",
+				text: error.response?.data?.error || t("Failed to verify TFA setup"),
 			});
 		},
 	});
@@ -1085,13 +1122,13 @@ const TfaTab = () => {
 			setSetupStep("status");
 			setMessage({
 				type: "success",
-				text: "Two-factor authentication has been disabled successfully!",
+				text: t("Two-factor authentication has been disabled successfully!"),
 			});
 		},
 		onError: (error) => {
 			setMessage({
 				type: "error",
-				text: error.response?.data?.error || "Failed to disable TFA",
+				text: error.response?.data?.error || t("Failed to disable TFA"),
 			});
 		},
 	});
@@ -1103,14 +1140,14 @@ const TfaTab = () => {
 			setBackupCodes(data.backupCodes);
 			setMessage({
 				type: "success",
-				text: "Backup codes have been regenerated successfully!",
+				text: t("Backup codes have been regenerated successfully!"),
 			});
 		},
 		onError: (error) => {
 			setMessage({
 				type: "error",
 				text:
-					error.response?.data?.error || "Failed to regenerate backup codes",
+					error.response?.data?.error || t("Failed to regenerate backup codes"),
 			});
 		},
 	});
@@ -1124,7 +1161,7 @@ const TfaTab = () => {
 		if (verificationToken.length !== 6) {
 			setMessage({
 				type: "error",
-				text: "Please enter a 6-digit verification code",
+				text: t("Please enter a 6-digit verification code"),
 			});
 			return;
 		}
@@ -1136,7 +1173,7 @@ const TfaTab = () => {
 		if (!password) {
 			setMessage({
 				type: "error",
-				text: "Please enter your password to disable TFA",
+				text: t("Please enter your password to disable TFA"),
 			});
 			return;
 		}
@@ -1152,7 +1189,7 @@ const TfaTab = () => {
 			// Try modern clipboard API first
 			if (navigator.clipboard && window.isSecureContext) {
 				await navigator.clipboard.writeText(text);
-				setMessage({ type: "success", text: "Copied to clipboard!" });
+				setMessage({ type: "success", text: t("Copied to clipboard!") });
 				return;
 			}
 
@@ -1169,16 +1206,16 @@ const TfaTab = () => {
 			try {
 				const successful = document.execCommand("copy");
 				if (successful) {
-					setMessage({ type: "success", text: "Copied to clipboard!" });
+					setMessage({ type: "success", text: t("Copied to clipboard!") });
 				} else {
 					throw new Error("Copy command failed");
 				}
 			} catch {
 				// If all else fails, show the text in a prompt
-				prompt("Copy this text:", text);
+				prompt(t("Copy this text:"), text);
 				setMessage({
 					type: "info",
-					text: "Text shown in prompt for manual copying",
+					text: t("Text shown in prompt for manual copying"),
 				});
 			} finally {
 				document.body.removeChild(textArea);
@@ -1186,16 +1223,16 @@ const TfaTab = () => {
 		} catch (err) {
 			console.error("Failed to copy to clipboard:", err);
 			// Show the text in a prompt as last resort
-			prompt("Copy this text:", text);
+			prompt(t("Copy this text:"), text);
 			setMessage({
 				type: "info",
-				text: "Text shown in prompt for manual copying",
+				text: t("Text shown in prompt for manual copying"),
 			});
 		}
 	};
 
 	const downloadBackupCodes = () => {
-		const content = `PatchMon Backup Codes\n\n${backupCodes.map((code, index) => `${index + 1}. ${code}`).join("\n")}\n\nKeep these codes safe! Each code can only be used once.`;
+		const content = `${t("PatchMon Backup Codes")}\n\n${backupCodes.map((code, index) => `${index + 1}. ${code}`).join("\n")}\n\n${t("Keep these codes safe! Each code can only be used once.")}`;
 		const blob = new Blob([content], { type: "text/plain" });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement("a");
@@ -1221,15 +1258,16 @@ const TfaTab = () => {
 			<div className="space-y-6">
 				<div>
 					<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-						Multi-Factor Authentication
+						{t("Multi-Factor Authentication")}
 					</h3>
 					<div className="rounded-md p-4 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700">
 						<div className="flex">
 							<AlertCircle className="h-5 w-5 text-blue-400 dark:text-blue-300" />
 							<div className="ml-3">
 								<p className="text-sm font-medium text-blue-800 dark:text-blue-200">
-									Multi-factor authentication is managed by your OIDC provider.
-									Please configure MFA settings in your identity provider.
+									{t(
+										"Multi-factor authentication is managed by your OIDC provider. Please configure MFA settings in your identity provider.",
+									)}
 								</p>
 							</div>
 						</div>
@@ -1243,11 +1281,12 @@ const TfaTab = () => {
 		<div className="space-y-6">
 			<div>
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-					Multi-Factor Authentication
+					{t("Multi-Factor Authentication")}
 				</h3>
 				<p className="text-sm text-secondary-600 dark:text-white mb-6">
-					Add an extra layer of security to your account by enabling two-factor
-					authentication.
+					{t(
+						"Add an extra layer of security to your account by enabling two-factor authentication.",
+					)}
 				</p>
 			</div>
 
@@ -1303,13 +1342,15 @@ const TfaTab = () => {
 								<div className="min-w-0">
 									<h4 className="text-base md:text-lg font-medium text-secondary-900 dark:text-white">
 										{tfaStatus?.enabled
-											? "Two-Factor Authentication Enabled"
-											: "Two-Factor Authentication Disabled"}
+											? t("Two-Factor Authentication Enabled")
+											: t("Two-Factor Authentication Disabled")}
 									</h4>
 									<p className="text-sm text-secondary-600 dark:text-white">
 										{tfaStatus?.enabled
-											? "Your account is protected with two-factor authentication."
-											: "Add an extra layer of security to your account."}
+											? t(
+													"Your account is protected with two-factor authentication.",
+												)
+											: t("Add an extra layer of security to your account.")}
 									</p>
 								</div>
 							</div>
@@ -1321,7 +1362,7 @@ const TfaTab = () => {
 										className="btn-outline text-danger-600 border-danger-300 hover:bg-danger-50 w-full sm:w-auto"
 									>
 										<Trash2 className="h-4 w-4 mr-2" />
-										Disable TFA
+										{t("Disable TFA")}
 									</button>
 								) : (
 									<button
@@ -1331,7 +1372,9 @@ const TfaTab = () => {
 										className="btn-primary w-full sm:w-auto"
 									>
 										<Smartphone className="h-4 w-4 mr-2" />
-										{setupMutation.isPending ? "Setting up..." : "Enable TFA"}
+										{setupMutation.isPending
+											? t("Setting up...")
+											: t("Enable TFA")}
 									</button>
 								)}
 							</div>
@@ -1341,11 +1384,12 @@ const TfaTab = () => {
 					{tfaStatus?.enabled && (
 						<div className="bg-white dark:bg-secondary-800 border border-secondary-200 dark:border-secondary-600 rounded-lg p-4 md:p-6">
 							<h4 className="text-base md:text-lg font-medium text-secondary-900 dark:text-white mb-3 md:mb-4">
-								Backup Codes
+								{t("Backup Codes")}
 							</h4>
 							<p className="text-sm text-secondary-600 dark:text-white mb-4">
-								Use these backup codes to access your account if you lose your
-								authenticator device.
+								{t(
+									"Use these backup codes to access your account if you lose your authenticator device.",
+								)}
 							</p>
 							<button
 								type="button"
@@ -1357,8 +1401,8 @@ const TfaTab = () => {
 									className={`h-4 w-4 mr-2 ${regenerateBackupCodesMutation.isPending ? "animate-spin" : ""}`}
 								/>
 								{regenerateBackupCodesMutation.isPending
-									? "Regenerating..."
-									: "Regenerate Codes"}
+									? t("Regenerating...")
+									: t("Regenerate Codes")}
 							</button>
 						</div>
 					)}
@@ -1370,23 +1414,23 @@ const TfaTab = () => {
 				<div className="space-y-4 md:space-y-6">
 					<div className="bg-white dark:bg-secondary-800 border border-secondary-200 dark:border-secondary-600 rounded-lg p-4 md:p-6">
 						<h4 className="text-base md:text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							Setup Two-Factor Authentication
+							{t("Setup Two-Factor Authentication")}
 						</h4>
 						<div className="space-y-4">
 							<div className="text-center">
 								<img
 									src={setupMutation.data.qrCode}
-									alt="QR Code"
+									alt={t("QR Code")}
 									className="mx-auto h-40 w-40 md:h-48 md:w-48 border border-secondary-200 dark:border-secondary-600 rounded-lg"
 								/>
 								<p className="text-sm text-secondary-600 dark:text-white mt-2">
-									Scan this QR code with your authenticator app
+									{t("Scan this QR code with your authenticator app")}
 								</p>
 							</div>
 
 							<div className="bg-secondary-50 dark:bg-secondary-700 p-3 md:p-4 rounded-lg">
 								<p className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
-									Manual Entry Key:
+									{t("Manual Entry Key:")}
 								</p>
 								<div className="flex items-center gap-2">
 									<code className="flex-1 bg-white dark:bg-secondary-800 px-2 md:px-3 py-2 rounded border text-xs md:text-sm font-mono break-all">
@@ -1398,7 +1442,7 @@ const TfaTab = () => {
 											copyToClipboard(setupMutation.data.manualEntryKey)
 										}
 										className="p-2 text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-300 flex-shrink-0"
-										title="Copy to clipboard"
+										title={t("Copy to clipboard")}
 									>
 										<Copy className="h-4 w-4" />
 									</button>
@@ -1411,7 +1455,7 @@ const TfaTab = () => {
 									onClick={() => setSetupStep("verify")}
 									className="btn-primary w-full sm:w-auto"
 								>
-									Continue to Verification
+									{t("Continue to Verification")}
 								</button>
 							</div>
 						</div>
@@ -1424,11 +1468,12 @@ const TfaTab = () => {
 				<div className="space-y-4 md:space-y-6">
 					<div className="bg-white dark:bg-secondary-800 border border-secondary-200 dark:border-secondary-600 rounded-lg p-4 md:p-6">
 						<h4 className="text-base md:text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							Verify Setup
+							{t("Verify Setup")}
 						</h4>
 						<p className="text-sm text-secondary-600 dark:text-white mb-4">
-							Enter the 6-digit code from your authenticator app to complete the
-							setup.
+							{t(
+								"Enter the 6-digit code from your authenticator app to complete the setup.",
+							)}
 						</p>
 						<form onSubmit={handleVerify} className="space-y-4">
 							<div>
@@ -1436,7 +1481,7 @@ const TfaTab = () => {
 									htmlFor={verificationTokenId}
 									className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 								>
-									Verification Code
+									{t("Verification Code")}
 								</label>
 								<input
 									id={verificationTokenId}
@@ -1462,15 +1507,15 @@ const TfaTab = () => {
 									className="btn-primary w-full sm:w-auto"
 								>
 									{verifyMutation.isPending
-										? "Verifying..."
-										: "Verify & Enable"}
+										? t("Verifying...")
+										: t("Verify & Enable")}
 								</button>
 								<button
 									type="button"
 									onClick={() => setSetupStep("status")}
 									className="btn-outline w-full sm:w-auto"
 								>
-									Cancel
+									{t("Cancel")}
 								</button>
 							</div>
 						</form>
@@ -1483,11 +1528,12 @@ const TfaTab = () => {
 				<div className="space-y-4 md:space-y-6">
 					<div className="bg-white dark:bg-secondary-800 border border-secondary-200 dark:border-secondary-600 rounded-lg p-4 md:p-6">
 						<h4 className="text-base md:text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							Backup Codes
+							{t("Backup Codes")}
 						</h4>
 						<p className="text-sm text-secondary-600 dark:text-white mb-4">
-							Save these backup codes in a safe place. Each code can only be
-							used once.
+							{t(
+								"Save these backup codes in a safe place. Each code can only be used once.",
+							)}
 						</p>
 						<div className="bg-secondary-50 dark:bg-secondary-700 p-3 md:p-4 rounded-lg mb-4">
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-xs md:text-sm">
@@ -1513,7 +1559,7 @@ const TfaTab = () => {
 								className="btn-outline w-full sm:w-auto"
 							>
 								<Download className="h-4 w-4 mr-2" />
-								Download Codes
+								{t("Download Codes")}
 							</button>
 							<button
 								type="button"
@@ -1523,7 +1569,7 @@ const TfaTab = () => {
 								}}
 								className="btn-primary w-full sm:w-auto"
 							>
-								Done
+								{t("Done")}
 							</button>
 						</div>
 					</div>
@@ -1535,10 +1581,10 @@ const TfaTab = () => {
 				<div className="space-y-4 md:space-y-6">
 					<div className="bg-white dark:bg-secondary-800 border border-secondary-200 dark:border-secondary-600 rounded-lg p-4 md:p-6">
 						<h4 className="text-base md:text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							Disable Two-Factor Authentication
+							{t("Disable Two-Factor Authentication")}
 						</h4>
 						<p className="text-sm text-secondary-600 dark:text-white mb-4">
-							Enter your password to disable two-factor authentication.
+							{t("Enter your password to disable two-factor authentication.")}
 						</p>
 						<form onSubmit={handleDisable} className="space-y-4">
 							<div>
@@ -1546,7 +1592,7 @@ const TfaTab = () => {
 									htmlFor={disablePasswordId}
 									className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 								>
-									Password
+									{t("Password")}
 								</label>
 								<input
 									id={disablePasswordId}
@@ -1563,14 +1609,16 @@ const TfaTab = () => {
 									disabled={disableMutation.isPending || !password}
 									className="btn-danger w-full sm:w-auto"
 								>
-									{disableMutation.isPending ? "Disabling..." : "Disable TFA"}
+									{disableMutation.isPending
+										? t("Disabling...")
+										: t("Disable TFA")}
 								</button>
 								<button
 									type="button"
 									onClick={() => setSetupStep("status")}
 									className="btn-outline w-full sm:w-auto"
 								>
-									Cancel
+									{t("Cancel")}
 								</button>
 							</div>
 						</form>
@@ -1583,6 +1631,7 @@ const TfaTab = () => {
 
 // Sessions Tab Component
 const SessionsTab = () => {
+	const { t } = useTranslation();
 	const confirm = useConfirm();
 	const [message, setMessage] = useState({ type: "", text: "" });
 
@@ -1597,7 +1646,7 @@ const SessionsTab = () => {
 			const response = await fetch("/api/v1/auth/sessions", {
 				credentials: "include",
 			});
-			if (!response.ok) throw new Error("Failed to fetch sessions");
+			if (!response.ok) throw new Error(t("Failed to fetch sessions"));
 			return response.json();
 		},
 	});
@@ -1609,11 +1658,11 @@ const SessionsTab = () => {
 				method: "DELETE",
 				credentials: "include",
 			});
-			if (!response.ok) throw new Error("Failed to revoke session");
+			if (!response.ok) throw new Error(t("Failed to revoke session"));
 			return response.json();
 		},
 		onSuccess: () => {
-			setMessage({ type: "success", text: "Session revoked successfully" });
+			setMessage({ type: "success", text: t("Session revoked successfully") });
 			refetch();
 		},
 		onError: (error) => {
@@ -1628,13 +1677,13 @@ const SessionsTab = () => {
 				method: "DELETE",
 				credentials: "include",
 			});
-			if (!response.ok) throw new Error("Failed to revoke sessions");
+			if (!response.ok) throw new Error(t("Failed to revoke sessions"));
 			return response.json();
 		},
 		onSuccess: () => {
 			setMessage({
 				type: "success",
-				text: "All other sessions revoked successfully",
+				text: t("All other sessions revoked successfully"),
 			});
 			refetch();
 		},
@@ -1651,29 +1700,30 @@ const SessionsTab = () => {
 		const hours = Math.floor(diff / 3600000);
 		const days = Math.floor(diff / 86400000);
 
-		if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
-		if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
-		if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
-		return "Just now";
+		if (days > 0) return t("{{count}} day ago", { count: days });
+		if (hours > 0) return t("{{count}} hour ago", { count: hours });
+		if (minutes > 0) return t("{{count}} minute ago", { count: minutes });
+		return t("Just now");
 	};
 
 	const handleRevokeSession = async (sessionId) => {
 		const confirmed = await confirm({
-			title: "Revoke session",
-			subtitle: "The device using it will be signed out",
-			message: "Are you sure you want to revoke this session?",
-			confirmLabel: "Revoke session",
+			title: t("Revoke session"),
+			subtitle: t("The device using it will be signed out"),
+			message: t("Are you sure you want to revoke this session?"),
+			confirmLabel: t("Revoke session"),
 		});
 		if (confirmed) revokeSessionMutation.mutate(sessionId);
 	};
 
 	const handleRevokeAllSessions = async () => {
 		const confirmed = await confirm({
-			title: "Revoke all other sessions",
-			subtitle: "You will stay signed in on this device",
-			message:
+			title: t("Revoke all other sessions"),
+			subtitle: t("You will stay signed in on this device"),
+			message: t(
 				"Are you sure you want to revoke all other sessions? This will log you out of all other devices.",
-			confirmLabel: "Revoke all",
+			),
+			confirmLabel: t("Revoke all"),
 		});
 		if (confirmed) revokeAllSessionsMutation.mutate();
 	};
@@ -1683,11 +1733,12 @@ const SessionsTab = () => {
 			{/* Header */}
 			<div>
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-secondary-100">
-					Active Sessions
+					{t("Active Sessions")}
 				</h3>
 				<p className="text-sm text-secondary-600 dark:text-white">
-					Manage your active sessions and devices. You can see where you're
-					logged in and revoke access for any device.
+					{t(
+						"Manage your active sessions and devices. You can see where you're logged in and revoke access for any device.",
+					)}
 				</p>
 			</div>
 
@@ -1732,8 +1783,8 @@ const SessionsTab = () => {
 							>
 								<LogOut className="h-4 w-4 mr-2" />
 								{revokeAllSessionsMutation.isPending
-									? "Revoking..."
-									: "Revoke All Other Sessions"}
+									? t("Revoking...")
+									: t("Revoke All Other Sessions")}
 							</button>
 						</div>
 					)}
@@ -1755,17 +1806,19 @@ const SessionsTab = () => {
 										<div className="flex-1 min-w-0">
 											<div className="flex flex-wrap items-center gap-2">
 												<h4 className="text-sm font-medium text-secondary-900 dark:text-secondary-100">
-													{session.device_info?.browser} on{" "}
-													{session.device_info?.os}
+													{t("{{browser}} on {{os}}", {
+														browser: session.device_info?.browser,
+														os: session.device_info?.os,
+													})}
 												</h4>
 												{session.is_current_session && (
 													<span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200 flex-shrink-0">
-														Current Session
+														{t("Current Session")}
 													</span>
 												)}
 												{session.tfa_remember_me && (
 													<span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-success-100 text-success-800 dark:bg-success-900 dark:text-success-200 flex-shrink-0">
-														Remembered
+														{t("Remembered")}
 													</span>
 												)}
 											</div>
@@ -1786,14 +1839,21 @@ const SessionsTab = () => {
 										<div className="flex items-center space-x-2">
 											<Clock className="h-4 w-4 flex-shrink-0" />
 											<span>
-												Last active: {formatRelativeTime(session.last_activity)}
+												{t("Last active:")}{" "}
+												{formatRelativeTime(session.last_activity)}
 											</span>
 										</div>
 										<div className="text-xs md:text-sm">
-											<span>Created: {formatDate(session.created_at)}</span>
+											<span>
+												{t("Created:")} {formatDate(session.created_at)}
+											</span>
 										</div>
 										<div className="text-xs md:text-sm">
-											<span>Login count: {session.login_count}</span>
+											<span>
+												{t("Login count: {{login_count}}", {
+													login_count: session.login_count,
+												})}
+											</span>
 										</div>
 									</div>
 								</div>
@@ -1816,10 +1876,10 @@ const SessionsTab = () => {
 				<div className="text-center py-8">
 					<Monitor className="mx-auto h-12 w-12 text-secondary-400" />
 					<h3 className="mt-2 text-sm font-medium text-secondary-900 dark:text-secondary-100">
-						No active sessions
+						{t("No active sessions")}
 					</h3>
 					<p className="mt-1 text-sm text-secondary-600 dark:text-white">
-						You don't have any active sessions at the moment.
+						{t("You don't have any active sessions at the moment.")}
 					</p>
 				</div>
 			)}
@@ -1832,6 +1892,7 @@ const SessionsTab = () => {
 // active sessions — they persist across logouts and exist solely to skip MFA
 // on this browser until natural expiry or explicit revocation.
 const TrustedDevicesTab = () => {
+	const { t } = useTranslation();
 	const confirm = useConfirm();
 	const [message, setMessage] = useState({ type: "", text: "" });
 
@@ -1850,13 +1911,13 @@ const TrustedDevicesTab = () => {
 	const revokeMutation = useMutation({
 		mutationFn: (id) => trustedDevicesAPI.revoke(id),
 		onSuccess: () => {
-			setMessage({ type: "success", text: "Trusted device revoked" });
+			setMessage({ type: "success", text: t("Trusted device revoked") });
 			refetch();
 		},
 		onError: (error) => {
 			setMessage({
 				type: "error",
-				text: error.response?.data?.error || "Failed to revoke device",
+				text: error.response?.data?.error || t("Failed to revoke device"),
 			});
 		},
 	});
@@ -1864,35 +1925,37 @@ const TrustedDevicesTab = () => {
 	const revokeAllMutation = useMutation({
 		mutationFn: () => trustedDevicesAPI.revokeAll(),
 		onSuccess: () => {
-			setMessage({ type: "success", text: "All trusted devices revoked" });
+			setMessage({ type: "success", text: t("All trusted devices revoked") });
 			refetch();
 		},
 		onError: (error) => {
 			setMessage({
 				type: "error",
-				text: error.response?.data?.error || "Failed to revoke devices",
+				text: error.response?.data?.error || t("Failed to revoke devices"),
 			});
 		},
 	});
 
 	const handleRevoke = async (id) => {
 		const confirmed = await confirm({
-			title: "Forget this device",
-			subtitle: "It will need your authentication code next time",
-			message:
+			title: t("Forget this device"),
+			subtitle: t("It will need your authentication code next time"),
+			message: t(
 				"Forget this device? You'll need to enter your authentication code on it next time you sign in.",
-			confirmLabel: "Forget device",
+			),
+			confirmLabel: t("Forget device"),
 		});
 		if (confirmed) revokeMutation.mutate(id);
 	};
 
 	const handleRevokeAll = async () => {
 		const confirmed = await confirm({
-			title: "Forget all trusted devices",
-			subtitle: "Every device will need your authentication code",
-			message:
+			title: t("Forget all trusted devices"),
+			subtitle: t("Every device will need your authentication code"),
+			message: t(
 				"Forget all trusted devices? You'll need to enter your authentication code on every device next time you sign in.",
-			confirmLabel: "Forget all devices",
+			),
+			confirmLabel: t("Forget all devices"),
 		});
 		if (confirmed) revokeAllMutation.mutate();
 	};
@@ -1903,12 +1966,12 @@ const TrustedDevicesTab = () => {
 		<div className="space-y-6">
 			<div>
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-secondary-100">
-					Trusted Devices
+					{t("Trusted Devices")}
 				</h3>
 				<p className="text-sm text-secondary-600 dark:text-white">
-					Browsers you've chosen to skip multi-factor authentication on.
-					Revoking a device will require a fresh authentication code on that
-					browser next time you sign in.
+					{t(
+						"Browsers you've chosen to skip multi-factor authentication on. Revoking a device will require a fresh authentication code on that browser next time you sign in.",
+					)}
 				</p>
 			</div>
 
@@ -1949,8 +2012,8 @@ const TrustedDevicesTab = () => {
 							>
 								<LogOut className="h-4 w-4 mr-2" />
 								{revokeAllMutation.isPending
-									? "Revoking..."
-									: "Forget All Devices"}
+									? t("Revoking...")
+									: t("Forget All Devices")}
 							</button>
 						</div>
 					)}
@@ -1971,17 +2034,19 @@ const TrustedDevicesTab = () => {
 										<div className="flex-1 min-w-0">
 											<div className="flex flex-wrap items-center gap-2">
 												<h4 className="text-sm font-medium text-secondary-900 dark:text-secondary-100">
-													{device.label || "Unknown device"}
+													{device.label || t("Unknown device")}
 												</h4>
 												{device.is_current && (
 													<span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200 flex-shrink-0">
-														This device
+														{t("This device")}
 													</span>
 												)}
 											</div>
 											{device.ip_address && (
 												<p className="text-sm text-secondary-600 dark:text-white mt-1">
-													IP at trust: {device.ip_address}
+													{t("IP at trust: {{ip_address}}", {
+														ip_address: device.ip_address,
+													})}
 												</p>
 											)}
 										</div>
@@ -1990,15 +2055,19 @@ const TrustedDevicesTab = () => {
 									<div className="mt-3 space-y-2 text-sm text-secondary-600 dark:text-white">
 										<div className="flex items-center space-x-2">
 											<Clock className="h-4 w-4 flex-shrink-0" />
-											<span>Last used: {formatDate(device.last_used_at)}</span>
-										</div>
-										<div className="text-xs md:text-sm">
 											<span>
-												Trusted since: {formatDate(device.created_at)}
+												{t("Last used:")} {formatDate(device.last_used_at)}
 											</span>
 										</div>
 										<div className="text-xs md:text-sm">
-											<span>Expires: {formatDate(device.expires_at)}</span>
+											<span>
+												{t("Trusted since:")} {formatDate(device.created_at)}
+											</span>
+										</div>
+										<div className="text-xs md:text-sm">
+											<span>
+												{t("Expires:")} {formatDate(device.expires_at)}
+											</span>
 										</div>
 									</div>
 								</div>
@@ -2007,7 +2076,7 @@ const TrustedDevicesTab = () => {
 									type="button"
 									onClick={() => handleRevoke(device.id)}
 									disabled={revokeMutation.isPending}
-									title="Forget this device"
+									title={t("Forget this device")}
 									className="inline-flex items-center px-3 py-2 border border-danger-300 text-sm font-medium rounded-md text-danger-700 bg-white hover:bg-danger-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-danger-500 disabled:opacity-50 flex-shrink-0"
 								>
 									<Trash2 className="h-4 w-4" />
@@ -2020,11 +2089,12 @@ const TrustedDevicesTab = () => {
 				<div className="text-center py-8">
 					<ShieldCheck className="mx-auto h-12 w-12 text-secondary-400" />
 					<h3 className="mt-2 text-sm font-medium text-secondary-900 dark:text-secondary-100">
-						No trusted devices
+						{t("No trusted devices")}
 					</h3>
 					<p className="mt-1 text-sm text-secondary-600 dark:text-white">
-						When signing in, check "Remember this device" to skip MFA on
-						browsers you trust.
+						{t(
+							'When signing in, check "Remember this device" to skip MFA on browsers you trust.',
+						)}
 					</p>
 				</div>
 			)}

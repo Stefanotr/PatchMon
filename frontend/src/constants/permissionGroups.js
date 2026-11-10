@@ -36,84 +36,91 @@ export const RISK_LEVELS = {
 export const PERMISSION_GROUPS = [
 	{
 		id: "monitoring",
-		name: "Monitoring & Visibility",
-		description:
+		name: tk("Monitoring & Visibility"),
+		description: tk(
 			"Read-only access to dashboards, hosts, packages, reports, and logs",
+		),
 		riskLevel: RISK_LEVELS.LOW,
 		icon: Eye,
 		permissions: [
 			{
 				key: "can_view_dashboard",
-				label: "View Dashboard",
-				description: "View dashboard statistics and overview panels",
+				label: tk("View Dashboard"),
+				description: tk("View dashboard statistics and overview panels"),
 				icon: LayoutDashboard,
 			},
 			{
 				key: "can_view_hosts",
-				label: "View Hosts",
-				description: "View host list, details, and connection status",
+				label: tk("View Hosts"),
+				description: tk("View host list, details, and connection status"),
 				icon: Server,
 			},
 			{
 				key: "can_view_packages",
-				label: "View Packages",
-				description: "View package inventory across all hosts",
+				label: tk("View Packages"),
+				description: tk("View package inventory across all hosts"),
 				icon: Package,
 			},
 			{
 				key: "can_view_reports",
-				label: "View Reports",
-				description: "View compliance scans and alert reports",
+				label: tk("View Reports"),
+				description: tk("View compliance scans and alert reports"),
 				icon: FileBarChart,
 			},
 			{
 				key: "can_view_notification_logs",
-				label: "View Notification Logs",
-				description: "View notification delivery history and status",
+				label: tk("View Notification Logs"),
+				description: tk("View notification delivery history and status"),
 				icon: MailCheck,
 			},
 		],
 	},
 	{
 		id: "infrastructure",
-		name: "Host & Infrastructure",
-		description: "Create, modify, and delete hosts, packages, and containers",
+		name: tk("Host & Infrastructure"),
+		description: tk(
+			"Create, modify, and delete hosts, packages, and containers",
+		),
 		riskLevel: RISK_LEVELS.MEDIUM,
 		icon: PencilRuler,
 		permissions: [
 			{
 				key: "can_manage_hosts",
-				label: "Manage Hosts",
-				description:
+				label: tk("Manage Hosts"),
+				description: tk(
 					"Create, edit, delete hosts, host groups, repositories, and integrations",
+				),
 				icon: Boxes,
 			},
 			{
 				key: "can_manage_packages",
-				label: "Manage Packages",
-				description: "Manage package inventory and metadata",
+				label: tk("Manage Packages"),
+				description: tk("Manage package inventory and metadata"),
 				icon: PackageSearch,
 			},
 			{
 				key: "can_manage_docker",
-				label: "Manage Docker",
-				description: "Delete Docker containers, images, volumes, and networks",
+				label: tk("Manage Docker"),
+				description: tk(
+					"Delete Docker containers, images, volumes, and networks",
+				),
 				icon: Container,
 			},
 		],
 	},
 	{
 		id: "operations",
-		name: "Operations",
-		description:
+		name: tk("Operations"),
+		description: tk(
 			"Day-to-day NOC tasks: patching, compliance, alerts, automation, remote access",
+		),
 		riskLevel: RISK_LEVELS.MEDIUM_HIGH,
 		icon: Wrench,
 		permissions: [
 			{
 				key: "can_manage_patching",
-				label: "Manage Patching",
-				description: "Trigger patches, approve runs, manage patch policies",
+				label: tk("Manage Patching"),
+				description: tk("Trigger patches, approve runs, manage patch policies"),
 				icon: Wrench,
 			},
 			{
@@ -126,74 +133,79 @@ export const PERMISSION_GROUPS = [
 			},
 			{
 				key: "can_manage_compliance",
-				label: "Manage Compliance",
-				description:
+				label: tk("Manage Compliance"),
+				description: tk(
 					"Trigger compliance scans, remediate findings, install scanners",
+				),
 				icon: ShieldCheck,
 			},
 			{
 				key: "can_manage_alerts",
-				label: "Manage Alerts",
-				description: "Alert actions, assign, delete, and bulk operations",
+				label: tk("Manage Alerts"),
+				description: tk("Alert actions, assign, delete, and bulk operations"),
 				icon: BellRing,
 			},
 			{
 				key: "can_manage_automation",
-				label: "Manage Automation",
-				description: "Trigger and manage automation jobs",
+				label: tk("Manage Automation"),
+				description: tk("Trigger and manage automation jobs"),
 				icon: Bot,
 			},
 			{
 				key: "can_use_remote_access",
-				label: "Remote Access",
-				description: "SSH and RDP terminal access to managed hosts",
+				label: tk("Remote Access"),
+				description: tk("SSH and RDP terminal access to managed hosts"),
 				icon: Terminal,
 			},
 		],
 	},
 	{
 		id: "administration",
-		name: "Administration",
-		description:
+		name: tk("Administration"),
+		description: tk(
 			"Organization-level control: users, settings, notifications, data export",
+		),
 		riskLevel: RISK_LEVELS.HIGH,
 		icon: Crown,
 		permissions: [
 			{
 				key: "can_view_users",
-				label: "View Users",
-				description: "View user list and account details",
+				label: tk("View Users"),
+				description: tk("View user list and account details"),
 				icon: Users,
 			},
 			{
 				key: "can_manage_users",
-				label: "Manage Users",
-				description: "Create, edit, and delete user accounts",
+				label: tk("Manage Users"),
+				description: tk("Create, edit, and delete user accounts"),
 				icon: UserCog,
 			},
 			{
 				key: "can_manage_superusers",
-				label: "Manage Superusers",
-				description: "Manage superadmin accounts and elevated privileges",
+				label: tk("Manage Superusers"),
+				description: tk("Manage superadmin accounts and elevated privileges"),
 				icon: Crown,
 			},
 			{
 				key: "can_manage_settings",
-				label: "Manage Settings",
-				description:
+				label: tk("Manage Settings"),
+				description: tk(
 					"System configuration, OIDC, AI, alert config, enrollment tokens",
+				),
 				icon: Settings,
 			},
 			{
 				key: "can_manage_notifications",
-				label: "Manage Notifications",
-				description: "Configure notification destinations and routing rules",
+				label: tk("Manage Notifications"),
+				description: tk(
+					"Configure notification destinations and routing rules",
+				),
 				icon: Send,
 			},
 			{
 				key: "can_export_data",
-				label: "Export Data",
-				description: "Download and export data and reports",
+				label: tk("Export Data"),
+				description: tk("Download and export data and reports"),
 				icon: Download,
 			},
 		],
@@ -242,11 +254,11 @@ export const riskGroupBg = (level) =>
 
 export const riskLabel = (level) =>
 	({
-		[RISK_LEVELS.LOW]: "Low Risk",
-		[RISK_LEVELS.MEDIUM]: "Medium",
-		[RISK_LEVELS.MEDIUM_HIGH]: "Medium-High",
-		[RISK_LEVELS.HIGH]: "High Risk",
-	})[level] || "Unknown";
+		[RISK_LEVELS.LOW]: tk("Low Risk"),
+		[RISK_LEVELS.MEDIUM]: tk("Medium"),
+		[RISK_LEVELS.MEDIUM_HIGH]: tk("Medium-High"),
+		[RISK_LEVELS.HIGH]: tk("High Risk"),
+	})[level] || tk("Unknown");
 
 const buildPreset = (predicate) => {
 	const data = {};

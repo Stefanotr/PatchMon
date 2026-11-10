@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Image, RotateCcw, Upload, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { settingsAPI } from "../../utils/api";
 import { isLegacyDefaultPath, resolveLogoPath } from "../../utils/logoPaths";
 import ModalPortal from "../ui/ModalPortal";
 
 const BrandingTab = () => {
+	const { t } = useTranslation();
 	// Logo management state
 	const [logoUploadState, setLogoUploadState] = useState({
 		dark: { uploading: false, error: null },
@@ -65,9 +67,11 @@ const BrandingTab = () => {
 				credentials: "include",
 				body: JSON.stringify({ logoType, fileContent, fileName }),
 			});
-			const data = await parseJsonOrThrow(res, "Failed to upload logo");
+			const data = await parseJsonOrThrow(res, t("Failed to upload logo"));
 			if (!res.ok) {
-				throw new Error(data.error || data.details || "Failed to upload logo");
+				throw new Error(
+					data.error || data.details || t("Failed to upload logo"),
+				);
 			}
 			return data;
 		},
@@ -102,7 +106,7 @@ const BrandingTab = () => {
 				...prev,
 				[variables.logoType]: {
 					uploading: false,
-					error: error.message || "Failed to upload logo",
+					error: error.message || t("Failed to upload logo"),
 				},
 			}));
 		},
@@ -119,9 +123,11 @@ const BrandingTab = () => {
 				credentials: "include",
 				body: JSON.stringify({ logoType }),
 			});
-			const data = await parseJsonOrThrow(res, "Failed to reset logo");
+			const data = await parseJsonOrThrow(res, t("Failed to reset logo"));
 			if (!res.ok) {
-				throw new Error(data.error || data.details || "Failed to reset logo");
+				throw new Error(
+					data.error || data.details || t("Failed to reset logo"),
+				);
 			}
 			return data;
 		},
@@ -157,10 +163,10 @@ const BrandingTab = () => {
 					<AlertCircle className="h-5 w-5 text-red-400 dark:text-red-300" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-							Error loading settings
+							{t("Error loading settings")}
 						</h3>
 						<p className="mt-1 text-sm text-red-700 dark:text-red-300">
-							{error.response?.data?.error || "Failed to load settings"}
+							{error.response?.data?.error || t("Failed to load settings")}
 						</p>
 					</div>
 				</div>
@@ -175,12 +181,13 @@ const BrandingTab = () => {
 				<div className="flex items-center mb-6">
 					<Image className="h-6 w-6 text-primary-600 mr-3" />
 					<h2 className="text-xl font-semibold text-secondary-900 dark:text-white">
-						Logo & Branding
+						{t("Logo & Branding")}
 					</h2>
 				</div>
 				<p className="text-sm text-secondary-500 dark:text-white mb-6">
-					Customize your PatchMon installation with custom logos and favicon.
-					These will be displayed throughout the application.
+					{t(
+						"Customize your PatchMon installation with custom logos and favicon. These will be displayed throughout the application.",
+					)}
 				</p>
 			</div>
 
@@ -188,7 +195,7 @@ const BrandingTab = () => {
 			<div className="flex items-center mb-4">
 				<Image className="h-5 w-5 text-primary-600 mr-2" />
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-					Logos
+					{t("Logos")}
 				</h3>
 			</div>
 
@@ -196,7 +203,7 @@ const BrandingTab = () => {
 				{/* Dark Logo */}
 				<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 border border-secondary-200 dark:border-secondary-600">
 					<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-4">
-						Dark Logo
+						{t("Dark Logo")}
 					</h4>
 					<div className="flex items-center justify-center p-4 bg-secondary-50 dark:bg-secondary-700 rounded-lg mb-4">
 						<img
@@ -206,7 +213,7 @@ const BrandingTab = () => {
 									? new Date(settings.updated_at).getTime()
 									: Date.now()
 							}`}
-							alt="Dark Logo"
+							alt={t("Dark Logo")}
 							className="max-h-16 max-w-full object-contain"
 							onError={(e) => {
 								e.target.src = `/assets/logo_dark_default.png?v=${Date.now()}`;
@@ -216,7 +223,7 @@ const BrandingTab = () => {
 					<p className="text-xs text-secondary-600 dark:text-white mb-4 truncate">
 						{settings?.logo_dark && !isLegacyDefaultPath(settings.logo_dark)
 							? settings.logo_dark.split("/").pop()
-							: "logo_dark_default.png (Default)"}
+							: t("logo_dark_default.png (Default)")}
 					</p>
 					<div className="space-y-2">
 						<button
@@ -231,12 +238,12 @@ const BrandingTab = () => {
 							{logoUploadState.dark.uploading ? (
 								<>
 									<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-									Uploading...
+									{t("Uploading...")}
 								</>
 							) : (
 								<>
 									<Upload className="h-4 w-4" />
-									Upload Dark Logo
+									{t("Upload Dark Logo")}
 								</>
 							)}
 						</button>
@@ -249,7 +256,7 @@ const BrandingTab = () => {
 									className="w-full btn-outline flex items-center justify-center gap-2 text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400"
 								>
 									<RotateCcw className="h-4 w-4" />
-									Reset to Default
+									{t("Reset to Default")}
 								</button>
 							)}
 					</div>
@@ -263,7 +270,7 @@ const BrandingTab = () => {
 				{/* Light Logo */}
 				<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 border border-secondary-200 dark:border-secondary-600">
 					<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-4">
-						Light Logo
+						{t("Light Logo")}
 					</h4>
 					<div className="flex items-center justify-center p-4 bg-secondary-50 dark:bg-secondary-700 rounded-lg mb-4">
 						<img
@@ -273,7 +280,7 @@ const BrandingTab = () => {
 									? new Date(settings.updated_at).getTime()
 									: Date.now()
 							}`}
-							alt="Light Logo"
+							alt={t("Light Logo")}
 							className="max-h-16 max-w-full object-contain"
 							onError={(e) => {
 								e.target.src = `/assets/logo_light_default.png?v=${Date.now()}`;
@@ -283,7 +290,7 @@ const BrandingTab = () => {
 					<p className="text-xs text-secondary-600 dark:text-white mb-4 truncate">
 						{settings?.logo_light && !isLegacyDefaultPath(settings.logo_light)
 							? settings.logo_light.split("/").pop()
-							: "logo_light_default.png (Default)"}
+							: t("logo_light_default.png (Default)")}
 					</p>
 					<div className="space-y-2">
 						<button
@@ -298,12 +305,12 @@ const BrandingTab = () => {
 							{logoUploadState.light.uploading ? (
 								<>
 									<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-									Uploading...
+									{t("Uploading...")}
 								</>
 							) : (
 								<>
 									<Upload className="h-4 w-4" />
-									Upload Light Logo
+									{t("Upload Light Logo")}
 								</>
 							)}
 						</button>
@@ -316,7 +323,7 @@ const BrandingTab = () => {
 									className="w-full btn-outline flex items-center justify-center gap-2 text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400"
 								>
 									<RotateCcw className="h-4 w-4" />
-									Reset to Default
+									{t("Reset to Default")}
 								</button>
 							)}
 					</div>
@@ -330,7 +337,7 @@ const BrandingTab = () => {
 				{/* Favicon */}
 				<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 border border-secondary-200 dark:border-secondary-600">
 					<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-4">
-						Favicon
+						{t("Favicon")}
 					</h4>
 					<div className="flex items-center justify-center p-4 bg-secondary-50 dark:bg-secondary-700 rounded-lg mb-4">
 						<img
@@ -340,7 +347,7 @@ const BrandingTab = () => {
 									? new Date(settings.updated_at).getTime()
 									: Date.now()
 							}`}
-							alt="Favicon"
+							alt={t("Favicon")}
 							className="h-8 w-8 object-contain"
 							onError={(e) => {
 								e.target.src = `/assets/logo_square_default.svg?v=${Date.now()}`;
@@ -350,7 +357,7 @@ const BrandingTab = () => {
 					<p className="text-xs text-secondary-600 dark:text-white mb-4 truncate">
 						{settings?.favicon && !isLegacyDefaultPath(settings.favicon)
 							? settings.favicon.split("/").pop()
-							: "logo_square_default.svg (Default)"}
+							: t("logo_square_default.svg (Default)")}
 					</p>
 					<div className="space-y-2">
 						<button
@@ -365,12 +372,12 @@ const BrandingTab = () => {
 							{logoUploadState.favicon.uploading ? (
 								<>
 									<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-									Uploading...
+									{t("Uploading...")}
 								</>
 							) : (
 								<>
 									<Upload className="h-4 w-4" />
-									Upload Favicon
+									{t("Upload Favicon")}
 								</>
 							)}
 						</button>
@@ -382,7 +389,7 @@ const BrandingTab = () => {
 								className="w-full btn-outline flex items-center justify-center gap-2 text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400"
 							>
 								<RotateCcw className="h-4 w-4" />
-								Reset to Default
+								{t("Reset to Default")}
 							</button>
 						)}
 					</div>
@@ -400,31 +407,31 @@ const BrandingTab = () => {
 					<Image className="h-5 w-5 text-blue-400 dark:text-blue-300" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-							Logo Usage
+							{t("Logo Usage")}
 						</h3>
 						<div className="mt-2 text-sm text-blue-700 dark:text-blue-300">
 							<p className="mb-2">
-								These logos are used throughout the application:
+								{t("These logos are used throughout the application:")}
 							</p>
 							<ul className="list-disc list-inside space-y-1">
 								<li>
-									<strong>Dark Logo:</strong> Used in dark mode and on light
-									backgrounds
+									<strong>{t("Dark Logo:")}</strong>{" "}
+									{t("Used in dark mode and on light backgrounds")}
 								</li>
 								<li>
-									<strong>Light Logo:</strong> Used in light mode and on dark
-									backgrounds
+									<strong>{t("Light Logo:")}</strong>{" "}
+									{t("Used in light mode and on dark backgrounds")}
 								</li>
 								<li>
-									<strong>Favicon:</strong> Used as the browser tab icon (SVG
-									recommended)
+									<strong>{t("Favicon:")}</strong>{" "}
+									{t("Used as the browser tab icon (SVG recommended)")}
 								</li>
 							</ul>
 							<p className="mt-3 text-xs">
-								<strong>Supported formats:</strong> PNG, JPG, SVG |{" "}
-								<strong>Max size:</strong> 5MB |{" "}
-								<strong>Recommended sizes:</strong> 200x60px for logos, 32x32px
-								for favicon.
+								<strong>{t("Supported formats:")}</strong> PNG, JPG, SVG |{" "}
+								<strong>{t("Max size:")}</strong> {t("5 MB")} |{" "}
+								<strong>{t("Recommended sizes:")}</strong>{" "}
+								{t("200x60px for logos, 32x32px for favicon.")}
 							</p>
 						</div>
 					</div>
@@ -455,6 +462,7 @@ const LogoUploadModal = ({
 	error,
 	logoType,
 }) => {
+	const { t } = useTranslation();
 	const [selectedFile, setSelectedFile] = useState(null);
 	const [previewUrl, setPreviewUrl] = useState(null);
 	const [uploadError, setUploadError] = useState("");
@@ -470,13 +478,13 @@ const LogoUploadModal = ({
 				"image/svg+xml",
 			];
 			if (!allowedTypes.includes(file.type)) {
-				setUploadError("Please select a PNG, JPG, or SVG file");
+				setUploadError(t("Please select a PNG, JPG, or SVG file"));
 				return;
 			}
 
 			// Validate file size (5MB limit)
 			if (file.size > 5 * 1024 * 1024) {
-				setUploadError("File size must be less than 5MB");
+				setUploadError(t("File size must be less than 5MB"));
 				return;
 			}
 
@@ -494,7 +502,7 @@ const LogoUploadModal = ({
 		setUploadError("");
 
 		if (!selectedFile) {
-			setUploadError("Please select a file");
+			setUploadError(t("Please select a file"));
 			return;
 		}
 
@@ -526,10 +534,11 @@ const LogoUploadModal = ({
 				<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600">
 					<div className="flex items-center justify-between">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-							Upload{" "}
 							{logoType === "favicon"
-								? "Favicon"
-								: `${logoType.charAt(0).toUpperCase() + logoType.slice(1)} Logo`}
+								? t("Upload Favicon")
+								: logoType === "light"
+									? t("Upload Light Logo")
+									: t("Upload Dark Logo")}
 						</h3>
 						<button
 							type="button"
@@ -546,7 +555,7 @@ const LogoUploadModal = ({
 						<div>
 							<label className="block">
 								<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2">
-									Select File
+									{t("Select File")}
 								</span>
 								<input
 									type="file"
@@ -556,22 +565,22 @@ const LogoUploadModal = ({
 								/>
 							</label>
 							<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-								Supported formats: PNG, JPG, SVG. Max size: 5MB.
+								{t("Supported formats: PNG, JPG, SVG. Max size: 5MB.")}
 								{logoType === "favicon"
-									? " Recommended: 32x32px SVG."
-									: " Recommended: 200x60px."}
+									? t(" Recommended: 32x32px SVG.")
+									: t(" Recommended: 200x60px.")}
 							</p>
 						</div>
 
 						{previewUrl?.startsWith("blob:") && (
 							<div>
 								<div className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2">
-									Preview
+									{t("Preview")}
 								</div>
 								<div className="flex items-center justify-center p-4 bg-white dark:bg-secondary-800 rounded-lg border border-secondary-200 dark:border-secondary-600">
 									<img
 										src={previewUrl}
-										alt="Preview"
+										alt={t("Preview")}
 										className={`object-contain ${
 											logoType === "favicon" ? "h-8 w-8" : "max-h-16 max-w-full"
 										}`}
@@ -594,11 +603,17 @@ const LogoUploadModal = ({
 							<div className="flex">
 								<AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mr-2 mt-0.5" />
 								<div className="text-sm text-yellow-800 dark:text-yellow-200">
-									<p className="font-medium">Important:</p>
+									<p className="font-medium">{t("Important:")}</p>
 									<ul className="mt-1 list-disc list-inside space-y-1">
-										<li>This will replace the current {logoType} logo</li>
-										<li>A backup will be created automatically</li>
-										<li>The change will be applied immediately</li>
+										<li>
+											{logoType === "favicon"
+												? t("This will replace the current favicon")
+												: logoType === "light"
+													? t("This will replace the current light logo")
+													: t("This will replace the current dark logo")}
+										</li>
+										<li>{t("A backup will be created automatically")}</li>
+										<li>{t("The change will be applied immediately")}</li>
 									</ul>
 								</div>
 							</div>
@@ -607,14 +622,14 @@ const LogoUploadModal = ({
 
 					<div className="flex justify-end gap-3 mt-6">
 						<button type="button" onClick={handleClose} className="btn-outline">
-							Cancel
+							{t("Cancel")}
 						</button>
 						<button
 							type="submit"
 							disabled={isLoading || !selectedFile}
 							className="btn-primary"
 						>
-							{isLoading ? "Uploading..." : "Upload Logo"}
+							{isLoading ? t("Uploading...") : t("Upload Logo")}
 						</button>
 					</div>
 				</form>

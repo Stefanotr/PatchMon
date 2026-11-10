@@ -1,0 +1,4 @@
+{
+	"This group contains {{count}} host. These hosts will be moved to \"No group\" after deletion._one": "This group contains {{count}} host. These hosts will be moved to \"No group\" after deletion.",
+	"This group contains {{count}} host. These hosts will be moved to \"No group\" after deletion._other": "This group contains {{count}} hosts. These hosts will be moved to \"No group\" after deletion."
+}

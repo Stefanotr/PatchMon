@@ -17,6 +17,7 @@ import {
 	Wrench,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { getRequiredTier } from "../constants/tiers";
 import { useAuth } from "../contexts/AuthContext";
@@ -25,6 +26,7 @@ import DiscordIcon from "./DiscordIcon";
 import TierBadge from "./TierBadge";
 
 const SettingsLayout = ({ children }) => {
+	const { t } = useTranslation();
 	const content = children ?? <Outlet />;
 	const location = useLocation();
 	const { canManageSettings, canViewUsers, canManageUsers, hasModule } =
@@ -40,7 +42,7 @@ const SettingsLayout = ({ children }) => {
 		if (canViewUsers() || canManageUsers()) {
 			const userItems = [
 				{
-					name: "Users",
+					name: t("Users"),
 					href: "/settings/users",
 					icon: Users,
 				},
@@ -53,7 +55,7 @@ const SettingsLayout = ({ children }) => {
 			{
 				const locked = !hasModule("rbac_custom");
 				userItems.push({
-					name: "Roles",
+					name: t("Roles"),
 					href: "/settings/roles",
 					icon: Shield,
 					lockedModule: locked ? "rbac_custom" : null,
@@ -61,26 +63,26 @@ const SettingsLayout = ({ children }) => {
 				});
 			}
 			userItems.push({
-				name: "My Profile",
+				name: t("My Profile"),
 				href: "/settings/profile",
 				icon: UserCircle,
 			});
 			if (canManageSettings()) {
 				userItems.push(
 					{
-						name: "Discord Auth",
+						name: t("Discord Auth"),
 						href: "/settings/discord-auth",
 						icon: DiscordIcon,
 					},
 					{
-						name: "OIDC / SSO",
+						name: t("OIDC / SSO"),
 						href: "/settings/oidc-auth",
 						icon: KeyRound,
 					},
 				);
 			}
 			nav.push({
-				section: "User Management",
+				section: t("User Management"),
 				items: userItems,
 			});
 		}
@@ -88,20 +90,20 @@ const SettingsLayout = ({ children }) => {
 		// Host Groups
 		if (canManageSettings()) {
 			nav.push({
-				section: "Hosts Management",
+				section: t("Hosts Management"),
 				items: [
 					{
-						name: "Host Groups",
+						name: t("Host Groups"),
 						href: "/settings/host-groups",
 						icon: Folder,
 					},
 					{
-						name: "Agent Updates",
+						name: t("Agent Updates"),
 						href: "/settings/agent-config",
 						icon: RefreshCw,
 					},
 					{
-						name: "Agent Version",
+						name: t("Agent Version"),
 						href: "/settings/agent-version",
 						icon: Settings,
 					},
@@ -118,7 +120,7 @@ const SettingsLayout = ({ children }) => {
 			// Integrations section. AI Terminal is a Max-tier feature (module key "ai").
 			const integrationsItems = [
 				{
-					name: "API integrations",
+					name: t("API integrations"),
 					href: "/settings/integrations",
 					icon: Wrench,
 				},
@@ -126,7 +128,7 @@ const SettingsLayout = ({ children }) => {
 			{
 				const locked = !hasModule("ai");
 				integrationsItems.push({
-					name: "AI Terminal",
+					name: t("AI Terminal"),
 					href: "/settings/ai-terminal",
 					icon: Bot,
 					lockedModule: locked ? "ai" : null,
@@ -134,7 +136,7 @@ const SettingsLayout = ({ children }) => {
 				});
 			}
 			nav.push({
-				section: "Integrations",
+				section: t("Integrations"),
 				items: integrationsItems,
 			});
 
@@ -143,7 +145,7 @@ const SettingsLayout = ({ children }) => {
 			// Server URL and Server Version are hidden in managed/multi-context deployments.
 			if (!isAdminMode) {
 				serverItems.push({
-					name: "Server URL",
+					name: t("Server URL"),
 					href: "/settings/server-url",
 					icon: Wrench,
 				});
@@ -154,7 +156,7 @@ const SettingsLayout = ({ children }) => {
 			// on; this keeps the navigation consistent with that.
 			if (!isAdminMode) {
 				serverItems.push({
-					name: "Environment",
+					name: t("Environment"),
 					href: "/settings/environment",
 					icon: Variable,
 				});
@@ -164,7 +166,7 @@ const SettingsLayout = ({ children }) => {
 			{
 				const locked = !hasModule("custom_branding");
 				serverItems.push({
-					name: "Branding",
+					name: t("Branding"),
 					href: "/settings/branding",
 					icon: Image,
 					lockedModule: locked ? "custom_branding" : null,
@@ -173,7 +175,7 @@ const SettingsLayout = ({ children }) => {
 			}
 			if (!isAdminMode) {
 				serverItems.push({
-					name: "Server Version",
+					name: t("Server Version"),
 					href: "/settings/server-version",
 					icon: Code,
 				});
@@ -181,13 +183,13 @@ const SettingsLayout = ({ children }) => {
 			// Metrics is hidden in managed/multi-context deployments.
 			if (!isAdminMode) {
 				serverItems.push({
-					name: "Metrics",
+					name: t("Metrics"),
 					href: "/settings/metrics",
 					icon: BarChart3,
 				});
 			}
 			nav.push({
-				section: "Server",
+				section: t("Server"),
 				items: serverItems,
 			});
 		}
@@ -235,7 +237,7 @@ const SettingsLayout = ({ children }) => {
 						htmlFor="settings-select"
 						className="block text-sm font-medium text-secondary-700 dark:text-white mb-2"
 					>
-						Settings Section
+						{t("Settings Section")}
 					</label>
 					<div className="relative">
 						<select
@@ -268,7 +270,9 @@ const SettingsLayout = ({ children }) => {
 									onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
 									className="p-1 text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-300 rounded transition-colors"
 									title={
-										sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+										sidebarCollapsed
+											? t("Expand sidebar")
+											: t("Collapse sidebar")
 									}
 								>
 									{sidebarCollapsed ? (
@@ -315,7 +319,7 @@ const SettingsLayout = ({ children }) => {
 																		{subItem.name}
 																		{subItem.comingSoon && (
 																			<span className="text-xs bg-secondary-100 text-secondary-600 px-1.5 py-0.5 rounded">
-																				Soon
+																				{t("Soon")}
 																			</span>
 																		)}
 																		{subItem.lockedTier && (

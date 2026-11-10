@@ -46,6 +46,22 @@ func (q *Queries) CloseStaleAgentCommands(ctx context.Context, arg CloseStaleAge
 	return result.RowsAffected(), nil
 }
 
+const hostHasJobHistory = `-- name: HostHasJobHistory :one
+SELECT EXISTS (SELECT 1 FROM job_history WHERE host_id = $1 AND job_name = $2)::bool
+`
+
+type HostHasJobHistoryParams struct {
+	HostID  *string `json:"host_id"`
+	JobName string  `json:"job_name"`
+}
+
+func (q *Queries) HostHasJobHistory(ctx context.Context, arg HostHasJobHistoryParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hostHasJobHistory, arg.HostID, arg.JobName)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const insertJobHistory = `-- name: InsertJobHistory :exec
 INSERT INTO job_history (id, job_id, queue_name, job_name, host_id, api_id, status, attempt_number, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
@@ -236,9 +252,12 @@ func (q *Queries) UpdateAgentCommandOutcome(ctx context.Context, arg UpdateAgent
 const updateJobHistoryCompleted = `-- name: UpdateJobHistoryCompleted :exec
 UPDATE job_history
 SET status = 'completed', completed_at = NOW(), updated_at = NOW()
-WHERE job_id = $1
+WHERE id = (
+    SELECT jh.id FROM job_history jh WHERE jh.job_id = $1 ORDER BY jh.created_at DESC LIMIT 1
+)
 `
 
+// Task IDs recur across runs, so only the newest row for a job_id is the current run.
 func (q *Queries) UpdateJobHistoryCompleted(ctx context.Context, jobID string) error {
 	_, err := q.db.Exec(ctx, updateJobHistoryCompleted, jobID)
 	return err
@@ -247,7 +266,9 @@ func (q *Queries) UpdateJobHistoryCompleted(ctx context.Context, jobID string) e
 const updateJobHistoryDelayed = `-- name: UpdateJobHistoryDelayed :exec
 UPDATE job_history
 SET status = 'delayed', updated_at = NOW()
-WHERE job_id = $1
+WHERE id = (
+    SELECT jh.id FROM job_history jh WHERE jh.job_id = $1 ORDER BY jh.created_at DESC LIMIT 1
+)
 `
 
 func (q *Queries) UpdateJobHistoryDelayed(ctx context.Context, jobID string) error {
@@ -258,7 +279,9 @@ func (q *Queries) UpdateJobHistoryDelayed(ctx context.Context, jobID string) err
 const updateJobHistoryFailed = `-- name: UpdateJobHistoryFailed :exec
 UPDATE job_history
 SET status = 'failed', error_message = $2, completed_at = NOW(), updated_at = NOW()
-WHERE job_id = $1
+WHERE id = (
+    SELECT jh.id FROM job_history jh WHERE jh.job_id = $1 ORDER BY jh.created_at DESC LIMIT 1
+)
 `
 
 type UpdateJobHistoryFailedParams struct {

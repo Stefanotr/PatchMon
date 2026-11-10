@@ -11,9 +11,11 @@ import {
 	X,
 } from "lucide-react";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { aiAPI } from "../../utils/api";
 
 const AiSettings = () => {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const [showApiKey, setShowApiKey] = useState(false);
 	const [apiKeyInput, setApiKeyInput] = useState("");
@@ -51,7 +53,7 @@ const AiSettings = () => {
 		onError: (err) => {
 			setTestResult({
 				success: false,
-				message: err.response?.data?.error || "Connection test failed",
+				message: err.response?.data?.error || t("Connection test failed"),
 			});
 		},
 	});
@@ -100,10 +102,12 @@ const AiSettings = () => {
 				</div>
 				<div>
 					<h1 className="text-xl font-semibold text-secondary-900 dark:text-white">
-						AI Terminal Assistant
+						{t("AI Terminal Assistant")}
 					</h1>
 					<p className="text-sm text-secondary-500 dark:text-white">
-						Configure AI-powered terminal assistance and command completion
+						{t(
+							"Configure AI-powered terminal assistance and command completion",
+						)}
 					</p>
 				</div>
 			</div>
@@ -115,18 +119,22 @@ const AiSettings = () => {
 						<AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
 						<div>
 							<h3 className="font-medium text-amber-800 dark:text-amber-200">
-								API Key Needs to be Re-entered
+								{t("API Key Needs to be Re-entered")}
 							</h3>
 							<p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
-								Your AI API key was encrypted with a different secret and cannot
-								be decrypted. This can happen if{" "}
-								<code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">
-									SESSION_SECRET
-								</code>{" "}
-								was changed or not set consistently.
+								<Trans
+									i18nKey="Your AI API key was encrypted with a different secret and cannot be decrypted. This can happen if <code>SESSION_SECRET</code> was changed or not set consistently."
+									components={{
+										code: (
+											<code className="bg-amber-100 dark:bg-amber-900 px-1 rounded" />
+										),
+									}}
+								/>
 							</p>
 							<p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
-								Please re-enter your API key below to restore AI functionality.
+								{t(
+									"Please re-enter your API key below to restore AI functionality.",
+								)}
 							</p>
 						</div>
 					</div>
@@ -138,10 +146,10 @@ const AiSettings = () => {
 				<div className="flex items-center justify-between">
 					<div>
 						<h3 className="font-medium text-secondary-900 dark:text-white">
-							Enable AI Assistant
+							{t("Enable AI Assistant")}
 						</h3>
 						<p className="text-sm text-secondary-500 dark:text-white">
-							Enable AI-powered terminal assistance in the SSH terminal
+							{t("Enable AI-powered terminal assistance in the SSH terminal")}
 						</p>
 					</div>
 					<button
@@ -166,7 +174,7 @@ const AiSettings = () => {
 			{/* Provider Selection */}
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-4 border border-secondary-200 dark:border-secondary-700">
 				<h3 className="font-medium text-secondary-900 dark:text-white mb-4">
-					AI Provider Configuration
+					{t("AI Provider Configuration")}
 				</h3>
 
 				<div className="space-y-4">
@@ -176,7 +184,7 @@ const AiSettings = () => {
 							htmlFor="ai-provider"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Provider
+							{t("Provider")}
 						</label>
 						<select
 							id="ai-provider"
@@ -193,13 +201,13 @@ const AiSettings = () => {
 						</select>
 						<p className="mt-1 text-xs text-secondary-500 dark:text-white">
 							{settings?.ai_provider === "openrouter" &&
-								"Access multiple AI models through a single API"}
+								t("Access multiple AI models through a single API")}
 							{settings?.ai_provider === "anthropic" &&
-								"Direct access to Anthropic Claude models"}
+								t("Direct access to Anthropic Claude models")}
 							{settings?.ai_provider === "openai" &&
-								"Direct access to OpenAI GPT models"}
+								t("Direct access to OpenAI GPT models")}
 							{settings?.ai_provider === "gemini" &&
-								"Direct access to Google Gemini models"}
+								t("Direct access to Google Gemini models")}
 						</p>
 					</div>
 
@@ -209,7 +217,7 @@ const AiSettings = () => {
 							htmlFor="ai-model"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Model
+							{t("Model")}
 						</label>
 						<select
 							id="ai-model"
@@ -238,7 +246,7 @@ const AiSettings = () => {
 							htmlFor="ai-api-key"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							API Key
+							{t("API Key")}
 						</label>
 						<div className="flex gap-2">
 							<div className="relative flex-1">
@@ -250,7 +258,7 @@ const AiSettings = () => {
 									placeholder={
 										settings?.ai_api_key_set
 											? "••••••••••••••••"
-											: "Enter your API key"
+											: t("Enter your API key")
 									}
 									className="w-full px-3 py-2 pr-10 bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
 								/>
@@ -277,21 +285,21 @@ const AiSettings = () => {
 								) : (
 									<Check className="h-4 w-4" />
 								)}
-								Save
+								{t("Save")}
 							</button>
 						</div>
 						{settings?.ai_api_key_set && !settings?.ai_api_key_invalid && (
 							<p className="mt-1 text-xs text-green-600 dark:text-green-400">
-								API key is configured
+								{t("API key is configured")}
 							</p>
 						)}
 						{settings?.ai_api_key_invalid && (
 							<p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-								API key needs to be re-entered (encryption key changed)
+								{t("API key needs to be re-entered (encryption key changed)")}
 							</p>
 						)}
 						<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-							Get your API key from:{" "}
+							{t("Get your API key from:")}{" "}
 							{settings?.ai_provider === "openrouter" && (
 								<a
 									href="https://openrouter.ai/keys"
@@ -351,7 +359,7 @@ const AiSettings = () => {
 							) : (
 								<RefreshCw className="h-4 w-4" />
 							)}
-							Test Connection
+							{t("Test Connection")}
 						</button>
 						{testResult && (
 							<div
@@ -379,35 +387,35 @@ const AiSettings = () => {
 					<Sparkles className="h-5 w-5 text-primary-600 dark:text-primary-400 mt-0.5" />
 					<div>
 						<h3 className="font-medium text-secondary-900 dark:text-white mb-2">
-							AI Terminal Features
+							{t("AI Terminal Features")}
 						</h3>
 						<ul className="text-sm text-secondary-600 dark:text-white space-y-1">
 							<li className="flex items-center gap-2">
 								<Check className="h-4 w-4 text-green-500" />
 								<span>
-									<strong>AI Assistant Panel</strong> - Ask questions about
-									terminal output and get help
+									<strong>{t("AI Assistant Panel")}</strong>{" "}
+									{t("- Ask questions about terminal output and get help")}
 								</span>
 							</li>
 							<li className="flex items-center gap-2">
 								<Check className="h-4 w-4 text-green-500" />
 								<span>
-									<strong>Command Completion</strong> - Get AI-powered command
-									suggestions as you type
+									<strong>{t("Command Completion")}</strong>{" "}
+									{t("- Get AI-powered command suggestions as you type")}
 								</span>
 							</li>
 							<li className="flex items-center gap-2">
 								<Check className="h-4 w-4 text-green-500" />
 								<span>
-									<strong>Error Diagnosis</strong> - Let AI explain errors and
-									suggest solutions
+									<strong>{t("Error Diagnosis")}</strong>{" "}
+									{t("- Let AI explain errors and suggest solutions")}
 								</span>
 							</li>
 							<li className="flex items-center gap-2">
 								<Check className="h-4 w-4 text-green-500" />
 								<span>
-									<strong>Context Aware</strong> - AI uses terminal history for
-									better suggestions
+									<strong>{t("Context Aware")}</strong>{" "}
+									{t("- AI uses terminal history for better suggestions")}
 								</span>
 							</li>
 						</ul>

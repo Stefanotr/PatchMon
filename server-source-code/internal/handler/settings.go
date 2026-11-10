@@ -571,7 +571,7 @@ func buildEnvironmentVariables(cfg *config.Config, resolved *config.ResolvedConf
 		{Category: "Server performance", Key: "DB_TRANSACTION_LONG_TIMEOUT", EffectiveValue: strconv.Itoa(resolved.DBTransactionLongTimeout), EffectiveSource: source(env("DB_TRANSACTION_LONG_TIMEOUT"), dbInt(s.DBTransactionLongTimeout), "60000"), EnvValue: env("DB_TRANSACTION_LONG_TIMEOUT"), DBValue: dbInt(s.DBTransactionLongTimeout), DefaultValue: "60000", Editable: true, Conflict: env("DB_TRANSACTION_LONG_TIMEOUT") != "" && s.DBTransactionLongTimeout != nil, Description: "Long transaction timeout (ms)"},
 		{Category: "Patching", Key: "PATCH_RUN_STALL_TIMEOUT_MIN", EffectiveValue: strconv.Itoa(resolved.PatchRunStallTimeoutMin), EffectiveSource: source(env("PATCH_RUN_STALL_TIMEOUT_MIN"), dbInt(s.PatchRunStallTimeoutMinutes), "30"), EnvValue: env("PATCH_RUN_STALL_TIMEOUT_MIN"), DBValue: dbInt(s.PatchRunStallTimeoutMinutes), DefaultValue: "30", Editable: true, Conflict: env("PATCH_RUN_STALL_TIMEOUT_MIN") != "" && s.PatchRunStallTimeoutMinutes != nil, Description: "Minutes before stuck running patches are auto-marked as timed_out. Min 5. Picked up on the next cleanup sweep (every 10 min)."},
 		{Category: "Reporting", Key: "AGENT_REPORTS_RETENTION_DAYS", EffectiveValue: strconv.Itoa(resolved.AgentReportsRetentionDays), EffectiveSource: source(env("AGENT_REPORTS_RETENTION_DAYS"), dbInt(s.AgentReportsRetentionDays), "30"), EnvValue: env("AGENT_REPORTS_RETENTION_DAYS"), DBValue: dbInt(s.AgentReportsRetentionDays), DefaultValue: "30", Editable: true, Conflict: env("AGENT_REPORTS_RETENTION_DAYS") != "" && s.AgentReportsRetentionDays != nil, Description: "Days to retain Agent Activity rows (ping, full, partial, docker, compliance) before the daily cleanup deletes them. Min 7, max 365. Picked up on the next cleanup sweep (02:00 daily)."},
-		{Category: "Authentication", Key: "JWT_EXPIRES_IN", EffectiveValue: resolved.JwtExpiresIn, EffectiveSource: source(env("JWT_EXPIRES_IN"), dbStr(s.JwtExpiresIn), "1h"), EnvValue: env("JWT_EXPIRES_IN"), DBValue: dbStr(s.JwtExpiresIn), DefaultValue: "1h", Editable: true, Conflict: env("JWT_EXPIRES_IN") != "" && s.JwtExpiresIn != nil && *s.JwtExpiresIn != "", Description: "JWT access token expiration (e.g. 1h, 30m)"},
+		{Category: "Authentication", Key: "JWT_EXPIRES_IN", EffectiveValue: config.EffectiveJWTExpiresIn(resolved.JwtExpiresIn), EffectiveSource: jwtExpiresInSource(resolved.JwtExpiresIn, env("JWT_EXPIRES_IN"), dbStr(s.JwtExpiresIn)), EnvValue: env("JWT_EXPIRES_IN"), DBValue: dbStr(s.JwtExpiresIn), DefaultValue: "1h", Editable: true, Conflict: env("JWT_EXPIRES_IN") != "" && s.JwtExpiresIn != nil && *s.JwtExpiresIn != "", Description: "JWT access token expiration (e.g. 1h, 30m)"},
 		{Category: "Authentication", Key: "AUTH_BROWSER_SESSION_COOKIES", EffectiveValue: boolStr(resolved.AuthBrowserSessionCookies), EffectiveSource: source(env("AUTH_BROWSER_SESSION_COOKIES"), dbBool(s.AuthBrowserSessionCookies), "false"), EnvValue: env("AUTH_BROWSER_SESSION_COOKIES"), DBValue: dbBool(s.AuthBrowserSessionCookies), DefaultValue: "false", Editable: true, Conflict: env("AUTH_BROWSER_SESSION_COOKIES") != "" && s.AuthBrowserSessionCookies != nil, Description: "Use browser session cookies for auth (cleared when the browser session ends; not persisted across browser restarts)"},
 		{Category: "Authentication", Key: "MAX_TFA_ATTEMPTS", EffectiveValue: strconv.Itoa(resolved.MaxTfaAttempts), EffectiveSource: source(env("MAX_TFA_ATTEMPTS"), dbInt(s.MaxTfaAttempts), "5"), EnvValue: env("MAX_TFA_ATTEMPTS"), DBValue: dbInt(s.MaxTfaAttempts), DefaultValue: "5", Editable: true, Conflict: env("MAX_TFA_ATTEMPTS") != "" && s.MaxTfaAttempts != nil, Description: "Failed TFA code attempts before lockout"},
 		{Category: "Authentication", Key: "TFA_LOCKOUT_DURATION_MINUTES", EffectiveValue: strconv.Itoa(resolved.TfaLockoutDurationMin), EffectiveSource: source(env("TFA_LOCKOUT_DURATION_MINUTES"), dbInt(s.TfaLockoutDurationMinutes), "30"), EnvValue: env("TFA_LOCKOUT_DURATION_MINUTES"), DBValue: dbInt(s.TfaLockoutDurationMinutes), DefaultValue: "30", Editable: true, Conflict: env("TFA_LOCKOUT_DURATION_MINUTES") != "" && s.TfaLockoutDurationMinutes != nil, Description: "Minutes locked out after exceeding TFA attempts"},
@@ -626,6 +626,13 @@ func maskEnvIfSet(key string) string {
 		return "Set"
 	}
 	return ""
+}
+
+func jwtExpiresInSource(resolved, envVal, dbVal string) string {
+	if _, ok := config.ParseJWTExpiresIn(resolved); !ok {
+		return "default"
+	}
+	return source(envVal, dbVal, config.DefaultJWTExpiresInSetting)
 }
 
 func source(envVal, dbVal, defaultVal string) string {
@@ -686,6 +693,13 @@ func (h *SettingsHandler) UpdateEnvironmentConfig(w http.ResponseWriter, r *http
 			return
 		}
 		if err := middleware.ValidateOrigins(v); err != nil {
+			Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if key == "JWT_EXPIRES_IN" {
+		v, _ := req.Value.(string)
+		if err := config.ValidateJWTExpiresIn(v); err != nil {
 			Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -807,6 +821,7 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	oldComplianceScanInterval := s.ComplianceScanInterval
 	oldPackageCacheRefreshMode := s.PackageCacheRefreshMode
 	oldPackageCacheRefreshMaxAge := s.PackageCacheRefreshMaxAge
+	oldAptDisableRetries := s.AptDisableRetries
 	before := *s
 	if err := applySettingsUpdate(s, req, h.enc); err != nil {
 		Error(w, http.StatusBadRequest, err.Error())
@@ -827,13 +842,15 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	intervalChanged := s.UpdateInterval != oldInterval && s.UpdateInterval > 0
 	complianceIntervalChanged := s.ComplianceScanInterval != oldComplianceScanInterval && s.ComplianceScanInterval > 0
 	cacheRefreshChanged := s.PackageCacheRefreshMode != oldPackageCacheRefreshMode || s.PackageCacheRefreshMaxAge != oldPackageCacheRefreshMaxAge
-	if h.registry != nil && (intervalChanged || complianceIntervalChanged || cacheRefreshChanged) {
+	aptDisableRetriesChanged := s.AptDisableRetries != oldAptDisableRetries
+	if h.registry != nil && (intervalChanged || complianceIntervalChanged || cacheRefreshChanged || aptDisableRetriesChanged) {
 		msg := map[string]interface{}{
 			"type":                          "settings_update",
 			"update_interval":               s.UpdateInterval,
 			"compliance_scan_interval":      s.ComplianceScanInterval,
 			"package_cache_refresh_mode":    s.PackageCacheRefreshMode,
 			"package_cache_refresh_max_age": s.PackageCacheRefreshMaxAge,
+			"apt_disable_retries":           s.AptDisableRetries,
 		}
 		pushed := 0
 		// Scoped to the caller's context: the registry pools every context this
@@ -867,8 +884,9 @@ func settingsToResponse(s *models.Settings, enc *util.Encryption) map[string]int
 		"update_interval": s.UpdateInterval, "auto_update": s.AutoUpdate,
 		"default_compliance_mode": s.DefaultComplianceMode, "compliance_scan_interval": s.ComplianceScanInterval,
 		"package_cache_refresh_mode": s.PackageCacheRefreshMode, "package_cache_refresh_max_age": s.PackageCacheRefreshMaxAge,
-		"github_repo_url": s.GithubRepoURL,
-		"ssh_key_path":    s.SSHKeyPath, "repository_type": s.RepositoryType,
+		"apt_disable_retries": s.AptDisableRetries,
+		"github_repo_url":     s.GithubRepoURL,
+		"ssh_key_path":        s.SSHKeyPath, "repository_type": s.RepositoryType,
 		"last_update_check": s.LastUpdateCheck, "latest_version": s.LatestVersion,
 		"update_available": s.UpdateAvailable,
 		"signup_enabled":   s.SignupEnabled, "default_user_role": s.DefaultUserRole,
@@ -1062,6 +1080,9 @@ func applySettingsUpdate(s *models.Settings, req map[string]interface{}, enc *ut
 		if val >= 1 && val <= 1440 {
 			s.PackageCacheRefreshMaxAge = val
 		}
+	}
+	if v, ok := getReqBool(req, "apt_disable_retries", "aptDisableRetries"); ok {
+		s.AptDisableRetries = v
 	}
 	if v, ok := getReqString(req, "github_repo_url", "githubRepoUrl"); ok {
 		s.GithubRepoURL = v

@@ -1,9 +1,11 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 const defaultClassName =
 	"w-full rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white px-3 py-2";
 
 export function TimezoneSelect({ value, onChange, className }) {
+	const { t } = useTranslation();
 	const groups = useMemo(() => {
 		const timezones = Intl.supportedValuesOf("timeZone");
 		const grouped = {};
@@ -23,7 +25,7 @@ export function TimezoneSelect({ value, onChange, className }) {
 			onChange={onChange}
 			className={className ?? defaultClassName}
 		>
-			<option value="UTC">UTC</option>
+			<option value="UTC">{t("UTC")}</option>
 			{groups.map(([region, timezones]) => (
 				<optgroup key={region} label={region}>
 					{timezones.map((tz) => (

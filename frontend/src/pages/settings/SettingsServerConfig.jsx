@@ -1,5 +1,6 @@
 import { Code, Image, Server } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import BrandingTab from "../../components/settings/BrandingTab";
 import ProtocolUrlTab from "../../components/settings/ProtocolUrlTab";
@@ -7,6 +8,7 @@ import VersionUpdateTab from "../../components/settings/VersionUpdateTab";
 import { useSettings } from "../../contexts/SettingsContext";
 
 const SettingsServerConfig = () => {
+	const { t } = useTranslation();
 	const location = useLocation();
 	const navigate = useNavigate();
 	const { settings: publicSettings } = useSettings();
@@ -17,27 +19,27 @@ const SettingsServerConfig = () => {
 		if (!isAdminMode) {
 			tabs.push({
 				id: "protocol",
-				name: "Server URL",
+				name: t("Server URL"),
 				icon: Server,
 				href: "/settings/server-url",
 			});
 		}
 		tabs.push({
 			id: "branding",
-			name: "Branding",
+			name: t("Branding"),
 			icon: Image,
 			href: "/settings/branding",
 		});
 		if (!isAdminMode) {
 			tabs.push({
 				id: "version",
-				name: "Server Version",
+				name: t("Server Version"),
 				icon: Code,
 				href: "/settings/server-version",
 			});
 		}
 		return tabs;
-	}, [isAdminMode]);
+	}, [isAdminMode, t]);
 
 	// Determine initial tab from route, falling back to first available tab.
 	const resolveTab = useCallback(

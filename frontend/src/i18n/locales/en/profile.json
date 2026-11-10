@@ -1,0 +1,8 @@
+{
+	"{{count}} day ago_one": "{{count}} day ago",
+	"{{count}} day ago_other": "{{count}} days ago",
+	"{{count}} hour ago_one": "{{count}} hour ago",
+	"{{count}} hour ago_other": "{{count}} hours ago",
+	"{{count}} minute ago_one": "{{count}} minute ago",
+	"{{count}} minute ago_other": "{{count}} minutes ago"
+}

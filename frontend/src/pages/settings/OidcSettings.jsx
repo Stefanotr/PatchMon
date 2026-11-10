@@ -11,6 +11,7 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { useToast } from "../../contexts/ToastContext";
 import { oidcAPI, permissionsAPI } from "../../utils/api";
 
@@ -64,6 +65,7 @@ const ToggleCard = ({ label, description, checked, onChange, disabled }) => (
 );
 
 const OidcSettings = () => {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const toast = useToast();
 	const [showSecret, setShowSecret] = useState(false);
@@ -161,10 +163,12 @@ const OidcSettings = () => {
 			queryClient.invalidateQueries({ queryKey: ["oidcSettings"] });
 			setSecretInput("");
 			setIsDirty(false);
-			toast.success("OIDC settings saved");
+			toast.success(t("OIDC settings saved"));
 		},
 		onError: (err) => {
-			toast.error(err.response?.data?.error || "Failed to save OIDC settings");
+			toast.error(
+				err.response?.data?.error || t("Failed to save OIDC settings"),
+			);
 		},
 	});
 
@@ -175,10 +179,10 @@ const OidcSettings = () => {
 			queryClient.invalidateQueries({ queryKey: ["oidcSettings"] });
 			// The imported values are meant to land in the form, so drop the guard.
 			setIsDirty(false);
-			toast.success("OIDC settings imported from .env");
+			toast.success(t("OIDC settings imported from .env"));
 		},
 		onError: (err) => {
-			toast.error(err.response?.data?.error || "Failed to import from .env");
+			toast.error(err.response?.data?.error || t("Failed to import from .env"));
 		},
 	});
 
@@ -256,10 +260,10 @@ const OidcSettings = () => {
 				</div>
 				<div>
 					<h1 className="text-xl font-semibold text-secondary-900 dark:text-white">
-						OIDC / SSO
+						{t("OIDC / SSO")}
 					</h1>
 					<p className="text-sm text-secondary-500 dark:text-white">
-						Allow users to sign in with OpenID Connect (SSO)
+						{t("Allow users to sign in with OpenID Connect (SSO)")}
 					</p>
 				</div>
 			</div>
@@ -271,17 +275,17 @@ const OidcSettings = () => {
 						<AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
 						<div className="flex-1 min-w-0">
 							<h3 className="font-medium text-amber-800 dark:text-amber-200">
-								OIDC is configured via .env
+								{t("OIDC is configured via .env")}
 							</h3>
 							<p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
 								<strong>
-									Every OIDC setting below is read from the environment, so
-									changes saved here take no effect yet.
+									{t(
+										"Every OIDC setting below is read from the environment, so changes saved here take no effect yet.",
+									)}
 								</strong>{" "}
-								That includes the toggles. They are still saved, and they start
-								applying the moment the OIDC_* variables are removed from .env,
-								so check them before you do. Import these settings and save to
-								database to manage from the UI.
+								{t(
+									"That includes the toggles. They are still saved, and they start applying the moment the OIDC_* variables are removed from .env, so check them before you do. Import these settings and save to database to manage from the UI.",
+								)}
 							</p>
 							{settings?.env_preview &&
 								Object.keys(settings.env_preview).length > 0 && (
@@ -303,10 +307,10 @@ const OidcSettings = () => {
 								{importMutation.isPending ? (
 									<>
 										<Loader2 className="inline h-4 w-4 animate-spin mr-2" />
-										Importing...
+										{t("Importing...")}
 									</>
 								) : (
-									"Load from .env"
+									t("Load from .env")
 								)}
 							</button>
 						</div>
@@ -317,21 +321,21 @@ const OidcSettings = () => {
 			{/* Toggles - all configurable options at top */}
 			<div className="bg-secondary-50 dark:bg-secondary-900/50 rounded-lg p-4 border border-secondary-200 dark:border-secondary-700">
 				<h3 className="font-medium text-secondary-900 dark:text-white mb-4">
-					Configuration
+					{t("Configuration")}
 				</h3>
 				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
 					{/* Enable OIDC */}
 					<ToggleCard
-						label="Enable OIDC / SSO"
-						description="Allow users to log in with IdP"
+						label={t("Enable OIDC / SSO")}
+						description={t("Allow users to log in with IdP")}
 						checked={settings?.oidc_enabled ?? false}
 						onChange={handleToggleEnabled}
 						disabled={updateMutation.isPending}
 					/>
 					{/* Enforce HTTPS */}
 					<ToggleCard
-						label="Enforce HTTPS"
-						description="Require HTTPS for OIDC (recommended)"
+						label={t("Enforce HTTPS")}
+						description={t("Require HTTPS for OIDC (recommended)")}
 						checked={form.oidc_enforce_https}
 						onChange={() =>
 							handleFieldChange("oidc_enforce_https", !form.oidc_enforce_https)
@@ -340,8 +344,8 @@ const OidcSettings = () => {
 					/>
 					{/* Sync roles */}
 					<ToggleCard
-						label="Sync roles from IdP"
-						description="Map IdP groups to PatchMon roles"
+						label={t("Sync roles from IdP")}
+						description={t("Map IdP groups to PatchMon roles")}
 						checked={form.oidc_sync_roles}
 						onChange={() =>
 							handleFieldChange("oidc_sync_roles", !form.oidc_sync_roles)
@@ -350,8 +354,8 @@ const OidcSettings = () => {
 					/>
 					{/* Disable local auth */}
 					<ToggleCard
-						label="Disable local auth"
-						description="Hide username/password when OIDC enabled"
+						label={t("Disable local auth")}
+						description={t("Hide username/password when OIDC enabled")}
 						checked={form.oidc_disable_local_auth}
 						onChange={() =>
 							handleFieldChange(
@@ -363,17 +367,17 @@ const OidcSettings = () => {
 					/>
 					{/* Password login while the IdP is unreachable */}
 					<ToggleCard
-						label="Superadmin password login if SSO is down"
+						label={t("Superadmin password login if SSO is down")}
 						description={
 							<>
-								Superadmins with 2FA, while local auth is disabled.{" "}
+								{t("Superadmins with 2FA, while local auth is disabled.")}{" "}
 								<a
 									href={SSO_FALLBACK_DOCS_URL}
 									target="_blank"
 									rel="noopener noreferrer"
 									className="text-primary-600 dark:text-primary-400 hover:underline"
 								>
-									Learn more
+									{t("How SSO fallback works")}
 								</a>
 							</>
 						}
@@ -388,8 +392,8 @@ const OidcSettings = () => {
 					/>
 					{/* Auto-create users */}
 					<ToggleCard
-						label="Auto-create users"
-						description="Create users on first OIDC login"
+						label={t("Auto-create users")}
+						description={t("Create users on first OIDC login")}
 						checked={form.oidc_auto_create_users}
 						onChange={() =>
 							handleFieldChange(
@@ -401,8 +405,8 @@ const OidcSettings = () => {
 					/>
 					{/* Trust unverified email */}
 					<ToggleCard
-						label="Trust unverified email"
-						description="Only if your IdP cannot confirm addresses"
+						label={t("Trust unverified email")}
+						description={t("Only if your IdP cannot confirm addresses")}
 						checked={form.oidc_trust_unverified_email}
 						onChange={() =>
 							handleFieldChange(
@@ -416,28 +420,27 @@ const OidcSettings = () => {
 				{form.oidc_trust_unverified_email && (
 					<div className="mt-4 p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
 						<p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-							Trust unverified email is on. Anyone who can set their own email
-							address at your identity provider can sign in as an existing
-							PatchMon user. Only leave this on if you control who can change
-							addresses in your directory.
+							{t(
+								"Trust unverified email is on. Anyone who can set their own email address at your identity provider can sign in as an existing PatchMon user. Only leave this on if you control who can change addresses in your directory.",
+							)}
 						</p>
 					</div>
 				)}
 				{form.oidc_disable_local_auth && form.oidc_local_auth_fallback && (
 					<div className="mt-4 p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
 						<p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-							Superadmins with two-factor authentication can sign in with a
-							password whenever PatchMon cannot reach your identity provider.
-							Anyone who can cut PatchMon off from your provider, and holds a
-							superadmin password and second factor, can use that to get in.
+							{t(
+								"Superadmins with two-factor authentication can sign in with a password whenever PatchMon cannot reach your identity provider. Anyone who can cut PatchMon off from your provider, and holds a superadmin password and second factor, can use that to get in.",
+							)}
 						</p>
 					</div>
 				)}
 				{!form.oidc_enforce_https && (
 					<div className="mt-4 p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
 						<p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-							Development only - Enforce HTTPS is disabled. Only use for local
-							testing.
+							{t(
+								"Development only - Enforce HTTPS is disabled. Only use for local testing.",
+							)}
 						</p>
 					</div>
 				)}
@@ -446,7 +449,7 @@ const OidcSettings = () => {
 			{/* OAuth2 Configuration */}
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-4 border border-secondary-200 dark:border-secondary-700">
 				<h3 className="font-medium text-secondary-900 dark:text-white mb-4">
-					OAuth2 Configuration
+					{t("OAuth2 Configuration")}
 				</h3>
 
 				<div className="space-y-4">
@@ -456,7 +459,7 @@ const OidcSettings = () => {
 							htmlFor="oidc-issuer-url"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Issuer URL
+							{t("Issuer URL")}
 						</label>
 						<input
 							id="oidc-issuer-url"
@@ -477,7 +480,7 @@ const OidcSettings = () => {
 							htmlFor="oidc-client-id"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Client ID
+							{t("Client ID")}
 						</label>
 						<input
 							id="oidc-client-id"
@@ -487,7 +490,7 @@ const OidcSettings = () => {
 								handleFieldChange("oidc_client_id", e.target.value)
 							}
 							disabled={updateMutation.isPending}
-							placeholder="Enter your OIDC Client ID"
+							placeholder={t("Enter your OIDC Client ID")}
 							className="w-full px-3 py-2 bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-secondary-400"
 						/>
 					</div>
@@ -498,15 +501,15 @@ const OidcSettings = () => {
 							htmlFor="oidc-client-secret"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Client Secret
+							{t("Client Secret")}
 							{settings?.oidc_client_secret_set ? (
 								<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
 									<Check className="h-3 w-3 mr-1" />
-									Set
+									{t("Set")}
 								</span>
 							) : (
 								<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-white">
-									Not set
+									{t("Not set")}
 								</span>
 							)}
 						</label>
@@ -520,8 +523,8 @@ const OidcSettings = () => {
 									disabled={updateMutation.isPending}
 									placeholder={
 										settings?.oidc_client_secret_set
-											? "Enter new secret to replace"
-											: "Enter your OIDC Client Secret"
+											? t("Enter new secret to replace")
+											: t("Enter your OIDC Client Secret")
 									}
 									className="w-full px-3 py-2 pr-10 bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-secondary-400"
 								/>
@@ -543,7 +546,7 @@ const OidcSettings = () => {
 								disabled={!secretInput.trim() || updateMutation.isPending}
 								className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Save
+								{t("Save")}
 							</button>
 							{settings?.oidc_client_secret_set && (
 								<button
@@ -561,7 +564,7 @@ const OidcSettings = () => {
 					{/* Callback URL */}
 					<div>
 						<label className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-							Callback URL
+							{t("Callback URL")}
 						</label>
 						<div className="px-3 py-2 bg-secondary-50 dark:bg-secondary-900 border border-secondary-200 dark:border-secondary-600 rounded-md">
 							<code className="text-sm text-secondary-700 dark:text-white break-all">
@@ -569,7 +572,7 @@ const OidcSettings = () => {
 							</code>
 						</div>
 						<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-							Add this URL to your IdP&apos;s allowed redirect URIs
+							{t("Add this URL to your IdP's allowed redirect URIs")}
 						</p>
 					</div>
 
@@ -579,7 +582,7 @@ const OidcSettings = () => {
 							htmlFor="oidc-redirect-uri"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Redirect URI (optional override)
+							{t("Redirect URI (optional override)")}
 						</label>
 						<input
 							id="oidc-redirect-uri"
@@ -589,7 +592,7 @@ const OidcSettings = () => {
 								handleFieldChange("oidc_redirect_uri", e.target.value)
 							}
 							disabled={updateMutation.isPending}
-							placeholder="Leave empty to use callback URL above"
+							placeholder={t("Leave empty to use callback URL above")}
 							className="w-full px-3 py-2 bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-secondary-400"
 						/>
 					</div>
@@ -600,7 +603,7 @@ const OidcSettings = () => {
 							htmlFor="oidc-scopes"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Scopes
+							{t("Scopes")}
 						</label>
 						<input
 							id="oidc-scopes"
@@ -619,7 +622,7 @@ const OidcSettings = () => {
 							htmlFor="oidc-button-text"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Button Text
+							{t("Button Text")}
 						</label>
 						<input
 							id="oidc-button-text"
@@ -629,7 +632,7 @@ const OidcSettings = () => {
 								handleFieldChange("oidc_button_text", e.target.value)
 							}
 							disabled={updateMutation.isPending}
-							placeholder="Login with SSO"
+							placeholder={t("Login with SSO")}
 							className="w-full px-3 py-2 bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-secondary-400"
 						/>
 					</div>
@@ -645,10 +648,10 @@ const OidcSettings = () => {
 							{updateMutation.isPending ? (
 								<>
 									<Loader2 className="inline h-4 w-4 animate-spin mr-2" />
-									Applying...
+									{t("Applying...")}
 								</>
 							) : (
-								"Apply"
+								t("Apply")
 							)}
 						</button>
 					</div>
@@ -665,7 +668,7 @@ const OidcSettings = () => {
 					<div className="flex items-center gap-2">
 						<KeyRound className="h-5 w-5 text-primary-500" />
 						<h3 className="font-medium text-secondary-900 dark:text-white">
-							Role Mapping
+							{t("Role Mapping")}
 						</h3>
 					</div>
 					{showRoleMapping ? (
@@ -678,19 +681,19 @@ const OidcSettings = () => {
 				{showRoleMapping && (
 					<div className="px-4 pb-4 border-t border-secondary-200 dark:border-secondary-700 pt-4">
 						<p className="text-sm text-secondary-500 dark:text-secondary-400 mb-4">
-							Map IdP group names to PatchMon roles. Users are assigned the
-							highest matching role. Default role is used when no group matches.
+							{t(
+								"Map IdP group names to PatchMon roles. Users are assigned the highest matching role. Default role is used when no group matches.",
+							)}
 						</p>
 						{form.oidc_sync_roles && !form.oidc_superadmin_group?.trim() && (
 							<div className="mb-4 p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
 								<p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-									Superadmin group is not configured
+									{t("Superadmin group is not configured")}
 								</p>
 								<p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-									Role sync is enabled but no Superadmin IdP group is set. OIDC
-									will not grant superadmin to any user, and existing
-									superadmins will not be demoted on login. Set the Superadmin
-									group below to manage the superadmin role via OIDC.
+									{t(
+										"Role sync is enabled but no Superadmin IdP group is set. OIDC will not grant superadmin to any user, and existing superadmins will not be demoted on login. Set the Superadmin group below to manage the superadmin role via OIDC.",
+									)}
 								</p>
 							</div>
 						)}
@@ -699,17 +702,17 @@ const OidcSettings = () => {
 								<thead className="bg-secondary-50 dark:bg-secondary-700">
 									<tr>
 										<th className="px-4 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
-											PatchMon Role
+											{t("PatchMon Role")}
 										</th>
 										<th className="px-4 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
-											OIDC Mapped Role (IdP Group Name)
+											{t("OIDC Mapped Role (IdP Group Name)")}
 										</th>
 									</tr>
 								</thead>
 								<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
 									<tr className="hover:bg-secondary-50 dark:hover:bg-secondary-700/50">
 										<td className="px-4 py-3 text-sm font-medium text-secondary-900 dark:text-white">
-											Default (fallback)
+											{t("Default (fallback)")}
 										</td>
 										<td className="px-4 py-3">
 											<input
@@ -724,7 +727,7 @@ const OidcSettings = () => {
 												className="w-full max-w-xs px-3 py-2 text-sm bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
 											/>
 											<p className="text-xs text-secondary-500 mt-1">
-												Role when no IdP group matches
+												{t("Role when no IdP group matches")}
 											</p>
 										</td>
 									</tr>
@@ -756,7 +759,7 @@ const OidcSettings = () => {
 														/>
 													) : (
 														<span className="text-sm text-secondary-400 dark:text-secondary-300 italic">
-															- Not configurable via OIDC
+															{t("- Not configurable via OIDC")}
 														</span>
 													)}
 												</td>
@@ -780,7 +783,7 @@ const OidcSettings = () => {
 					<div className="flex items-center gap-2">
 						<AlertTriangle className="h-5 w-5 text-amber-500" />
 						<h3 className="font-medium text-secondary-900 dark:text-white">
-							Setup Instructions
+							{t("Setup Instructions")}
 						</h3>
 					</div>
 					{showSetupGuide ? (
@@ -798,8 +801,9 @@ const OidcSettings = () => {
 									1
 								</span>
 								<span>
-									Configure your IdP (Keycloak, Okta, Auth0, etc.) with a new
-									OAuth2 client
+									{t(
+										"Configure your IdP (Keycloak, Okta, Auth0, etc.) with a new OAuth2 client",
+									)}
 								</span>
 							</li>
 							<li className="flex gap-3">
@@ -807,7 +811,7 @@ const OidcSettings = () => {
 									2
 								</span>
 								<span>
-									Add the callback URL to allowed redirect URIs:{" "}
+									{t("Add the callback URL to allowed redirect URIs:")}{" "}
 									<code className="bg-secondary-100 dark:bg-secondary-700 px-1 rounded">
 										{settings?.callback_url ||
 											"{server_url}/api/v1/auth/oidc/callback"}
@@ -819,11 +823,14 @@ const OidcSettings = () => {
 									3
 								</span>
 								<span>
-									Request scopes:{" "}
-									<code className="bg-secondary-100 dark:bg-secondary-700 px-1 rounded">
-										openid email profile groups
-									</code>{" "}
-									(or equivalent for your IdP)
+									<Trans
+										i18nKey="Request scopes: <code>openid email profile groups</code> (or equivalent for your IdP)"
+										components={{
+											code: (
+												<code className="bg-secondary-100 dark:bg-secondary-700 px-1 rounded" />
+											),
+										}}
+									/>
 								</span>
 							</li>
 							<li className="flex gap-3">
@@ -831,14 +838,14 @@ const OidcSettings = () => {
 									4
 								</span>
 								<span>
-									<strong>Authentik users:</strong> Create a Scope Mapping to
-									add groups to the token. Go to Customization &gt; Property
-									Mappings &gt; Create &gt; Scope Mapping. Use scope
-									&quot;profile&quot; and expression:{" "}
+									<strong>{t("Authentik users:")}</strong>{" "}
+									{t(
+										'Create a Scope Mapping to add groups to the token. Go to Customization > Property Mappings > Create > Scope Mapping. Use scope "profile" and expression:',
+									)}{" "}
 									<code className="bg-secondary-100 dark:bg-secondary-700 px-1 rounded block mt-1">
 										{`return {"groups": [str(g.name) for g in request.user.ak_groups.all()]}`}
 									</code>
-									Assign this mapping to your OAuth2 provider.
+									{t("Assign this mapping to your OAuth2 provider.")}
 								</span>
 							</li>
 							<li className="flex gap-3">
@@ -846,8 +853,9 @@ const OidcSettings = () => {
 									5
 								</span>
 								<span>
-									Copy Issuer URL, Client ID, and Client Secret into the fields
-									above
+									{t(
+										"Copy Issuer URL, Client ID, and Client Secret into the fields above",
+									)}
 								</span>
 							</li>
 						</ol>

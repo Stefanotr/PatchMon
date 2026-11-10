@@ -282,5 +282,6 @@
 	"Restart_action": "Redémarrer",
 	"Install pending Windows updates and winget app upgrades on this host": "Installer les mises à jour Windows en attente et les mises à niveau d'applications winget sur cet hôte",
 	"Manage integrations": "Gérer les intégrations",
-	"Config Version": "Version de la configuration"
+	"Config Version": "Version de la configuration",
+	"Last scan did not complete": "Le dernier scan ne s'est pas terminé"
 }

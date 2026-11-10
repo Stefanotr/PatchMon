@@ -228,7 +228,7 @@ type Querier interface {
 	DeletePatchRun(ctx context.Context, id string) error
 	DeletePatchRunItems(ctx context.Context, patchRunID string) error
 	DeletePendingConfig(ctx context.Context, hostID string) error
-	DeletePreviousCompletedScansByHostAndProfile(ctx context.Context, arg DeletePreviousCompletedScansByHostAndProfileParams) error
+	DeletePreviousFinishedScansByHostAndProfile(ctx context.Context, arg DeletePreviousFinishedScansByHostAndProfileParams) error
 	DeleteRepositoriesByIDs(ctx context.Context, dollar_1 []string) error
 	DeleteRepository(ctx context.Context, id string) error
 	DeleteRolePermissions(ctx context.Context, role string) error
@@ -472,6 +472,7 @@ type Querier interface {
 	GetVolumesByHostID(ctx context.Context, hostID string) ([]DockerVolume, error)
 	GlobalSearch(ctx context.Context, search string) ([]GlobalSearchRow, error)
 	HostHasActivePatchRun(ctx context.Context, hostID string) (bool, error)
+	HostHasJobHistory(ctx context.Context, arg HostHasJobHistoryParams) (bool, error)
 	HostInHostGroup(ctx context.Context, arg HostInHostGroupParams) (bool, error)
 	IncrementAutoEnrollmentHostsCreated(ctx context.Context, id string) error
 	InsertAlertHistory(ctx context.Context, arg InsertAlertHistoryParams) (AlertHistory, error)
@@ -665,6 +666,7 @@ type Querier interface {
 	UpdateHostNotes(ctx context.Context, arg UpdateHostNotesParams) error
 	UpdateHostPing(ctx context.Context, id string) error
 	UpdateHostPrimaryInterface(ctx context.Context, arg UpdateHostPrimaryInterfaceParams) error
+	// Task IDs recur across runs, so only the newest row for a job_id is the current run.
 	UpdateJobHistoryCompleted(ctx context.Context, jobID string) error
 	UpdateJobHistoryDelayed(ctx context.Context, jobID string) error
 	UpdateJobHistoryFailed(ctx context.Context, arg UpdateJobHistoryFailedParams) error

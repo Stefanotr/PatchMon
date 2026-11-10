@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { settingsAPI } from "../utils/api";
 
 const OPERATOR_GUIDE_URL = "https://patchmon.net/docs/patchmon-operator-guide";
 
 const ServerUrlCorsWarning = ({ enabled = true }) => {
+	const { t } = useTranslation();
 	const { data } = useQuery({
 		queryKey: ["serverUrlCorsCheck"],
 		queryFn: () => settingsAPI.checkServerUrlCors().then((res) => res.data),
@@ -12,12 +14,16 @@ const ServerUrlCorsWarning = ({ enabled = true }) => {
 		retry: false,
 	});
 
-	if (!data || data.allowed !== false) return null;
+	if (data?.allowed !== false) return null;
 
 	const message =
 		data.reason === "server_url_invalid"
-			? "The saved Server URL is not a valid URL, so agents cannot use it to connect. Check its protocol, host and port."
-			: "The hostname in this Server URL is not listed in CORS_ORIGIN, so agents that use it will be rejected. Add it to CORS_ORIGIN or change the Server URL.";
+			? t(
+					"The saved Server URL is not a valid URL, so agents cannot use it to connect. Check its protocol, host and port.",
+				)
+			: t(
+					"The hostname in this Server URL is not listed in CORS_ORIGIN, so agents that use it will be rejected. Add it to CORS_ORIGIN or change the Server URL.",
+				);
 
 	return (
 		<div
@@ -28,7 +34,7 @@ const ServerUrlCorsWarning = ({ enabled = true }) => {
 				<AlertTriangle className="h-5 w-5 flex-shrink-0 text-warning-500 dark:text-warning-400" />
 				<div className="ml-3">
 					<h3 className="text-sm font-medium text-warning-800 dark:text-warning-200">
-						Agents may fail to install
+						{t("Agents may fail to install")}
 					</h3>
 					<p className="mt-1 text-sm text-warning-700 dark:text-warning-300">
 						{message}
@@ -39,7 +45,7 @@ const ServerUrlCorsWarning = ({ enabled = true }) => {
 						rel="noopener noreferrer"
 						className="mt-2 inline-block text-sm font-medium text-warning-800 dark:text-warning-200 underline"
 					>
-						Operator guide
+						{t("Operator guide")}
 					</a>
 				</div>
 			</div>

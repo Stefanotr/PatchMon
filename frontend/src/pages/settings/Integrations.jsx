@@ -15,6 +15,7 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import AllowRemoteRestartOption from "../../components/AllowRemoteRestartOption";
 import ModalPortal from "../../components/ui/ModalPortal";
@@ -89,6 +90,7 @@ function build_checkmk_csv(hosts, include_additional_fields) {
 }
 
 function CheckmkExportButton({ include_additional_fields }) {
+	const { t } = useTranslation();
 	const [exporting, setExporting] = useState(false);
 	const [error, setError] = useState(null);
 
@@ -99,7 +101,7 @@ function CheckmkExportButton({ include_additional_fields }) {
 			const res = await dashboardAPI.getHosts();
 			const hosts = Array.isArray(res.data) ? res.data : [];
 			if (hosts.length === 0) {
-				setError("No hosts to export.");
+				setError(t("No hosts to export."));
 				return;
 			}
 			const csv = build_checkmk_csv(hosts, include_additional_fields);
@@ -113,8 +115,8 @@ function CheckmkExportButton({ include_additional_fields }) {
 		} catch (err) {
 			const msg =
 				err.response?.data?.error || err.response?.status === 403
-					? "You do not have permission to view hosts."
-					: "Export failed.";
+					? t("You do not have permission to view hosts.")
+					: t("Export failed.");
 			setError(msg);
 		} finally {
 			setExporting(false);
@@ -132,12 +134,12 @@ function CheckmkExportButton({ include_additional_fields }) {
 				{exporting ? (
 					<>
 						<div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" />
-						Exporting...
+						{t("Exporting...")}
 					</>
 				) : (
 					<>
 						<Download className="h-3.5 w-3.5" />
-						Export CSV
+						{t("Export CSV")}
 					</>
 				)}
 			</button>
@@ -149,6 +151,7 @@ function CheckmkExportButton({ include_additional_fields }) {
 }
 
 const Integrations = () => {
+	const { t } = useTranslation();
 	const confirm = useConfirm();
 	const toast = useToast();
 	// Generate unique IDs for form elements
@@ -323,26 +326,28 @@ const Integrations = () => {
 			console.error("Server response:", error.response?.data);
 			const error_message = error.response?.data?.errors
 				? error.response.data.errors.map((e) => e.msg).join(", ")
-				: error.response?.data?.error || "Failed to create token";
+				: error.response?.data?.error || t("Failed to create token");
 			toast.error(error_message);
 		}
 	};
 
 	const delete_token = async (id, name) => {
 		const confirmed = await confirm({
-			title: "Delete token",
-			message: `Are you sure you want to delete the token "${name}"?`,
-			confirmLabel: "Delete token",
+			title: t("Delete token"),
+			message: t('Are you sure you want to delete the token "{{name}}"?', {
+				name,
+			}),
+			confirmLabel: t("Delete token"),
 		});
 		if (!confirmed) return;
 
 		try {
 			await api.delete(`/auto-enrollment/tokens/${id}`);
-			toast.success(`Token "${name}" deleted`);
+			toast.success(t('Token "{{name}}" deleted', { name }));
 			load_tokens();
 		} catch (error) {
 			console.error("Failed to delete token:", error);
-			toast.error(error.response?.data?.error || "Failed to delete token");
+			toast.error(error.response?.data?.error || t("Failed to delete token"));
 		}
 	};
 
@@ -354,7 +359,7 @@ const Integrations = () => {
 			load_tokens();
 		} catch (error) {
 			console.error("Failed to toggle token:", error);
-			toast.error(error.response?.data?.error || "Failed to toggle token");
+			toast.error(error.response?.data?.error || t("Failed to toggle token"));
 		}
 	};
 
@@ -425,7 +430,7 @@ const Integrations = () => {
 			console.error("Failed to update token:", error);
 			const error_message = error.response?.data?.errors
 				? error.response.data.errors.map((e) => e.msg).join(", ")
-				: error.response?.data?.error || "Failed to update token";
+				: error.response?.data?.error || t("Failed to update token");
 			toast.error(error_message);
 		}
 	};
@@ -467,11 +472,11 @@ const Integrations = () => {
 				}, 2000);
 			} else {
 				console.error("Fallback copy failed");
-				toast.error("Failed to copy to clipboard. Please copy manually.");
+				toast.error(t("Failed to copy to clipboard. Please copy manually."));
 			}
 		} catch (fallbackError) {
 			console.error("Fallback copy failed:", fallbackError);
-			toast.error("Failed to copy to clipboard. Please copy manually.");
+			toast.error(t("Failed to copy to clipboard. Please copy manually."));
 		}
 	};
 
@@ -480,10 +485,12 @@ const Integrations = () => {
 			{/* Header */}
 			<div>
 				<h1 className="text-xl md:text-2xl font-bold text-secondary-900 dark:text-white">
-					API integrations
+					{t("API integrations")}
 				</h1>
 				<p className="mt-1 text-xs md:text-sm text-secondary-600 dark:text-white">
-					Manage auto-enrollment tokens for Proxmox and other integrations
+					{t(
+						"Manage auto-enrollment tokens for Proxmox and other integrations",
+					)}
 				</p>
 			</div>
 
@@ -500,7 +507,7 @@ const Integrations = () => {
 								: "bg-secondary-50 dark:bg-secondary-700 text-secondary-700 dark:text-white border border-secondary-200 dark:border-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-600"
 						}`}
 					>
-						<span>Proxmox</span>
+						<span>{t("Proxmox")}</span>
 						{activeTab === "proxmox" && (
 							<CheckCircle className="h-5 w-5 text-primary-600 dark:text-primary-400" />
 						)}
@@ -514,7 +521,7 @@ const Integrations = () => {
 								: "bg-secondary-50 dark:bg-secondary-700 text-secondary-700 dark:text-white border border-secondary-200 dark:border-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-600"
 						}`}
 					>
-						<span>Auto-Enrollment (Direct)</span>
+						<span>{t("Auto-Enrollment (Direct)")}</span>
 						{activeTab === "auto-enrollment-direct" && (
 							<CheckCircle className="h-5 w-5 text-primary-600 dark:text-primary-400" />
 						)}
@@ -528,7 +535,7 @@ const Integrations = () => {
 								: "bg-secondary-50 dark:bg-secondary-700 text-secondary-700 dark:text-white border border-secondary-200 dark:border-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-600"
 						}`}
 					>
-						<span>Scoped Credentials</span>
+						<span>{t("Scoped Credentials")}</span>
 						{activeTab === "scoped-credentials" && (
 							<CheckCircle className="h-5 w-5 text-primary-600 dark:text-primary-400" />
 						)}
@@ -542,7 +549,7 @@ const Integrations = () => {
 								: "bg-secondary-50 dark:bg-secondary-700 text-secondary-700 dark:text-white border border-secondary-200 dark:border-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-600"
 						}`}
 					>
-						<span>GetHomepage</span>
+						<span>{t("GetHomepage")}</span>
 						{activeTab === "gethomepage" && (
 							<CheckCircle className="h-5 w-5 text-primary-600 dark:text-primary-400" />
 						)}
@@ -556,7 +563,7 @@ const Integrations = () => {
 								: "bg-secondary-50 dark:bg-secondary-700 text-secondary-700 dark:text-white border border-secondary-200 dark:border-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-600"
 						}`}
 					>
-						<span>Docker</span>
+						<span>{t("Docker")}</span>
 						{activeTab === "docker" && (
 							<CheckCircle className="h-5 w-5 text-primary-600 dark:text-primary-400" />
 						)}
@@ -570,7 +577,7 @@ const Integrations = () => {
 								: "bg-secondary-50 dark:bg-secondary-700 text-secondary-700 dark:text-white border border-secondary-200 dark:border-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-600"
 						}`}
 					>
-						<span>Checkmk</span>
+						<span>{t("Checkmk")}</span>
 						{activeTab === "checkmk" && (
 							<CheckCircle className="h-5 w-5 text-primary-600 dark:text-primary-400" />
 						)}
@@ -589,7 +596,7 @@ const Integrations = () => {
 									: "text-secondary-500 dark:text-white hover:text-secondary-700 dark:hover:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700/50"
 							}`}
 						>
-							Proxmox
+							{t("Proxmox")}
 						</button>
 						<button
 							type="button"
@@ -600,7 +607,7 @@ const Integrations = () => {
 									: "text-secondary-500 dark:text-white hover:text-secondary-700 dark:hover:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700/50"
 							}`}
 						>
-							Auto-Enrollment (Direct)
+							{t("Auto-Enrollment (Direct)")}
 						</button>
 						<button
 							type="button"
@@ -611,7 +618,7 @@ const Integrations = () => {
 									: "text-secondary-500 dark:text-white hover:text-secondary-700 dark:hover:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700/50"
 							}`}
 						>
-							Scoped Credentials
+							{t("Scoped Credentials")}
 						</button>
 						<button
 							type="button"
@@ -622,7 +629,7 @@ const Integrations = () => {
 									: "text-secondary-500 dark:text-white hover:text-secondary-700 dark:hover:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700/50"
 							}`}
 						>
-							GetHomepage
+							{t("GetHomepage")}
 						</button>
 						<button
 							type="button"
@@ -633,7 +640,7 @@ const Integrations = () => {
 									: "text-secondary-500 dark:text-white hover:text-secondary-700 dark:hover:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700/50"
 							}`}
 						>
-							Docker
+							{t("Docker")}
 						</button>
 						<button
 							type="button"
@@ -644,7 +651,7 @@ const Integrations = () => {
 									: "text-secondary-500 dark:text-white hover:text-secondary-700 dark:hover:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700/50"
 							}`}
 						>
-							Checkmk
+							{t("Checkmk")}
 						</button>
 					</div>
 				</div>
@@ -662,10 +669,12 @@ const Integrations = () => {
 									</div>
 									<div className="min-w-0">
 										<h3 className="text-base md:text-lg font-semibold text-secondary-900 dark:text-white">
-											Proxmox Auto-Enrollment
+											{t("Proxmox Auto-Enrollment")}
 										</h3>
 										<p className="text-xs md:text-sm text-secondary-600 dark:text-white">
-											Manage tokens for Proxmox LXC container auto-enrollment
+											{t(
+												"Manage tokens for Proxmox LXC container auto-enrollment",
+											)}
 										</p>
 									</div>
 								</div>
@@ -675,7 +684,7 @@ const Integrations = () => {
 									className="btn-primary flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start"
 								>
 									<Plus className="h-4 w-4" />
-									New Token
+									{t("New Token")}
 								</button>
 							</div>
 
@@ -688,10 +697,11 @@ const Integrations = () => {
 									(token) => token.metadata?.integration_type === "proxmox-lxc",
 								).length === 0 ? (
 								<div className="text-center py-8 text-secondary-600 dark:text-white">
-									<p>No Proxmox tokens created yet.</p>
+									<p>{t("No Proxmox tokens created yet.")}</p>
 									<p className="text-sm mt-2">
-										Create a token to enable Proxmox LXC container
-										auto-enrollment.
+										{t(
+											"Create a token to enable Proxmox LXC container auto-enrollment.",
+										)}
 									</p>
 								</div>
 							) : (
@@ -715,20 +725,20 @@ const Integrations = () => {
 															{token.metadata?.integration_type ===
 															"proxmox-lxc" ? (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-																	Proxmox LXC
+																	{t("Proxmox LXC")}
 																</span>
 															) : (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-																	API
+																	{t("API")}
 																</span>
 															)}
 															{token.is_active ? (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-																	Active
+																	{t("Active")}
 																</span>
 															) : (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
-																	Inactive
+																	{t("Inactive")}
 																</span>
 															)}
 														</div>
@@ -757,15 +767,22 @@ const Integrations = () => {
 															{token.metadata?.integration_type ===
 																"proxmox-lxc" && (
 																<p>
-																	Usage: {token.hosts_created_today}/
-																	{token.max_hosts_per_day} hosts today
+																	{t(
+																		"Usage: {{hosts_created_today}}/{{max_hosts_per_day}} hosts today",
+																		{
+																			hosts_created_today:
+																				token.hosts_created_today,
+																			max_hosts_per_day:
+																				token.max_hosts_per_day,
+																		},
+																	)}
 																</p>
 															)}
 															{token.metadata?.integration_type ===
 																"proxmox-lxc" &&
 																token.host_groups && (
 																	<p>
-																		Default Group:{" "}
+																		{t("Default Group:")}{" "}
 																		<span
 																			className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
 																			style={{
@@ -780,7 +797,7 @@ const Integrations = () => {
 															{token.metadata?.integration_type === "api" &&
 																token.scopes && (
 																	<p>
-																		Scopes:{" "}
+																		{t("Scopes:")}{" "}
 																		{Object.entries(token.scopes)
 																			.map(
 																				([resource, actions]) =>
@@ -791,22 +808,25 @@ const Integrations = () => {
 																)}
 															{token.allowed_ip_ranges?.length > 0 && (
 																<p>
-																	Allowed IPs:{" "}
+																	{t("Allowed IPs:")}{" "}
 																	{token.allowed_ip_ranges.join(", ")}
 																</p>
 															)}
-															<p>Created: {formatDate(token.created_at)}</p>
+															<p>
+																{t("Created:")} {formatDate(token.created_at)}
+															</p>
 															{token.last_used_at && (
 																<p>
-																	Last Used: {formatDate(token.last_used_at)}
+																	{t("Last Used:")}{" "}
+																	{formatDate(token.last_used_at)}
 																</p>
 															)}
 															{token.expires_at && (
 																<p>
-																	Expires: {formatDate(token.expires_at)}
+																	{t("Expires:")} {formatDate(token.expires_at)}
 																	{new Date(token.expires_at) < new Date() && (
 																		<span className="ml-2 text-red-600 dark:text-red-400">
-																			(Expired)
+																			{t("(Expired)")}
 																		</span>
 																	)}
 																</p>
@@ -819,7 +839,7 @@ const Integrations = () => {
 															onClick={() => open_edit_modal(token)}
 															className="px-3 py-1 text-xs md:text-sm rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800"
 														>
-															Edit
+															{t("Edit")}
 														</button>
 														<button
 															type="button"
@@ -832,7 +852,7 @@ const Integrations = () => {
 																	: "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300"
 															}`}
 														>
-															{token.is_active ? "Disable" : "Enable"}
+															{token.is_active ? t("Disable") : t("Enable")}
 														</button>
 														<button
 															type="button"
@@ -853,18 +873,19 @@ const Integrations = () => {
 							{/* Documentation Section */}
 							<div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4 md:p-6">
 								<h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-primary-200 mb-4">
-									Documentation
+									{t("Documentation")}
 								</h3>
 								<div className="border border-primary-200 dark:border-primary-700 rounded-lg p-4 bg-white dark:bg-secondary-800">
 									<div className="flex items-center gap-2 mb-3">
 										<Server className="h-5 w-5 text-blue-600 dark:text-blue-400" />
 										<h4 className="font-semibold text-secondary-900 dark:text-white">
-											Proxmox LXC Auto-Enrollment
+											{t("Proxmox LXC Auto-Enrollment")}
 										</h4>
 									</div>
 									<p className="text-sm text-secondary-600 dark:text-white mb-3">
-										Automatically discover and enroll LXC containers from your
-										Proxmox hosts.
+										{t(
+											"Automatically discover and enroll LXC containers from your Proxmox hosts.",
+										)}
 									</p>
 									<a
 										href="https://patchmon.net/docs/patchmon-api-integrations-guide#proxmox-lxc-auto-enrollment-guide"
@@ -873,7 +894,7 @@ const Integrations = () => {
 										className="inline-flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 text-white rounded-lg text-sm transition-colors"
 									>
 										<BookOpen className="h-4 w-4" />
-										View Guide
+										{t("View Guide")}
 									</a>
 								</div>
 							</div>
@@ -891,10 +912,12 @@ const Integrations = () => {
 									</div>
 									<div className="min-w-0">
 										<h3 className="text-base md:text-lg font-semibold text-secondary-900 dark:text-white">
-											Direct Host Auto-Enrollment
+											{t("Direct Host Auto-Enrollment")}
 										</h3>
 										<p className="text-xs md:text-sm text-secondary-600 dark:text-white">
-											Manage tokens for direct host enrollment without Proxmox
+											{t(
+												"Manage tokens for direct host enrollment without Proxmox",
+											)}
 										</p>
 									</div>
 								</div>
@@ -904,7 +927,7 @@ const Integrations = () => {
 									className="btn-primary flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start"
 								>
 									<Plus className="h-4 w-4" />
-									New Token
+									{t("New Token")}
 								</button>
 							</div>
 
@@ -917,9 +940,9 @@ const Integrations = () => {
 									(token) => token.metadata?.integration_type === "direct-host",
 								).length === 0 ? (
 								<div className="text-center py-8 text-secondary-600 dark:text-white">
-									<p>No direct enrollment tokens created yet.</p>
+									<p>{t("No direct enrollment tokens created yet.")}</p>
 									<p className="text-sm mt-2">
-										Create a token to enable direct host enrollment.
+										{t("Create a token to enable direct host enrollment.")}
 									</p>
 								</div>
 							) : (
@@ -941,15 +964,15 @@ const Integrations = () => {
 																{token.token_name}
 															</h4>
 															<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-																Direct Host
+																{t("Direct Host")}
 															</span>
 															{token.is_active ? (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-																	Active
+																	{t("Active")}
 																</span>
 															) : (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
-																	Inactive
+																	{t("Inactive")}
 																</span>
 															)}
 														</div>
@@ -978,15 +1001,22 @@ const Integrations = () => {
 															{token.metadata?.integration_type ===
 																"direct-host" && (
 																<p>
-																	Usage: {token.hosts_created_today}/
-																	{token.max_hosts_per_day} hosts today
+																	{t(
+																		"Usage: {{hosts_created_today}}/{{max_hosts_per_day}} hosts today",
+																		{
+																			hosts_created_today:
+																				token.hosts_created_today,
+																			max_hosts_per_day:
+																				token.max_hosts_per_day,
+																		},
+																	)}
 																</p>
 															)}
 															{token.metadata?.integration_type ===
 																"direct-host" &&
 																token.host_groups && (
 																	<p>
-																		Default Group:{" "}
+																		{t("Default Group:")}{" "}
 																		<span
 																			className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
 																			style={{
@@ -1000,22 +1030,25 @@ const Integrations = () => {
 																)}
 															{token.allowed_ip_ranges?.length > 0 && (
 																<p>
-																	Allowed IPs:{" "}
+																	{t("Allowed IPs:")}{" "}
 																	{token.allowed_ip_ranges.join(", ")}
 																</p>
 															)}
-															<p>Created: {formatDate(token.created_at)}</p>
+															<p>
+																{t("Created:")} {formatDate(token.created_at)}
+															</p>
 															{token.last_used_at && (
 																<p>
-																	Last Used: {formatDate(token.last_used_at)}
+																	{t("Last Used:")}{" "}
+																	{formatDate(token.last_used_at)}
 																</p>
 															)}
 															{token.expires_at && (
 																<p>
-																	Expires: {formatDate(token.expires_at)}
+																	{t("Expires:")} {formatDate(token.expires_at)}
 																	{new Date(token.expires_at) < new Date() && (
 																		<span className="ml-2 text-red-600 dark:text-red-400">
-																			(Expired)
+																			{t("(Expired)")}
 																		</span>
 																	)}
 																</p>
@@ -1028,7 +1061,7 @@ const Integrations = () => {
 															onClick={() => open_edit_modal(token)}
 															className="px-3 py-1 text-xs md:text-sm rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800"
 														>
-															Edit
+															{t("Edit")}
 														</button>
 														<button
 															type="button"
@@ -1041,7 +1074,7 @@ const Integrations = () => {
 																	: "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300"
 															}`}
 														>
-															{token.is_active ? "Disable" : "Enable"}
+															{token.is_active ? t("Disable") : t("Enable")}
 														</button>
 														<button
 															type="button"
@@ -1062,18 +1095,19 @@ const Integrations = () => {
 							{/* Documentation Section */}
 							<div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4 md:p-6">
 								<h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-primary-200 mb-4">
-									Documentation
+									{t("Documentation")}
 								</h3>
 								<div className="border border-primary-200 dark:border-primary-700 rounded-lg p-4 bg-white dark:bg-secondary-800">
 									<div className="flex items-center gap-2 mb-3">
 										<Server className="h-5 w-5 text-purple-600 dark:text-purple-400" />
 										<h4 className="font-semibold text-secondary-900 dark:text-white">
-											Direct Host Enrollment
+											{t("Direct Host Enrollment")}
 										</h4>
 									</div>
 									<p className="text-sm text-secondary-600 dark:text-white mb-3">
-										Enroll individual hosts directly without Proxmox
-										infrastructure.
+										{t(
+											"Enroll individual hosts directly without Proxmox infrastructure.",
+										)}
 									</p>
 									<a
 										href="https://patchmon.net/docs/patchmon-api-integrations-guide#auto-enrolment-api-docs"
@@ -1082,7 +1116,7 @@ const Integrations = () => {
 										className="inline-flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 text-white rounded-lg text-sm transition-colors"
 									>
 										<BookOpen className="h-4 w-4" />
-										View Guide
+										{t("View Guide")}
 									</a>
 								</div>
 							</div>
@@ -1100,11 +1134,12 @@ const Integrations = () => {
 									</div>
 									<div className="min-w-0">
 										<h3 className="text-base md:text-lg font-semibold text-secondary-900 dark:text-white">
-											Scoped API Credentials
+											{t("Scoped API Credentials")}
 										</h3>
 										<p className="text-xs md:text-sm text-secondary-600 dark:text-white">
-											Manage API credentials with granular scope-based
-											permissions
+											{t(
+												"Manage API credentials with granular scope-based permissions",
+											)}
 										</p>
 									</div>
 								</div>
@@ -1114,7 +1149,7 @@ const Integrations = () => {
 									className="btn-primary flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start"
 								>
 									<Plus className="h-4 w-4" />
-									New Credential
+									{t("New Credential")}
 								</button>
 							</div>
 
@@ -1127,10 +1162,11 @@ const Integrations = () => {
 									(token) => token.metadata?.integration_type === "api",
 								).length === 0 ? (
 								<div className="text-center py-8 text-secondary-600 dark:text-white">
-									<p>No scoped credentials created yet.</p>
+									<p>{t("No scoped credentials created yet.")}</p>
 									<p className="text-sm mt-2">
-										Create a credential to enable programmatic API access with
-										granular permissions.
+										{t(
+											"Create a credential to enable programmatic API access with granular permissions.",
+										)}
 									</p>
 								</div>
 							) : (
@@ -1151,15 +1187,15 @@ const Integrations = () => {
 																{token.token_name}
 															</h4>
 															<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-																API
+																{t("API")}
 															</span>
 															{token.is_active ? (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-																	Active
+																	{t("Active")}
 																</span>
 															) : (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
-																	Inactive
+																	{t("Inactive")}
 																</span>
 															)}
 														</div>
@@ -1188,7 +1224,7 @@ const Integrations = () => {
 															{token.metadata?.integration_type === "api" &&
 																token.scopes && (
 																	<p>
-																		Scopes:{" "}
+																		{t("Scopes:")}{" "}
 																		{Object.entries(token.scopes)
 																			.map(
 																				([resource, actions]) =>
@@ -1199,22 +1235,25 @@ const Integrations = () => {
 																)}
 															{token.allowed_ip_ranges?.length > 0 && (
 																<p>
-																	Allowed IPs:{" "}
+																	{t("Allowed IPs:")}{" "}
 																	{token.allowed_ip_ranges.join(", ")}
 																</p>
 															)}
-															<p>Created: {formatDate(token.created_at)}</p>
+															<p>
+																{t("Created:")} {formatDate(token.created_at)}
+															</p>
 															{token.last_used_at && (
 																<p>
-																	Last Used: {formatDate(token.last_used_at)}
+																	{t("Last Used:")}{" "}
+																	{formatDate(token.last_used_at)}
 																</p>
 															)}
 															{token.expires_at && (
 																<p>
-																	Expires: {formatDate(token.expires_at)}
+																	{t("Expires:")} {formatDate(token.expires_at)}
 																	{new Date(token.expires_at) < new Date() && (
 																		<span className="ml-2 text-red-600 dark:text-red-400">
-																			(Expired)
+																			{t("(Expired)")}
 																		</span>
 																	)}
 																</p>
@@ -1227,7 +1266,7 @@ const Integrations = () => {
 															onClick={() => open_edit_modal(token)}
 															className="px-3 py-1 text-xs md:text-sm rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800"
 														>
-															Edit
+															{t("Edit")}
 														</button>
 														<button
 															type="button"
@@ -1240,7 +1279,7 @@ const Integrations = () => {
 																	: "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300"
 															}`}
 														>
-															{token.is_active ? "Disable" : "Enable"}
+															{token.is_active ? t("Disable") : t("Enable")}
 														</button>
 														<button
 															type="button"
@@ -1261,18 +1300,19 @@ const Integrations = () => {
 							{/* Documentation Section */}
 							<div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4 md:p-6">
 								<h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-primary-200 mb-4">
-									Documentation
+									{t("Documentation")}
 								</h3>
 								<div className="border border-primary-200 dark:border-primary-700 rounded-lg p-4 bg-white dark:bg-secondary-800">
 									<div className="flex items-center gap-2 mb-3">
 										<Shield className="h-5 w-5 text-green-600 dark:text-green-400" />
 										<h4 className="font-semibold text-secondary-900 dark:text-white">
-											Scoped Credentials
+											{t("Scoped Credentials")}
 										</h4>
 									</div>
 									<p className="text-sm text-secondary-600 dark:text-white mb-3">
-										Programmatic access to PatchMon data with granular
-										scope-based permissions.
+										{t(
+											"Programmatic access to PatchMon data with granular scope-based permissions.",
+										)}
 									</p>
 									<div className="flex flex-wrap gap-2">
 										<a
@@ -1282,7 +1322,7 @@ const Integrations = () => {
 											className="inline-flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 text-white rounded-lg text-sm transition-colors"
 										>
 											<BookOpen className="h-4 w-4" />
-											View Guide
+											{t("View Guide")}
 										</a>
 										<a
 											href="/api/v1/api-docs"
@@ -1291,7 +1331,7 @@ const Integrations = () => {
 											className="inline-flex items-center gap-2 px-3 py-2 bg-secondary-600 hover:bg-secondary-700 dark:bg-secondary-500 dark:hover:bg-secondary-600 text-white rounded-lg text-sm transition-colors"
 										>
 											<BookOpen className="h-4 w-4" />
-											Swagger documentation
+											{t("Swagger documentation")}
 										</a>
 									</div>
 								</div>
@@ -1310,11 +1350,12 @@ const Integrations = () => {
 									</div>
 									<div className="min-w-0">
 										<h3 className="text-base md:text-lg font-semibold text-secondary-900 dark:text-white">
-											GetHomepage Widget Integration
+											{t("GetHomepage Widget Integration")}
 										</h3>
 										<p className="text-xs md:text-sm text-secondary-600 dark:text-white">
-											Create API keys to display PatchMon statistics in your
-											GetHomepage dashboard
+											{t(
+												"Create API keys to display PatchMon statistics in your GetHomepage dashboard",
+											)}
 										</p>
 									</div>
 								</div>
@@ -1324,7 +1365,7 @@ const Integrations = () => {
 									className="btn-primary flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start"
 								>
 									<Plus className="h-4 w-4" />
-									New API Key
+									{t("New API Key")}
 								</button>
 							</div>
 
@@ -1337,9 +1378,11 @@ const Integrations = () => {
 									(token) => token.metadata?.integration_type === "gethomepage",
 								).length === 0 ? (
 								<div className="text-center py-8 text-secondary-600 dark:text-white">
-									<p>No GetHomepage API keys created yet.</p>
+									<p>{t("No GetHomepage API keys created yet.")}</p>
 									<p className="text-sm mt-2">
-										Create an API key to enable GetHomepage widget integration.
+										{t(
+											"Create an API key to enable GetHomepage widget integration.",
+										)}
 									</p>
 								</div>
 							) : (
@@ -1361,15 +1404,15 @@ const Integrations = () => {
 																{token.token_name}
 															</h4>
 															<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-																GetHomepage
+																{t("GetHomepage")}
 															</span>
 															{token.is_active ? (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-																	Active
+																	{t("Active")}
 																</span>
 															) : (
 																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
-																	Inactive
+																	{t("Inactive")}
 																</span>
 															)}
 														</div>
@@ -1395,18 +1438,21 @@ const Integrations = () => {
 																	)}
 																</button>
 															</div>
-															<p>Created: {formatDate(token.created_at)}</p>
+															<p>
+																{t("Created:")} {formatDate(token.created_at)}
+															</p>
 															{token.last_used_at && (
 																<p>
-																	Last Used: {formatDate(token.last_used_at)}
+																	{t("Last Used:")}{" "}
+																	{formatDate(token.last_used_at)}
 																</p>
 															)}
 															{token.expires_at && (
 																<p>
-																	Expires: {formatDate(token.expires_at)}
+																	{t("Expires:")} {formatDate(token.expires_at)}
 																	{new Date(token.expires_at) < new Date() && (
 																		<span className="ml-2 text-red-600 dark:text-red-400">
-																			(Expired)
+																			{t("(Expired)")}
 																		</span>
 																	)}
 																</p>
@@ -1425,7 +1471,7 @@ const Integrations = () => {
 																	: "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300"
 															}`}
 														>
-															{token.is_active ? "Disable" : "Enable"}
+															{token.is_active ? t("Disable") : t("Enable")}
 														</button>
 														<button
 															type="button"
@@ -1447,7 +1493,7 @@ const Integrations = () => {
 							<div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4 md:p-6">
 								<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
 									<h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-primary-200">
-										How to Use GetHomepage Integration
+										{t("How to Use GetHomepage Integration")}
 									</h3>
 									<a
 										href="https://patchmon.net/docs/patchmon-api-integrations-guide#gethomepage-dashboard-card"
@@ -1456,18 +1502,23 @@ const Integrations = () => {
 										className="px-4 py-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 text-white rounded-lg flex items-center gap-2 transition-colors w-full sm:w-auto justify-center sm:justify-start"
 									>
 										<BookOpen className="h-4 w-4" />
-										Documentation
+										{t("Documentation")}
 									</a>
 								</div>
 								<ol className="list-decimal list-inside space-y-2 text-sm text-primary-800 dark:text-primary-300">
-									<li>Create a new API key using the button above</li>
-									<li>Copy the API key and secret from the success dialog</li>
+									<li>{t("Create a new API key using the button above")}</li>
 									<li>
-										Add the following widget configuration to your GetHomepage{" "}
-										<code className="bg-primary-100 dark:bg-primary-900/40 px-1 py-0.5 rounded text-xs">
-											services.yml
-										</code>{" "}
-										file:
+										{t("Copy the API key and secret from the success dialog")}
+									</li>
+									<li>
+										<Trans
+											i18nKey="Add the following widget configuration to your GetHomepage <code>services.yml</code> file:"
+											components={{
+												code: (
+													<code className="bg-primary-100 dark:bg-primary-900/40 px-1 py-0.5 rounded text-xs" />
+												),
+											}}
+										/>
 									</li>
 								</ol>
 
@@ -1494,28 +1545,32 @@ const Integrations = () => {
 
 								<div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
 									<p className="text-xs text-blue-800 dark:text-blue-300 mb-2">
-										<strong>How to generate BASE64_ENCODED_CREDENTIALS:</strong>
+										<strong>
+											{t("How to generate BASE64_ENCODED_CREDENTIALS:")}
+										</strong>
 									</p>
 									<pre className="text-xs text-blue-800 dark:text-blue-300 font-mono bg-blue-100 dark:bg-blue-900/40 p-2 rounded overflow-x-auto">
 										{`echo -n "YOUR_API_KEY:YOUR_API_SECRET" | base64`}
 									</pre>
 									<p className="text-xs text-blue-800 dark:text-blue-300 mt-2">
-										Replace YOUR_API_KEY and YOUR_API_SECRET with your actual
-										credentials, then run this command to get the base64 string.
+										{t(
+											"Replace YOUR_API_KEY and YOUR_API_SECRET with your actual credentials, then run this command to get the base64 string.",
+										)}
 									</p>
 								</div>
 
 								<div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
 									<h4 className="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-2">
-										Additional Widget Examples
+										{t("Additional Widget Examples")}
 									</h4>
 									<p className="text-xs text-blue-800 dark:text-blue-300 mb-2">
-										You can create multiple widgets to display different
-										statistics:
+										{t(
+											"You can create multiple widgets to display different statistics:",
+										)}
 									</p>
 									<div className="space-y-2 text-xs text-blue-800 dark:text-blue-300 font-mono">
 										<div className="bg-blue-100 dark:bg-blue-900/40 p-2 rounded">
-											<strong>Security Updates Widget:</strong>
+											<strong>{t("Security Updates Widget:")}</strong>
 											<br />
 											type: customapi
 											<br />
@@ -1526,7 +1581,7 @@ const Integrations = () => {
 											label: Security Updates
 										</div>
 										<div className="bg-blue-100 dark:bg-blue-900/40 p-2 rounded">
-											<strong>Up-to-Date Hosts Widget:</strong>
+											<strong>{t("Up-to-Date Hosts Widget:")}</strong>
 											<br />
 											type: customapi
 											<br />
@@ -1537,7 +1592,7 @@ const Integrations = () => {
 											label: Up-to-Date Hosts
 										</div>
 										<div className="bg-blue-100 dark:bg-blue-900/40 p-2 rounded">
-											<strong>Recent Activity Widget:</strong>
+											<strong>{t("Recent Activity Widget:")}</strong>
 											<br />
 											type: customapi
 											<br />
@@ -1563,10 +1618,12 @@ const Integrations = () => {
 								</div>
 								<div className="min-w-0">
 									<h3 className="text-base md:text-lg font-semibold text-secondary-900 dark:text-white">
-										Docker Inventory Collection
+										{t("Docker Inventory Collection")}
 									</h3>
 									<p className="text-xs md:text-sm text-secondary-600 dark:text-white">
-										Docker monitoring is now built into the PatchMon Go agent
+										{t(
+											"Docker monitoring is now built into the PatchMon Go agent",
+										)}
 									</p>
 								</div>
 							</div>
@@ -1577,33 +1634,43 @@ const Integrations = () => {
 									<CheckCircle className="h-5 w-5 text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5" />
 									<div className="min-w-0">
 										<h4 className="text-sm md:text-base font-semibold text-primary-900 dark:text-primary-200 mb-2">
-											Automatic Docker Discovery
+											{t("Automatic Docker Discovery")}
 										</h4>
 										<p className="text-xs md:text-sm text-primary-800 dark:text-primary-300 mb-3">
-											The PatchMon Go agent automatically discovers Docker when
-											it's available on your host and collects comprehensive
-											inventory information:
+											{t(
+												"The PatchMon Go agent automatically discovers Docker when it's available on your host and collects comprehensive inventory information:",
+											)}
 										</p>
 										<ul className="list-disc list-inside space-y-2 text-xs md:text-sm text-primary-800 dark:text-primary-300 ml-2">
 											<li>
-												<strong>Containers</strong> - Running and stopped
-												containers with status, images, ports, and labels
+												<strong>{t("Containers")}</strong>{" "}
+												{t(
+													"- Running and stopped containers with status, images, ports, and labels",
+												)}
 											</li>
 											<li>
-												<strong>Images</strong> - All Docker images with
-												repository, tags, sizes, and sources
+												<strong>{t("Images")}</strong>{" "}
+												{t(
+													"- All Docker images with repository, tags, sizes, and sources",
+												)}
 											</li>
 											<li>
-												<strong>Volumes</strong> - Named and anonymous volumes
-												with drivers, mountpoints, and usage
+												<strong>{t("Volumes")}</strong>{" "}
+												{t(
+													"- Named and anonymous volumes with drivers, mountpoints, and usage",
+												)}
 											</li>
 											<li>
-												<strong>Networks</strong> - Docker networks with
-												drivers, IPAM configuration, and connected containers
+												<strong>{t("Networks")}</strong>{" "}
+												{t(
+													"- Docker networks with drivers, IPAM configuration, and connected containers",
+												)}
 											</li>
 											<li>
-												<strong>Real-time Updates</strong> - Container status
-												changes are pushed instantly via WebSocket
+												<strong>{t("Real-time Updates")}</strong>{" "}
+												{t(
+													"- Container status changes are pushed instantly via WebSocket",
+												)}
 											</li>
 										</ul>
 									</div>
@@ -1613,34 +1680,41 @@ const Integrations = () => {
 							{/* How It Works */}
 							<div className="bg-white dark:bg-secondary-900 border border-secondary-200 dark:border-secondary-600 rounded-lg p-4 md:p-6">
 								<h4 className="text-sm md:text-base font-semibold text-secondary-900 dark:text-white mb-4">
-									How It Works
+									{t("How It Works")}
 								</h4>
 								<ol className="list-decimal list-inside space-y-3 text-xs md:text-sm text-secondary-700 dark:text-white">
 									<li>
-										Install the PatchMon Go agent on your host (see the Hosts
-										page for installation instructions)
+										{t(
+											"Install the PatchMon Go agent on your host (see the Hosts page for installation instructions)",
+										)}
 									</li>
 									<li>
-										The agent automatically detects if Docker is installed and
-										running on the host
+										{t(
+											"The agent automatically detects if Docker is installed and running on the host",
+										)}
 									</li>
 									<li>
-										During each collection cycle, the agent gathers Docker
-										inventory data and sends it to the PatchMon server
+										{t(
+											"During each collection cycle, the agent gathers Docker inventory data and sends it to the PatchMon server",
+										)}
 									</li>
 									<li>
-										View your complete Docker inventory (containers, images,
-										volumes, networks) in the{" "}
-										<Link
-											to="/docker"
-											className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 underline"
-										>
-											Docker page
-										</Link>
+										<Trans
+											i18nKey="View your complete Docker inventory (containers, images, volumes, networks) in the <link>Docker page</link>"
+											components={{
+												link: (
+													<Link
+														to="/docker"
+														className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 underline"
+													/>
+												),
+											}}
+										/>
 									</li>
 									<li>
-										Container status changes are pushed to the server in
-										real-time via WebSocket connection
+										{t(
+											"Container status changes are pushed to the server in real-time via WebSocket connection",
+										)}
 									</li>
 								</ol>
 							</div>
@@ -1651,13 +1725,12 @@ const Integrations = () => {
 									<CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
 									<div className="text-xs md:text-sm text-green-800 dark:text-green-200">
 										<p className="font-semibold mb-1">
-											No Additional Configuration Required
+											{t("No Additional Configuration Required")}
 										</p>
 										<p>
-											Once the Go agent is installed and Docker is running on
-											your host, Docker inventory collection happens
-											automatically. No separate Docker agent or cron jobs
-											needed.
+											{t(
+												"Once the Go agent is installed and Docker is running on your host, Docker inventory collection happens automatically. No separate Docker agent or cron jobs needed.",
+											)}
 										</p>
 									</div>
 								</div>
@@ -1668,20 +1741,28 @@ const Integrations = () => {
 								<div className="flex items-start gap-2">
 									<AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
 									<div className="text-xs md:text-sm text-blue-800 dark:text-blue-200">
-										<p className="font-semibold mb-2">Requirements:</p>
+										<p className="font-semibold mb-2">{t("Requirements:")}</p>
 										<ul className="list-disc list-inside space-y-1 ml-2">
-											<li>PatchMon Go agent must be installed and running</li>
-											<li>Docker daemon must be installed and running</li>
 											<li>
-												Agent must have access to the Docker socket (
-												<code className="bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 rounded text-xs">
-													/var/run/docker.sock
-												</code>
-												)
+												{t("PatchMon Go agent must be installed and running")}
 											</li>
 											<li>
-												Typically requires running the agent as root or with
-												Docker group permissions
+												{t("Docker daemon must be installed and running")}
+											</li>
+											<li>
+												<Trans
+													i18nKey="Agent must have access to the Docker socket (<code>/var/run/docker.sock</code>)"
+													components={{
+														code: (
+															<code className="bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 rounded text-xs" />
+														),
+													}}
+												/>
+											</li>
+											<li>
+												{t(
+													"Typically requires running the agent as root or with Docker group permissions",
+												)}
 											</li>
 										</ul>
 									</div>
@@ -1700,10 +1781,10 @@ const Integrations = () => {
 									</div>
 									<div className="min-w-0">
 										<h3 className="text-base md:text-lg font-semibold text-secondary-900 dark:text-white">
-											Checkmk integration
+											{t("Checkmk integration")}
 										</h3>
 										<p className="text-xs md:text-sm text-secondary-600 dark:text-white">
-											Export hosts as CSV for import into Checkmk
+											{t("Export hosts as CSV for import into Checkmk")}
 										</p>
 									</div>
 								</div>
@@ -1711,22 +1792,29 @@ const Integrations = () => {
 
 							<div className="bg-secondary-50 dark:bg-secondary-800/50 rounded-lg border border-secondary-200 dark:border-secondary-700 p-4 md:p-6">
 								<p className="text-sm text-secondary-600 dark:text-white mb-4">
-									Export your PatchMon host list in the{" "}
-									<a
-										href="https://docs.checkmk.com/latest/en/hosts_setup.html#import"
-										target="_blank"
-										rel="noopener noreferrer"
-										className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 underline"
-									>
-										Checkmk CSV import format
-									</a>
-									. Use the file in Checkmk under Setup &gt; Hosts &gt; Import
-									hosts via CSV file.
+									<Trans
+										i18nKey="Export your PatchMon host list in the <a>Checkmk CSV import format</a>. Use the file in Checkmk under Setup > Hosts > Import hosts via CSV file."
+										components={{
+											a: (
+												// biome-ignore lint/a11y/useAnchorContent: Trans fills the link text
+												<a
+													href="https://docs.checkmk.com/latest/en/hosts_setup.html#import"
+													target="_blank"
+													rel="noopener noreferrer"
+													className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 underline"
+												/>
+											),
+										}}
+									/>
 								</p>
 								<p className="text-xs text-secondary-500 dark:text-white mb-4">
 									{checkmk_additional_fields
-										? "Full set of Checkmk import attributes (Host name, Alias, Monitored on site, IPv4, IPv6, SNMP community, Tag: Criticality, Tag: Networking Segment, Tag: Checkmk agent / API integrations, Tag: Piggyback, Tag: SNMP, Tag: IP address family). Empty columns can be filled in Checkmk or in the CSV before import."
-										: "Columns: hostname, IPv4 address, alias, and Checkmk agent tag (cmk-agent). Hostnames are limited to 240 characters per Checkmk."}
+										? t(
+												"Full set of Checkmk import attributes (Host name, Alias, Monitored on site, IPv4, IPv6, SNMP community, Tag: Criticality, Tag: Networking Segment, Tag: Checkmk agent / API integrations, Tag: Piggyback, Tag: SNMP, Tag: IP address family). Empty columns can be filled in Checkmk or in the CSV before import.",
+											)
+										: t(
+												"Columns: hostname, IPv4 address, alias, and Checkmk agent tag (cmk-agent). Hostnames are limited to 240 characters per Checkmk.",
+											)}
 								</p>
 								<div className="flex items-center gap-3 mb-4">
 									<button
@@ -1753,14 +1841,13 @@ const Integrations = () => {
 										htmlFor="checkmk-additional-fields"
 										className="text-sm font-medium text-secondary-700 dark:text-white cursor-pointer"
 									>
-										Add additional fields
+										{t("Add additional fields")}
 									</label>
 								</div>
 								<p className="text-xs text-secondary-500 dark:text-white mb-4">
-									When enabled, the CSV includes all attributes from the Checkmk
-									import docs (section 6.1). PatchMon only fills hostname,
-									alias, IPv4, and agent; other columns are empty for you to
-									edit in Checkmk or before re-import.
+									{t(
+										"When enabled, the CSV includes all attributes from the Checkmk import docs (section 6.1). PatchMon only fills hostname, alias, IPv4, and agent; other columns are empty for you to edit in Checkmk or before re-import.",
+									)}
 								</p>
 								<CheckmkExportButton
 									include_additional_fields={checkmk_additional_fields}
@@ -1780,14 +1867,14 @@ const Integrations = () => {
 								<div className="flex items-center justify-between mb-4">
 									<h2 className="text-lg md:text-xl font-bold text-secondary-900 dark:text-white">
 										{activeTab === "gethomepage"
-											? "Create GetHomepage API Key"
+											? t("Create GetHomepage API Key")
 											: activeTab === "proxmox"
-												? "Create Proxmox Token"
+												? t("Create Proxmox Token")
 												: activeTab === "auto-enrollment-direct"
-													? "Create Direct Enrollment Token"
+													? t("Create Direct Enrollment Token")
 													: activeTab === "scoped-credentials"
-														? "Create Scoped Credential"
-														: "Create Token"}
+														? t("Create Scoped Credential")
+														: t("Create Token")}
 									</h2>
 									<button
 										type="button"
@@ -1805,7 +1892,7 @@ const Integrations = () => {
 								<form onSubmit={create_token} className="space-y-4">
 									<label className="block">
 										<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-											Token Name *
+											{t("Token Name *")}
 										</span>
 										<input
 											type="text"
@@ -1819,14 +1906,14 @@ const Integrations = () => {
 											}
 											placeholder={
 												activeTab === "gethomepage"
-													? "e.g., GetHomepage Widget"
+													? t("e.g., GetHomepage Widget")
 													: activeTab === "proxmox"
-														? "e.g., Proxmox Production"
+														? t("e.g., Proxmox Production")
 														: activeTab === "auto-enrollment-direct"
-															? "e.g., Direct Enrollment Token"
+															? t("e.g., Direct Enrollment Token")
 															: activeTab === "scoped-credentials"
-																? "e.g., Ansible Inventory"
-																: "e.g., Token Name"
+																? t("e.g., Ansible Inventory")
+																: t("e.g., Token Name")
 											}
 											className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 										/>
@@ -1837,7 +1924,7 @@ const Integrations = () => {
 										<>
 											<label className="block">
 												<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-													Max Hosts Per Day
+													{t("Max Hosts Per Day")}
 												</span>
 												<input
 													type="number"
@@ -1853,14 +1940,15 @@ const Integrations = () => {
 													className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 												/>
 												<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-													Maximum number of hosts that can be enrolled per day
-													using this token
+													{t(
+														"Maximum number of hosts that can be enrolled per day using this token",
+													)}
 												</p>
 											</label>
 
 											<label className="block">
 												<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-													Default Host Group (Optional)
+													{t("Default Host Group (Optional)")}
 												</span>
 												<select
 													value={form_data.default_host_group_id}
@@ -1872,7 +1960,7 @@ const Integrations = () => {
 													}
 													className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 												>
-													<option value="">No default group</option>
+													<option value="">{t("No default group")}</option>
 													{host_groups.map((group) => (
 														<option key={group.id} value={group.id}>
 															{group.name}
@@ -1880,7 +1968,9 @@ const Integrations = () => {
 													))}
 												</select>
 												<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-													Auto-enrolled hosts will be assigned to this group
+													{t(
+														"Auto-enrolled hosts will be assigned to this group",
+													)}
 												</p>
 											</label>
 										</>
@@ -1889,12 +1979,12 @@ const Integrations = () => {
 									{activeTab === "scoped-credentials" && (
 										<div className="block">
 											<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-												Scopes *
+												{t("Scopes *")}
 											</span>
 											<div className="border border-secondary-300 dark:border-secondary-600 rounded-md p-4 bg-secondary-50 dark:bg-secondary-900">
 												<div className="mb-3">
 													<p className="text-xs font-semibold text-secondary-700 dark:text-white mb-2">
-														Host Permissions
+														{t("Host Permissions")}
 													</p>
 													<div className="space-y-2">
 														{["get", "put", "patch", "update", "delete"].map(
@@ -1919,12 +2009,14 @@ const Integrations = () => {
 																		{action}
 																	</span>
 																	<span className="text-xs text-secondary-500 dark:text-white">
-																		{action === "get" && "- Read host data"}
-																		{action === "put" && "- Replace host data"}
-																		{action === "patch" && "- Update host data"}
+																		{action === "get" && t("- Read host data")}
+																		{action === "put" &&
+																			t("- Replace host data")}
+																		{action === "patch" &&
+																			t("- Update host data")}
 																		{action === "update" &&
-																			"- Modify host data"}
-																		{action === "delete" && "- Delete hosts"}
+																			t("- Modify host data")}
+																		{action === "delete" && t("- Delete hosts")}
 																	</span>
 																</label>
 															),
@@ -1933,14 +2025,16 @@ const Integrations = () => {
 												</div>
 											</div>
 											<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-												Select the permissions this API credential should have
+												{t(
+													"Select the permissions this API credential should have",
+												)}
 											</p>
 										</div>
 									)}
 
 									<label className="block">
 										<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-											Allowed IP Addresses (Optional)
+											{t("Allowed IP Addresses (Optional)")}
 										</span>
 										<input
 											type="text"
@@ -1955,14 +2049,15 @@ const Integrations = () => {
 											className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 										/>
 										<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-											Comma-separated list of IP addresses allowed to use this
-											token
+											{t(
+												"Comma-separated list of IP addresses allowed to use this token",
+											)}
 										</p>
 									</label>
 
 									<label className="block">
 										<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-											Expiration Date (Optional)
+											{t("Expiration Date (Optional)")}
 										</span>
 										<input
 											type="datetime-local"
@@ -1982,7 +2077,7 @@ const Integrations = () => {
 											type="submit"
 											className="flex-1 btn-primary py-2 px-4 rounded-md w-full sm:w-auto"
 										>
-											Create Token
+											{t("Create Token")}
 										</button>
 										<button
 											type="button"
@@ -1991,7 +2086,7 @@ const Integrations = () => {
 											}}
 											className="flex-1 bg-secondary-100 dark:bg-secondary-700 text-secondary-700 dark:text-white py-2 px-4 rounded-md hover:bg-secondary-200 dark:hover:bg-secondary-600 w-full sm:w-auto"
 										>
-											Cancel
+											{t("Cancel")}
 										</button>
 									</div>
 								</form>
@@ -2013,15 +2108,15 @@ const Integrations = () => {
 										<h2 className="text-base md:text-lg font-bold text-secondary-900 dark:text-white truncate">
 											{new_token.metadata?.integration_type === "gethomepage" ||
 											activeTab === "gethomepage"
-												? "API Key Created Successfully"
+												? t("API Key Created Successfully")
 												: new_token.metadata?.integration_type === "api" ||
 														activeTab === "scoped-credentials"
-													? "API Credential Created Successfully"
+													? t("API Credential Created Successfully")
 													: new_token.metadata?.integration_type ===
 																"direct-host" ||
 															activeTab === "auto-enrollment-direct"
-														? "Direct Enrollment Token Created Successfully"
-														: "Token Created Successfully"}
+														? t("Direct Enrollment Token Created Successfully")
+														: t("Token Created Successfully")}
 										</h2>
 									</div>
 									<button
@@ -2041,8 +2136,10 @@ const Integrations = () => {
 									<div className="flex items-center gap-2">
 										<AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
 										<p className="text-xs text-yellow-800 dark:text-yellow-200">
-											<strong>Important:</strong> Save these credentials - the
-											secret won't be shown again.
+											<strong>{t("Important:")}</strong>{" "}
+											{t(
+												"Save these credentials - the secret won't be shown again.",
+											)}
 										</p>
 									</div>
 								</div>
@@ -2053,7 +2150,7 @@ const Integrations = () => {
 											htmlFor={token_name_id}
 											className="block text-xs font-medium text-secondary-700 dark:text-white mb-1"
 										>
-											Token Name
+											{t("Token Name")}
 										</label>
 										<input
 											id={token_name_id}
@@ -2070,7 +2167,7 @@ const Integrations = () => {
 												htmlFor={token_key_id}
 												className="block text-xs font-medium text-secondary-700 dark:text-white mb-1"
 											>
-												Token Key
+												{t("Token Key")}
 											</label>
 											<div className="flex items-center gap-2">
 												<input
@@ -2086,7 +2183,7 @@ const Integrations = () => {
 														copy_to_clipboard(new_token.token_key, "new-key")
 													}
 													className="btn-primary p-2 flex-shrink-0"
-													title="Copy Key"
+													title={t("Copy Key")}
 												>
 													{copy_success["new-key"] ? (
 														<CheckCircle className="h-4 w-4" />
@@ -2102,7 +2199,7 @@ const Integrations = () => {
 												htmlFor={token_secret_id}
 												className="block text-xs font-medium text-secondary-700 dark:text-white mb-1"
 											>
-												Token Secret
+												{t("Token Secret")}
 											</label>
 											<div className="flex items-center gap-2">
 												<input
@@ -2116,7 +2213,7 @@ const Integrations = () => {
 													type="button"
 													onClick={() => setShowSecret(!show_secret)}
 													className="p-2 text-secondary-600 hover:text-secondary-800 dark:text-white flex-shrink-0"
-													title="Toggle visibility"
+													title={t("Toggle visibility")}
 												>
 													{show_secret ? (
 														<EyeOff className="h-4 w-4" />
@@ -2133,7 +2230,7 @@ const Integrations = () => {
 														)
 													}
 													className="btn-primary p-2 flex-shrink-0"
-													title="Copy Secret"
+													title={t("Copy Secret")}
 												>
 													{copy_success["new-secret"] ? (
 														<CheckCircle className="h-4 w-4" />
@@ -2150,7 +2247,7 @@ const Integrations = () => {
 										new_token.scopes && (
 											<div className="mt-4">
 												<div className="block text-xs font-medium text-secondary-700 dark:text-white mb-2">
-													Granted Scopes
+													{t("Granted Scopes")}
 												</div>
 												<div className="bg-secondary-50 dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md p-3">
 													{Object.entries(new_token.scopes).map(
@@ -2175,12 +2272,12 @@ const Integrations = () => {
 										activeTab === "scoped-credentials") && (
 										<div className="mt-6">
 											<div className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-												Usage Examples
+												{t("Usage Examples")}
 											</div>
 											<div className="space-y-3">
 												<div>
 													<p className="text-xs text-secondary-600 dark:text-white mb-2">
-														Basic cURL request:
+														{t("Basic cURL request:")}
 													</p>
 													<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
 														<input
@@ -2198,7 +2295,7 @@ const Integrations = () => {
 																)
 															}
 															className="btn-primary p-2 flex-shrink-0"
-															title="Copy cURL command"
+															title={t("Copy cURL command")}
 														>
 															{copy_success["api-curl-basic"] ? (
 																<CheckCircle className="h-4 w-4" />
@@ -2210,7 +2307,7 @@ const Integrations = () => {
 												</div>
 												<div>
 													<p className="text-xs text-secondary-600 dark:text-white mb-2">
-														Filter by host group:
+														{t("Filter by host group:")}
 													</p>
 													<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
 														<input
@@ -2228,7 +2325,7 @@ const Integrations = () => {
 																)
 															}
 															className="btn-primary p-2 flex-shrink-0"
-															title="Copy cURL command"
+															title={t("Copy cURL command")}
 														>
 															{copy_success["api-curl-filter"] ? (
 																<CheckCircle className="h-4 w-4" />
@@ -2240,8 +2337,9 @@ const Integrations = () => {
 												</div>
 											</div>
 											<p className="text-xs text-secondary-500 dark:text-white mt-3">
-												💡 Replace "Production" with your host group name or
-												UUID
+												{t(
+													'💡 Replace "Production" with your host group name or UUID',
+												)}
 											</p>
 										</div>
 									)}
@@ -2250,12 +2348,13 @@ const Integrations = () => {
 										activeTab === "proxmox") && (
 										<div className="mt-6">
 											<div className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-												Proxmox Auto-Enrollment Command
+												{t("Proxmox Auto-Enrollment Command")}
 											</div>
 
 											<p className="text-xs text-secondary-600 dark:text-white mb-2">
-												Run this command on your Proxmox host to automatically
-												discover and enroll all running LXC containers:
+												{t(
+													"Run this command on your Proxmox host to automatically discover and enroll all running LXC containers:",
+												)}
 											</p>
 
 											{/* Force Install Toggle */}
@@ -2270,12 +2369,13 @@ const Integrations = () => {
 														className="rounded border-secondary-300 dark:border-secondary-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-secondary-700"
 													/>
 													<span className="text-secondary-800 dark:text-secondary-200">
-														Force install (bypass broken packages)
+														{t("Force install (bypass broken packages)")}
 													</span>
 												</label>
 												<p className="text-xs text-secondary-600 dark:text-white mt-1">
-													Enable this if hosts have broken packages (CloudPanel,
-													WHM, etc.) that block apt-get operations
+													{t(
+														"Enable this if hosts have broken packages (CloudPanel, WHM, etc.) that block apt-get operations",
+													)}
 												</p>
 											</div>
 
@@ -2304,12 +2404,12 @@ const Integrations = () => {
 													{copy_success["enrollment-command"] ? (
 														<>
 															<CheckCircle className="h-4 w-4" />
-															Copied
+															{t("Copied")}
 														</>
 													) : (
 														<>
 															<Copy className="h-4 w-4" />
-															Copy
+															{t("Copy")}
 														</>
 													)}
 												</button>
@@ -2321,12 +2421,13 @@ const Integrations = () => {
 										activeTab === "auto-enrollment-direct") && (
 										<div className="mt-6">
 											<div className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-												Direct Host Enrollment Command
+												{t("Direct Host Enrollment Command")}
 											</div>
 
 											<p className="text-xs text-secondary-600 dark:text-white mb-2">
-												Run this command on individual hosts to enroll them
-												directly:
+												{t(
+													"Run this command on individual hosts to enroll them directly:",
+												)}
 											</p>
 
 											{/* Force Install Toggle */}
@@ -2341,12 +2442,13 @@ const Integrations = () => {
 														className="rounded border-secondary-300 dark:border-secondary-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-secondary-700"
 													/>
 													<span className="text-secondary-800 dark:text-secondary-200">
-														Force install (bypass broken packages)
+														{t("Force install (bypass broken packages)")}
 													</span>
 												</label>
 												<p className="text-xs text-secondary-600 dark:text-white mt-1">
-													Enable this if hosts have broken packages (CloudPanel,
-													WHM, etc.) that block apt-get operations
+													{t(
+														"Enable this if hosts have broken packages (CloudPanel, WHM, etc.) that block apt-get operations",
+													)}
 												</p>
 											</div>
 
@@ -2375,19 +2477,20 @@ const Integrations = () => {
 													{copy_success["direct-enrollment-command"] ? (
 														<>
 															<CheckCircle className="h-4 w-4" />
-															Copied
+															{t("Copied")}
 														</>
 													) : (
 														<>
 															<Copy className="h-4 w-4" />
-															Copy
+															{t("Copy")}
 														</>
 													)}
 												</button>
 											</div>
 
 											<p className="text-xs text-secondary-500 dark:text-white mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
-												💡 <strong>Tip:</strong> Specify a custom name:{" "}
+												💡 <strong>{t("Tip:")}</strong>{" "}
+												{t("Specify a custom name:")}{" "}
 												<code className="text-xs bg-secondary-200 dark:bg-secondary-700 px-1 py-0.5 rounded">
 													FRIENDLY_NAME="My Server" sh
 												</code>
@@ -2403,7 +2506,7 @@ const Integrations = () => {
 													htmlFor={token_base64_id}
 													className="block text-xs font-medium text-secondary-700 dark:text-white mb-1"
 												>
-													Base64 Encoded Credentials
+													{t("Base64 Encoded Credentials")}
 												</label>
 												<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
 													<input
@@ -2426,7 +2529,7 @@ const Integrations = () => {
 															)
 														}
 														className="btn-primary p-2 flex-shrink-0"
-														title="Copy Base64"
+														title={t("Copy Base64")}
 													>
 														{copy_success["base64-creds"] ? (
 															<CheckCircle className="h-4 w-4" />
@@ -2443,7 +2546,7 @@ const Integrations = () => {
 														htmlFor={gethomepage_config_id}
 														className="text-xs font-medium text-secondary-700 dark:text-white"
 													>
-														GetHomepage Configuration
+														{t("GetHomepage Configuration")}
 													</label>
 													<button
 														type="button"
@@ -2474,12 +2577,12 @@ const Integrations = () => {
 														{copy_success["gethomepage-config"] ? (
 															<>
 																<CheckCircle className="h-3 w-3" />
-																Copied
+																{t("Copied")}
 															</>
 														) : (
 															<>
 																<Copy className="h-3 w-3" />
-																Copy Config
+																{t("Copy Config")}
 															</>
 														)}
 													</button>
@@ -2512,10 +2615,14 @@ const Integrations = () => {
 													className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs resize-none"
 												/>
 												<p className="text-xs text-secondary-500 dark:text-white mt-1">
-													💡 Paste into your GetHomepage{" "}
-													<code className="bg-secondary-100 dark:bg-secondary-700 px-1 rounded">
-														services.yml
-													</code>
+													<Trans
+														i18nKey="💡 Paste into your GetHomepage <code>services.yml</code>"
+														components={{
+															code: (
+																<code className="bg-secondary-100 dark:bg-secondary-700 px-1 rounded" />
+															),
+														}}
+													/>
 												</p>
 											</div>
 										</div>
@@ -2532,7 +2639,7 @@ const Integrations = () => {
 										}}
 										className="w-full btn-primary py-2 px-4 rounded-md text-sm md:text-base"
 									>
-										I've Saved the Credentials
+										{t("I've Saved the Credentials")}
 									</button>
 								</div>
 							</div>
@@ -2549,7 +2656,7 @@ const Integrations = () => {
 							<div className="p-4 md:p-6">
 								<div className="flex items-center justify-between mb-4 md:mb-6 gap-3">
 									<h2 className="text-lg md:text-xl font-bold text-secondary-900 dark:text-white">
-										Edit Token
+										{t("Edit Token")}
 									</h2>
 									<button
 										type="button"
@@ -2566,7 +2673,7 @@ const Integrations = () => {
 								<form onSubmit={update_token} className="space-y-4">
 									<label className="block">
 										<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-											Token Name
+											{t("Token Name")}
 										</span>
 										<input
 											type="text"
@@ -2577,18 +2684,18 @@ const Integrations = () => {
 													token_name: e.target.value,
 												})
 											}
-											placeholder="e.g., my-pve"
+											placeholder={t("e.g., my-pve")}
 											className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 											required
 										/>
 										<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-											Update the token name for better organization
+											{t("Update the token name for better organization")}
 										</p>
 									</label>
 
 									<label className="block">
 										<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-											Max Hosts Per Day
+											{t("Max Hosts Per Day")}
 										</span>
 										<input
 											type="number"
@@ -2605,8 +2712,9 @@ const Integrations = () => {
 											className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 										/>
 										<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-											Maximum number of hosts that can be enrolled per day with
-											this token
+											{t(
+												"Maximum number of hosts that can be enrolled per day with this token",
+											)}
 										</p>
 									</label>
 
@@ -2615,7 +2723,7 @@ const Integrations = () => {
 											"direct-host") && (
 										<label className="block">
 											<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-												Default Host Group (Optional)
+												{t("Default Host Group (Optional)")}
 											</span>
 											<select
 												value={form_data.default_host_group_id}
@@ -2627,7 +2735,7 @@ const Integrations = () => {
 												}
 												className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 											>
-												<option value="">No default group</option>
+												<option value="">{t("No default group")}</option>
 												{host_groups.map((group) => (
 													<option key={group.id} value={group.id}>
 														{group.name}
@@ -2635,7 +2743,9 @@ const Integrations = () => {
 												))}
 											</select>
 											<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-												Auto-enrolled hosts will be assigned to this group
+												{t(
+													"Auto-enrolled hosts will be assigned to this group",
+												)}
 											</p>
 										</label>
 									)}
@@ -2643,12 +2753,12 @@ const Integrations = () => {
 									{edit_token?.metadata?.integration_type === "api" && (
 										<div className="block">
 											<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-2">
-												Scopes
+												{t("Scopes")}
 											</span>
 											<div className="border border-secondary-300 dark:border-secondary-600 rounded-md p-4 bg-secondary-50 dark:bg-secondary-900">
 												<div className="mb-3">
 													<p className="text-xs font-semibold text-secondary-700 dark:text-white mb-2">
-														Host Permissions
+														{t("Host Permissions")}
 													</p>
 													<div className="space-y-2">
 														{["get", "put", "patch", "update", "delete"].map(
@@ -2673,12 +2783,14 @@ const Integrations = () => {
 																		{action}
 																	</span>
 																	<span className="text-xs text-secondary-500 dark:text-white">
-																		{action === "get" && "- Read host data"}
-																		{action === "put" && "- Replace host data"}
-																		{action === "patch" && "- Update host data"}
+																		{action === "get" && t("- Read host data")}
+																		{action === "put" &&
+																			t("- Replace host data")}
+																		{action === "patch" &&
+																			t("- Update host data")}
 																		{action === "update" &&
-																			"- Modify host data"}
-																		{action === "delete" && "- Delete hosts"}
+																			t("- Modify host data")}
+																		{action === "delete" && t("- Delete hosts")}
 																	</span>
 																</label>
 															),
@@ -2687,14 +2799,14 @@ const Integrations = () => {
 												</div>
 											</div>
 											<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-												Update the permissions for this API credential
+												{t("Update the permissions for this API credential")}
 											</p>
 										</div>
 									)}
 
 									<label className="block">
 										<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-											Allowed IP Addresses (Optional)
+											{t("Allowed IP Addresses (Optional)")}
 										</span>
 										<input
 											type="text"
@@ -2709,14 +2821,15 @@ const Integrations = () => {
 											className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 										/>
 										<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-											Comma-separated list of IP addresses allowed to use this
-											token
+											{t(
+												"Comma-separated list of IP addresses allowed to use this token",
+											)}
 										</p>
 									</label>
 
 									<label className="block">
 										<span className="block text-sm font-medium text-secondary-700 dark:text-white mb-1">
-											Expiration Date (Optional)
+											{t("Expiration Date (Optional)")}
 										</span>
 										<input
 											type="datetime-local"
@@ -2736,7 +2849,7 @@ const Integrations = () => {
 											type="submit"
 											className="flex-1 btn-primary py-2 px-4 rounded-md w-full sm:w-auto"
 										>
-											Update Credential
+											{t("Update Credential")}
 										</button>
 										<button
 											type="button"
@@ -2746,7 +2859,7 @@ const Integrations = () => {
 											}}
 											className="flex-1 bg-secondary-100 dark:bg-secondary-700 text-secondary-700 dark:text-white py-2 px-4 rounded-md hover:bg-secondary-200 dark:hover:bg-secondary-600 w-full sm:w-auto"
 										>
-											Cancel
+											{t("Cancel")}
 										</button>
 									</div>
 								</form>

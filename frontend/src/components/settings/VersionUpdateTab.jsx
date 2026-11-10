@@ -8,6 +8,7 @@ import {
 	ExternalLink,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { formatDate, settingsAPI, versionAPI } from "../../utils/api";
 import {
 	commitUrl,
@@ -19,6 +20,7 @@ import {
 } from "../../utils/sourceRepo";
 
 const VersionUpdateTab = () => {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 
 	// Fetch current settings
@@ -35,6 +37,21 @@ const VersionUpdateTab = () => {
 	const repo = sourceRepo(buildInfo);
 	const isFork = isForkRepo(repo);
 	const commit = shortCommit(buildInfo);
+	// Links of the fork build line; Trans fills each one with its value.
+	const forkLink = (href) => (
+		// biome-ignore lint/a11y/useAnchorContent: Trans fills the link text
+		<a
+			href={href}
+			target="_blank"
+			rel="noopener noreferrer"
+			className="font-mono text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+		/>
+	);
+	const forkLinks = {
+		repo: forkLink(repoUrl(repo)),
+		commit: forkLink(commitUrl(buildInfo)),
+		upstream: forkLink(repoUrl(UPSTREAM_REPO)),
+	};
 
 	// Update settings mutation
 	const updateSettingsMutation = useMutation({
@@ -81,10 +98,10 @@ const VersionUpdateTab = () => {
 			setVersionInfo((prev) => ({
 				...prev,
 				checking: false,
-				error: error.response?.data?.error || "Failed to check for updates",
+				error: error.response?.data?.error || t("Failed to check for updates"),
 			}));
 		}
-	}, []);
+	}, [t]);
 
 	// Load current version and automatically check for updates on component mount
 	useEffect(() => {
@@ -109,32 +126,34 @@ const VersionUpdateTab = () => {
 				console.error("Error loading version info:", error);
 				setVersionInfo((prev) => ({
 					...prev,
-					error: "Failed to load version information",
+					error: t("Failed to load version information"),
 				}));
 			}
 		};
 
 		loadAndCheckUpdates();
-	}, [checkForUpdates]); // Run when component mounts
+	}, [checkForUpdates, t]); // Run when component mounts
 
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center mb-6">
 				<Code className="h-6 w-6 text-primary-600 mr-3" />
 				<h2 className="text-xl font-semibold text-secondary-900 dark:text-white">
-					Server Version Information
+					{t("Server Version Information")}
 				</h2>
 			</div>
 
 			<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-6">
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-					Version Information
+					{t("Version Information")}
 				</h3>
 				<p className="text-sm text-secondary-600 dark:text-white mb-6">
-					Current server version and latest updates from GitHub repository.
+					{t(
+						"Current server version and latest updates from GitHub repository.",
+					)}
 					{versionInfo.checking && (
 						<span className="ml-2 text-blue-600 dark:text-blue-400">
-							🔄 Checking for updates...
+							{t("🔄 Checking for updates...")}
 						</span>
 					)}
 				</p>
@@ -147,11 +166,12 @@ const VersionUpdateTab = () => {
 								htmlFor="show-github-version-toggle"
 								className="text-sm font-medium text-secondary-900 dark:text-white cursor-pointer"
 							>
-								Show GitHub Version / Release Notes on Login Screen
+								{t("Show GitHub Version / Release Notes on Login Screen")}
 							</label>
 							<p className="text-xs text-secondary-500 dark:text-white mt-1">
-								When enabled, the login screen will display the latest GitHub
-								release version and release notes information.
+								{t(
+									"When enabled, the login screen will display the latest GitHub release version and release notes information.",
+								)}
 							</p>
 						</div>
 						<button
@@ -189,7 +209,7 @@ const VersionUpdateTab = () => {
 						<div className="flex items-center gap-2 mb-2">
 							<CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
 							<span className="text-sm font-medium text-secondary-700 dark:text-white">
-								My Version
+								{t("My Version")}
 							</span>
 						</div>
 						<span className="text-lg font-mono text-secondary-900 dark:text-white">
@@ -197,38 +217,19 @@ const VersionUpdateTab = () => {
 						</span>
 						{isFork && (
 							<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-300">
-								Fork build:{" "}
-								<a
-									href={repoUrl(repo)}
-									target="_blank"
-									rel="noopener noreferrer"
-									className="font-mono text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
-								>
-									{repo}
-								</a>
-								{commit && (
-									<>
-										{" @ "}
-										<a
-											href={commitUrl(buildInfo)}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="font-mono text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
-										>
-											{commit}
-										</a>
-									</>
+								{commit ? (
+									<Trans
+										i18nKey="Fork build: <repo>{{repo}}</repo> @ <commit>{{commit}}</commit>, based on <upstream>{{upstream}}</upstream>. Updates follow the fork's releases."
+										values={{ repo, commit, upstream: UPSTREAM_REPO }}
+										components={forkLinks}
+									/>
+								) : (
+									<Trans
+										i18nKey="Fork build: <repo>{{repo}}</repo>, based on <upstream>{{upstream}}</upstream>. Updates follow the fork's releases."
+										values={{ repo, upstream: UPSTREAM_REPO }}
+										components={forkLinks}
+									/>
 								)}
-								{", based on "}
-								<a
-									href={repoUrl(UPSTREAM_REPO)}
-									target="_blank"
-									rel="noopener noreferrer"
-									className="font-mono text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
-								>
-									{UPSTREAM_REPO}
-								</a>
-								. Updates follow the fork's releases.
 							</p>
 						)}
 					</div>
@@ -239,7 +240,7 @@ const VersionUpdateTab = () => {
 							<div className="flex items-center gap-2 mb-2">
 								<Download className="h-4 w-4 text-blue-600 dark:text-blue-400" />
 								<span className="text-sm font-medium text-secondary-700 dark:text-white">
-									Latest Release
+									{t("Latest Release")}
 								</span>
 							</div>
 							<div className="space-y-1">
@@ -254,7 +255,7 @@ const VersionUpdateTab = () => {
 											rel="noopener noreferrer"
 											className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
 										>
-											View on GitHub{" "}
+											{t("View on GitHub")}{" "}
 											<ExternalLink className="h-3 w-3 inline ml-1" />
 										</a>
 									</div>
@@ -270,7 +271,7 @@ const VersionUpdateTab = () => {
 						<div className="flex items-center gap-2 mb-4">
 							<Code className="h-4 w-4 text-purple-600 dark:text-purple-400" />
 							<span className="text-sm font-medium text-secondary-700 dark:text-white">
-								Release Information
+								{t("Release Information")}
 							</span>
 						</div>
 
@@ -278,7 +279,7 @@ const VersionUpdateTab = () => {
 							{/* Repository Link */}
 							<div className="space-y-2">
 								<span className="text-xs font-medium text-secondary-600 dark:text-white uppercase tracking-wide">
-									Repository
+									{t("Repository")}
 								</span>
 								<div className="flex items-center gap-2">
 									<a
@@ -296,7 +297,7 @@ const VersionUpdateTab = () => {
 							{versionInfo.latestRelease.htmlUrl && (
 								<div className="space-y-2">
 									<span className="text-xs font-medium text-secondary-600 dark:text-white uppercase tracking-wide">
-										Release Link
+										{t("Release Link")}
 									</span>
 									<div className="flex items-center gap-2">
 										<a
@@ -305,7 +306,7 @@ const VersionUpdateTab = () => {
 											rel="noopener noreferrer"
 											className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm"
 										>
-											View Release{" "}
+											{t("View Release")}{" "}
 											<ExternalLink className="h-3 w-3 inline ml-1" />
 										</a>
 									</div>
@@ -321,14 +322,14 @@ const VersionUpdateTab = () => {
 						<div className="flex items-center gap-2 mb-2">
 							<Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
 							<span className="text-sm font-medium text-secondary-700 dark:text-white">
-								Last Checked
+								{t("Last Checked")}
 							</span>
 						</div>
 						<span className="text-sm text-secondary-600 dark:text-white">
 							{formatDate(versionInfo.last_update_check)}
 						</span>
 						<p className="text-xs text-secondary-500 dark:text-white mt-1">
-							Updates are checked automatically every 24 hours
+							{t("Updates are checked automatically every 24 hours")}
 						</p>
 					</div>
 				)}
@@ -341,7 +342,7 @@ const VersionUpdateTab = () => {
 						className="btn-primary flex items-center gap-2"
 					>
 						<Download className="h-4 w-4" />
-						{versionInfo.checking ? "Checking..." : "Check for Updates"}
+						{versionInfo.checking ? t("Checking...") : t("Check for Updates")}
 					</button>
 				</div>
 
@@ -351,7 +352,7 @@ const VersionUpdateTab = () => {
 							<AlertCircle className="h-5 w-5 text-red-400 dark:text-red-300" />
 							<div className="ml-3">
 								<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-									Version Check Failed
+									{t("Version Check Failed")}
 								</h3>
 								<p className="mt-1 text-sm text-red-700 dark:text-red-300">
 									{versionInfo.error}
