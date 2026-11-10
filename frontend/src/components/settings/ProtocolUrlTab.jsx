@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle, Save, Server } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { settingsAPI } from "../../utils/api";
 import { FORM_INPUT_CLASS } from "../FormInput";
 import ServerUrlCorsWarning from "../ServerUrlCorsWarning";
 
 const ProtocolUrlTab = () => {
+	const { t } = useTranslation();
 	const protocolId = useId();
 	const hostId = useId();
 	const portId = useId();
@@ -82,7 +84,8 @@ const ProtocolUrlTab = () => {
 				);
 			} else {
 				setErrors({
-					general: error.response?.data?.error || "Failed to update settings",
+					general:
+						error.response?.data?.error || t("Failed to update settings"),
 				});
 			}
 		},
@@ -103,7 +106,7 @@ const ProtocolUrlTab = () => {
 		const newErrors = {};
 
 		if (!formData.serverHost.trim()) {
-			newErrors.serverHost = "Server host is required";
+			newErrors.serverHost = t("Server host is required");
 		}
 
 		if (
@@ -111,7 +114,7 @@ const ProtocolUrlTab = () => {
 			formData.serverPort < 1 ||
 			formData.serverPort > 65535
 		) {
-			newErrors.serverPort = "Port must be between 1 and 65535";
+			newErrors.serverPort = t("Port must be between 1 and 65535");
 		}
 
 		setErrors(newErrors);
@@ -139,10 +142,10 @@ const ProtocolUrlTab = () => {
 					<AlertCircle className="h-5 w-5 text-red-400 dark:text-red-300" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-							Error loading settings
+							{t("Error loading settings")}
 						</h3>
 						<p className="mt-1 text-sm text-red-700 dark:text-red-300">
-							{error.response?.data?.error || "Failed to load settings"}
+							{error.response?.data?.error || t("Failed to load settings")}
 						</p>
 					</div>
 				</div>
@@ -170,15 +173,16 @@ const ProtocolUrlTab = () => {
 					<div className="flex items-center mb-2">
 						<Server className="h-6 w-6 text-primary-600 mr-3" />
 						<h2 className="text-xl font-semibold text-secondary-900 dark:text-white">
-							Server Configuration
+							{t("Server Configuration")}
 						</h2>
 					</div>
 					<p className="text-sm text-secondary-600 dark:text-secondary-400 mb-1">
-						Agent communication URL
+						{t("Agent communication URL")}
 					</p>
 					<p className="text-sm text-secondary-500 dark:text-secondary-300 mb-4">
-						This is the URL agents use to connect. If you change your access
-						URL, update this in Settings &gt; Server URL.
+						{t(
+							"This is the URL agents use to connect. If you change your access URL, update this in Settings > Server URL.",
+						)}
 					</p>
 
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -187,7 +191,7 @@ const ProtocolUrlTab = () => {
 								htmlFor={protocolId}
 								className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 							>
-								Protocol
+								{t("Protocol")}
 							</label>
 							<select
 								id={protocolId}
@@ -197,8 +201,8 @@ const ProtocolUrlTab = () => {
 								}
 								className={FORM_INPUT_CLASS}
 							>
-								<option value="http">HTTP</option>
-								<option value="https">HTTPS</option>
+								<option value="http">{t("HTTP")}</option>
+								<option value="https">{t("HTTPS")}</option>
 							</select>
 						</div>
 
@@ -207,7 +211,7 @@ const ProtocolUrlTab = () => {
 								htmlFor={hostId}
 								className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 							>
-								Host *
+								{t("Host *")}
 							</label>
 							<input
 								id={hostId}
@@ -235,7 +239,7 @@ const ProtocolUrlTab = () => {
 								htmlFor={portId}
 								className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 							>
-								Port *
+								{t("Port *")}
 							</label>
 							<input
 								id={portId}
@@ -266,10 +270,10 @@ const ProtocolUrlTab = () => {
 
 					<div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-md">
 						<p className="text-sm text-blue-800 dark:text-blue-200">
-							<strong>Note:</strong> This URL will be used in installation
-							scripts and agent communications. Change this in order for the
-							agents to communicate with PatchMon, usually the
-							&quot;outside&quot; port and CORS_Origin url.
+							<strong>{t("Note:")}</strong>{" "}
+							{t(
+								'This URL will be used in installation scripts and agent communications. Change this in order for the agents to communicate with PatchMon, usually the "outside" port and CORS_Origin url.',
+							)}
 						</p>
 					</div>
 
@@ -281,16 +285,16 @@ const ProtocolUrlTab = () => {
 									htmlFor={ignoreSslId}
 									className="text-sm font-medium text-secondary-900 dark:text-secondary-100"
 								>
-									Ignore SSL Self-Signed Certificates
+									{t("Ignore SSL Self-Signed Certificates")}
 								</label>
 								<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-100 text-warning-800 dark:bg-warning-900/50 dark:text-warning-300">
-									Security
+									{t("Security")}
 								</span>
 							</div>
 							<p className="mt-1 text-sm text-secondary-500 dark:text-white">
-								When enabled, curl commands in agent scripts will use the -k
-								flag to ignore SSL certificate validation errors. Use with
-								caution on production systems as this reduces security.
+								{t(
+									"When enabled, curl commands in agent scripts will use the -k flag to ignore SSL certificate validation errors. Use with caution on production systems as this reduces security.",
+								)}
 							</p>
 						</div>
 						<button
@@ -334,12 +338,12 @@ const ProtocolUrlTab = () => {
 						{updateSettingsMutation.isPending ? (
 							<>
 								<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-								Saving...
+								{t("Saving...")}
 							</>
 						) : (
 							<>
 								<Save className="h-4 w-4 mr-2" />
-								Save Settings
+								{t("Save Settings")}
 							</>
 						)}
 					</button>
@@ -351,7 +355,7 @@ const ProtocolUrlTab = () => {
 							<CheckCircle className="h-5 w-5 text-green-400 dark:text-green-300" />
 							<div className="ml-3">
 								<p className="text-sm text-green-700 dark:text-green-300">
-									Settings saved successfully!
+									{t("Settings saved successfully!")}
 								</p>
 							</div>
 						</div>

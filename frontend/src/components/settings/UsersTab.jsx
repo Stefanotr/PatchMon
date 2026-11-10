@@ -18,6 +18,7 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../../contexts/AuthContext";
 import { useConfirm } from "../../contexts/ConfirmContext";
 import { useSettings } from "../../contexts/SettingsContext";
@@ -55,6 +56,7 @@ const canResetTfaOf = (roles, actor, target) =>
 	roleOutranks(roles, actor.role, target.role);
 
 const UsersTab = () => {
+	const { t } = useTranslation();
 	const confirm = useConfirm();
 	const toast = useToast();
 	const [showAddModal, setShowAddModal] = useState(false);
@@ -197,7 +199,8 @@ const UsersTab = () => {
 		},
 		onError: (error) => {
 			toast.error(
-				error.response?.data?.error || "Failed to save registration settings",
+				error.response?.data?.error ||
+					t("Failed to save registration settings"),
 			);
 		},
 	});
@@ -219,18 +222,20 @@ const UsersTab = () => {
 
 	const handleDeleteUser = async (userId, username) => {
 		const confirmed = await confirm({
-			title: "Delete user",
-			message: `Are you sure you want to delete user "${username}"?`,
-			confirmLabel: "Delete user",
+			title: t("Delete user"),
+			message: t('Are you sure you want to delete user "{{username}}"?', {
+				username,
+			}),
+			confirmLabel: t("Delete user"),
 		});
 		if (!confirmed) return;
 
 		try {
 			await deleteUserMutation.mutateAsync(userId);
-			toast.success(`User "${username}" deleted`);
+			toast.success(t('User "{{username}}" deleted', { username }));
 		} catch (error) {
 			console.error("Failed to delete user:", error);
-			toast.error(error.response?.data?.error || "Failed to delete user");
+			toast.error(error.response?.data?.error || t("Failed to delete user"));
 		}
 	};
 
@@ -256,8 +261,11 @@ const UsersTab = () => {
 		setResetTfaUser(null);
 		toast.success(
 			withTempPassword
-				? `Two-factor authentication reset and temporary password set for "${username}"`
-				: `Two-factor authentication reset for "${username}"`,
+				? t(
+						'Two-factor authentication reset and temporary password set for "{{username}}"',
+						{ username },
+					)
+				: t('Two-factor authentication reset for "{{username}}"', { username }),
 		);
 	};
 
@@ -280,7 +288,7 @@ const UsersTab = () => {
 					<XCircle className="h-5 w-5 text-danger-400" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-danger-800">
-							Error loading users
+							{t("Error loading users")}
 						</h3>
 						<p className="mt-1 text-sm text-danger-700">{error.message}</p>
 					</div>
@@ -321,7 +329,7 @@ const UsersTab = () => {
 												</div>
 												{user.id === currentUser?.id && (
 													<span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 flex-shrink-0">
-														You
+														{t("You")}
 													</span>
 												)}
 											</div>
@@ -353,19 +361,23 @@ const UsersTab = () => {
 										>
 											<Shield className="h-3 w-3 mr-1" />
 											{user.role === "superadmin"
-												? "Super Admin"
+												? t("Super Admin")
 												: user.role.charAt(0).toUpperCase() +
 													user.role.slice(1).replace("_", " ")}
 										</span>
 										{user.is_active ? (
 											<div className="flex items-center text-green-600 dark:text-green-400">
 												<CheckCircle className="h-4 w-4 mr-1" />
-												<span className="text-xs font-medium">Active</span>
+												<span className="text-xs font-medium">
+													{t("Active")}
+												</span>
 											</div>
 										) : (
 											<div className="flex items-center text-red-600 dark:text-red-400">
 												<XCircle className="h-4 w-4 mr-1" />
-												<span className="text-xs font-medium">Inactive</span>
+												<span className="text-xs font-medium">
+													{t("Inactive")}
+												</span>
 											</div>
 										)}
 									</div>
@@ -375,7 +387,7 @@ const UsersTab = () => {
 										<div className="flex items-center gap-2 text-sm">
 											<Calendar className="h-4 w-4 text-secondary-400 flex-shrink-0" />
 											<span className="text-secondary-500 dark:text-white">
-												Created:&nbsp;
+												{t("Created:")}
 											</span>
 											<span className="text-secondary-900 dark:text-white">
 												{formatDateOnly(user.created_at)}
@@ -383,12 +395,12 @@ const UsersTab = () => {
 										</div>
 										<div className="text-sm">
 											<span className="text-secondary-500 dark:text-white">
-												Last Login:&nbsp;
+												{t("Last Login:")}
 											</span>
 											<span className="text-secondary-900 dark:text-white">
 												{user.last_login
 													? formatDateOnly(user.last_login)
-													: "Never"}
+													: t("Never")}
 											</span>
 										</div>
 									</div>
@@ -399,10 +411,10 @@ const UsersTab = () => {
 											type="button"
 											onClick={() => handleEditUser(user)}
 											className="text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-300 inline-flex items-center gap-1 text-sm"
-											title="Edit user"
+											title={t("Edit user")}
 										>
 											<Edit className="h-4 w-4" />
-											Edit
+											{t("Edit")}
 										</button>
 										<button
 											type="button"
@@ -410,13 +422,13 @@ const UsersTab = () => {
 											className="text-blue-400 hover:text-blue-600 dark:text-blue-500 dark:hover:text-blue-300 disabled:text-gray-300 disabled:cursor-not-allowed inline-flex items-center gap-1 text-sm"
 											title={
 												!user.is_active
-													? "Cannot reset password for inactive user"
-													: "Reset password"
+													? t("Cannot reset password for inactive user")
+													: t("Reset password")
 											}
 											disabled={!user.is_active}
 										>
 											<Key className="h-4 w-4" />
-											Reset
+											{t("Reset")}
 										</button>
 										{user.tfa_enabled &&
 											canResetTfaOf(roles, currentUser, user) && (
@@ -424,11 +436,14 @@ const UsersTab = () => {
 													type="button"
 													onClick={() => setResetTfaUser(user)}
 													className="text-warning-500 hover:text-warning-700 dark:text-warning-400 dark:hover:text-warning-300 inline-flex items-center gap-1 text-sm min-h-[44px]"
-													title="Reset two-factor authentication"
-													aria-label={`Reset two-factor authentication for ${user.username}`}
+													title={t("Reset two-factor authentication")}
+													aria-label={t(
+														"Reset two-factor authentication for {{username}}",
+														{ username: user.username },
+													)}
 												>
 													<ShieldOff className="h-4 w-4" />
-													Reset 2FA
+													{t("Reset 2FA")}
 												</button>
 											)}
 										<button
@@ -437,12 +452,12 @@ const UsersTab = () => {
 											className="text-danger-400 hover:text-danger-600 dark:text-danger-500 dark:hover:text-danger-400 disabled:text-gray-300 disabled:cursor-not-allowed inline-flex items-center gap-1 text-sm"
 											title={
 												user.id === currentUser?.id
-													? "Cannot delete your own account"
+													? t("Cannot delete your own account")
 													: user.role === "admin" &&
 															users.filter((u) => u.role === "admin").length ===
 																1
-														? "Cannot delete the last admin user"
-														: "Delete user"
+														? t("Cannot delete the last admin user")
+														: t("Delete user")
 											}
 											disabled={
 												user.id === currentUser?.id ||
@@ -451,7 +466,7 @@ const UsersTab = () => {
 											}
 										>
 											<Trash2 className="h-4 w-4" />
-											Delete
+											{t("Delete")}
 										</button>
 									</div>
 								</div>
@@ -464,25 +479,25 @@ const UsersTab = () => {
 								<thead className="bg-secondary-50 dark:bg-secondary-700">
 									<tr>
 										<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-											User
+											{t("User")}
 										</th>
 										<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-											Email
+											{t("Email")}
 										</th>
 										<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-											Role
+											{t("Role")}
 										</th>
 										<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-											Status
+											{t("Status")}
 										</th>
 										<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-											Created
+											{t("Created")}
 										</th>
 										<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-											Last Login
+											{t("Last Login")}
 										</th>
 										<th className="px-2 py-3 text-right text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-											Actions
+											{t("Actions")}
 										</th>
 									</tr>
 								</thead>
@@ -514,7 +529,7 @@ const UsersTab = () => {
 															</div>
 															{user.id === currentUser?.id && (
 																<span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-																	You
+																	{t("You")}
 																</span>
 															)}
 														</div>
@@ -543,7 +558,7 @@ const UsersTab = () => {
 												>
 													<Shield className="h-3 w-3 mr-1" />
 													{user.role === "superadmin"
-														? "Super Admin"
+														? t("Super Admin")
 														: user.role.charAt(0).toUpperCase() +
 															user.role.slice(1).replace("_", " ")}
 												</span>
@@ -552,12 +567,12 @@ const UsersTab = () => {
 												{user.is_active ? (
 													<div className="flex items-center text-green-600">
 														<CheckCircle className="h-4 w-4 mr-1" />
-														<span className="text-sm">Active</span>
+														<span className="text-sm">{t("Active")}</span>
 													</div>
 												) : (
 													<div className="flex items-center text-red-600">
 														<XCircle className="h-4 w-4 mr-1" />
-														<span className="text-sm">Inactive</span>
+														<span className="text-sm">{t("Inactive")}</span>
 													</div>
 												)}
 											</td>
@@ -571,7 +586,9 @@ const UsersTab = () => {
 												{user.last_login ? (
 													formatDateOnly(user.last_login)
 												) : (
-													<span className="text-secondary-400">Never</span>
+													<span className="text-secondary-400">
+														{t("Never")}
+													</span>
 												)}
 											</td>
 											<td className="px-2 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -580,7 +597,7 @@ const UsersTab = () => {
 														type="button"
 														onClick={() => handleEditUser(user)}
 														className="text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-300"
-														title="Edit user"
+														title={t("Edit user")}
 													>
 														<Edit className="h-4 w-4" />
 													</button>
@@ -590,8 +607,8 @@ const UsersTab = () => {
 														className="text-blue-400 hover:text-blue-600 dark:text-blue-500 dark:hover:text-blue-300 disabled:text-gray-300 disabled:cursor-not-allowed"
 														title={
 															!user.is_active
-																? "Cannot reset password for inactive user"
-																: "Reset password"
+																? t("Cannot reset password for inactive user")
+																: t("Reset password")
 														}
 														disabled={!user.is_active}
 													>
@@ -603,8 +620,11 @@ const UsersTab = () => {
 																type="button"
 																onClick={() => setResetTfaUser(user)}
 																className="text-warning-500 hover:text-warning-700 dark:text-warning-400 dark:hover:text-warning-300"
-																title="Reset two-factor authentication"
-																aria-label={`Reset two-factor authentication for ${user.username}`}
+																title={t("Reset two-factor authentication")}
+																aria-label={t(
+																	"Reset two-factor authentication for {{username}}",
+																	{ username: user.username },
+																)}
 															>
 																<ShieldOff className="h-4 w-4" />
 															</button>
@@ -617,12 +637,12 @@ const UsersTab = () => {
 														className="col-start-2 text-danger-400 hover:text-danger-600 dark:text-danger-500 dark:hover:text-danger-400 disabled:text-gray-300 disabled:cursor-not-allowed"
 														title={
 															user.id === currentUser?.id
-																? "Cannot delete your own account"
+																? t("Cannot delete your own account")
 																: user.role === "admin" &&
 																		users.filter((u) => u.role === "admin")
 																			.length === 1
-																	? "Cannot delete the last admin user"
-																	: "Delete user"
+																	? t("Cannot delete the last admin user")
+																	: t("Delete user")
 														}
 														disabled={
 															user.id === currentUser?.id ||
@@ -644,9 +664,11 @@ const UsersTab = () => {
 				) : (
 					<div className="p-12 text-center">
 						<User className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
-						<p className="text-secondary-500 dark:text-white">No users found</p>
+						<p className="text-secondary-500 dark:text-white">
+							{t("No users found")}
+						</p>
 						<p className="text-sm text-secondary-400 dark:text-white mt-2">
-							Click "Add User" to create the first user
+							{t('Click "Add User" to create the first user')}
 						</p>
 					</div>
 				)}
@@ -706,13 +728,12 @@ const UsersTab = () => {
 						<Info className="h-5 w-5 text-blue-500 dark:text-blue-400 flex-shrink-0" />
 						<div className="ml-3">
 							<h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-								OIDC Authentication Enabled
+								{t("OIDC Authentication Enabled")}
 							</h3>
 							<p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
-								User management is handled by your Identity Provider (IdP).
-								Users are created automatically when they log in via OIDC. Roles
-								are assigned based on IdP group membership configured in your
-								environment variables.
+								{t(
+									"User management is handled by your Identity Provider (IdP). Users are created automatically when they log in via OIDC. Roles are assigned based on IdP group membership configured in your environment variables.",
+								)}
 							</p>
 						</div>
 					</div>
@@ -724,7 +745,7 @@ const UsersTab = () => {
 				<div className="bg-white dark:bg-secondary-800 shadow overflow-hidden sm:rounded-lg">
 					<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-							User Registration Settings
+							{t("User Registration Settings")}
 						</h3>
 					</div>
 					<div className="px-6 py-4 space-y-4">
@@ -743,7 +764,7 @@ const UsersTab = () => {
 										disabled={settingsLoading}
 									/>
 									<label htmlFor={signupEnabledId}>
-										Enable User Self-Registration
+										{t("Enable User Self-Registration")}
 									</label>
 								</div>
 							</label>
@@ -755,7 +776,7 @@ const UsersTab = () => {
 										htmlFor={defaultRoleId}
 										className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2"
 									>
-										Default Role for New Users
+										{t("Default Role for New Users")}
 									</label>
 									<select
 										id={defaultRoleId}
@@ -767,7 +788,7 @@ const UsersTab = () => {
 										disabled={rolesLoading}
 									>
 										{rolesLoading ? (
-											<option>Loading roles...</option>
+											<option>{t("Loading roles...")}</option>
 										) : roles && Array.isArray(roles) ? (
 											roles.map((role) => (
 												<option key={role.role} value={role.role}>
@@ -776,19 +797,21 @@ const UsersTab = () => {
 												</option>
 											))
 										) : (
-											<option value="user">User</option>
+											<option value="user">{t("User")}</option>
 										)}
 									</select>
 									<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-										New users will be assigned this role when they register.
+										{t(
+											"New users will be assigned this role when they register.",
+										)}
 									</p>
 								</div>
 							)}
 
 							<p className="mt-1 text-sm text-secondary-500 dark:text-white">
-								When enabled, users can create their own accounts through the
-								signup page. When disabled, only administrators can create user
-								accounts.
+								{t(
+									"When enabled, users can create their own accounts through the signup page. When disabled, only administrators can create user accounts.",
+								)}
 							</p>
 						</div>
 
@@ -798,13 +821,12 @@ const UsersTab = () => {
 								<Shield className="h-5 w-5 text-blue-400 dark:text-blue-300" />
 								<div className="ml-3">
 									<h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-										Security Notice
+										{t("Security Notice")}
 									</h3>
 									<p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
-										When enabling user self-registration, exercise caution on
-										internal networks. Consider restricting access to trusted
-										networks only and ensure proper role assignments to prevent
-										unauthorized access to sensitive systems.
+										{t(
+											"When enabling user self-registration, exercise caution on internal networks. Consider restricting access to trusted networks only and ensure proper role assignments to prevent unauthorized access to sensitive systems.",
+										)}
 									</p>
 								</div>
 							</div>
@@ -827,12 +849,12 @@ const UsersTab = () => {
 								{updateSignupSettingsMutation.isPending ? (
 									<>
 										<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-										Saving...
+										{t("Saving...")}
 									</>
 								) : (
 									<>
 										<Save className="h-4 w-4 mr-2" />
-										Save Settings
+										{t("Save Settings")}
 									</>
 								)}
 							</button>
@@ -844,7 +866,7 @@ const UsersTab = () => {
 									<CheckCircle className="h-5 w-5 text-green-400 dark:text-green-300" />
 									<div className="ml-3">
 										<p className="text-sm text-green-700 dark:text-green-300">
-											Settings saved successfully!
+											{t("Settings saved successfully!")}
 										</p>
 									</div>
 								</div>
@@ -859,6 +881,7 @@ const UsersTab = () => {
 
 // Add User Modal Component
 const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
+	const { t } = useTranslation();
 	const usernameId = useId();
 	const emailId = useId();
 	const firstNameId = useId();
@@ -920,7 +943,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 				onClose();
 			}, 1500);
 		} catch (err) {
-			setError(err.response?.data?.error || "Failed to create user");
+			setError(err.response?.data?.error || t("Failed to create user"));
 		} finally {
 			setIsLoading(false);
 		}
@@ -939,7 +962,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-md">
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-					Add New User
+					{t("Add New User")}
 				</h3>
 
 				<form onSubmit={handleSubmit} className="space-y-4">
@@ -948,7 +971,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 							htmlFor={usernameId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Username
+							{t("Username")}
 						</label>
 						<input
 							id={usernameId}
@@ -966,7 +989,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 							htmlFor={emailId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Email
+							{t("Email")}
 						</label>
 						<input
 							id={emailId}
@@ -985,7 +1008,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 								htmlFor={firstNameId}
 								className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 							>
-								First Name
+								{t("First Name")}
 							</label>
 							<input
 								id={firstNameId}
@@ -1001,7 +1024,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 								htmlFor={lastNameId}
 								className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 							>
-								Last Name
+								{t("Last Name")}
 							</label>
 							<input
 								id={lastNameId}
@@ -1019,7 +1042,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 							htmlFor={passwordId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Password
+							{t("Password")}
 						</label>
 						<input
 							id={passwordId}
@@ -1032,7 +1055,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 							className="block w-full border-secondary-300 dark:border-secondary-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 						/>
 						<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-							Minimum 6 characters
+							{t("Minimum 6 characters")}
 						</p>
 					</div>
 
@@ -1041,7 +1064,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 							htmlFor={roleId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Role
+							{t("Role")}
 						</label>
 						<select
 							id={roleId}
@@ -1059,8 +1082,8 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 								))
 							) : (
 								<>
-									<option value="user">User</option>
-									<option value="admin">Admin</option>
+									<option value="user">{t("User")}</option>
+									<option value="admin">{t("Admin")}</option>
 								</>
 							)}
 						</select>
@@ -1071,7 +1094,7 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 							<div className="flex items-center">
 								<CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mr-2" />
 								<p className="text-sm text-green-700 dark:text-green-300">
-									User created successfully!
+									{t("User created successfully!")}
 								</p>
 							</div>
 						</div>
@@ -1091,14 +1114,14 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 							onClick={onClose}
 							className="px-4 py-2 text-sm font-medium text-secondary-700 dark:text-secondary-200 bg-white dark:bg-secondary-700 border border-secondary-300 dark:border-secondary-600 rounded-md hover:bg-secondary-50 dark:hover:bg-secondary-600"
 						>
-							Cancel
+							{t("Cancel")}
 						</button>
 						<button
 							type="submit"
 							disabled={isLoading}
 							className="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 disabled:opacity-50"
 						>
-							{isLoading ? "Creating..." : "Create User"}
+							{isLoading ? t("Creating...") : t("Create User")}
 						</button>
 					</div>
 				</form>
@@ -1120,6 +1143,7 @@ const EditUserModal = ({
 	isUnlinkingOidc,
 	roles,
 }) => {
+	const { t } = useTranslation();
 	const confirm = useConfirm();
 	const toast = useToast();
 	const editUsernameId = useId();
@@ -1175,25 +1199,35 @@ const EditUserModal = ({
 				onClose();
 			}, 1500);
 		} catch (err) {
-			setError(err.response?.data?.error || "Failed to update user");
+			setError(err.response?.data?.error || t("Failed to update user"));
 		}
 	};
 
 	const handleUnlinkOidc = async () => {
 		const confirmed = await confirm({
-			title: "Unlink SSO identity",
+			title: t("Unlink SSO identity"),
 			subtitle: null,
-			message: `Unlink "${user.username}" from their SSO identity? Their next SSO login links the account again, matched by the verified email address your identity provider sends.`,
-			warning:
+			message: t(
+				'Unlink "{{username}}" from their SSO identity? Their next SSO login links the account again, matched by the verified email address your identity provider sends.',
+				{ username: user.username },
+			),
+			warning: t(
 				"If Trust unverified email is on in Settings > OIDC, whoever next signs in with this email address claims the account, whether or not the provider has verified it. Ask the user to sign in straight after you unlink.",
-			confirmLabel: "Unlink SSO identity",
+			),
+			confirmLabel: t("Unlink SSO identity"),
 		});
 		if (!confirmed) return;
 		try {
 			await onUnlinkOidc(user.id);
-			toast.success(`SSO identity unlinked from "${user.username}"`);
+			toast.success(
+				t('SSO identity unlinked from "{{username}}"', {
+					username: user.username,
+				}),
+			);
 		} catch (err) {
-			toast.error(err.response?.data?.error || "Failed to unlink SSO identity");
+			toast.error(
+				err.response?.data?.error || t("Failed to unlink SSO identity"),
+			);
 		}
 	};
 
@@ -1211,7 +1245,7 @@ const EditUserModal = ({
 		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-md">
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-					Edit User
+					{t("Edit User")}
 				</h3>
 
 				<form onSubmit={handleSubmit} className="space-y-4">
@@ -1220,7 +1254,7 @@ const EditUserModal = ({
 							htmlFor={editUsernameId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Username
+							{t("Username")}
 						</label>
 						<input
 							id={editUsernameId}
@@ -1238,7 +1272,7 @@ const EditUserModal = ({
 							htmlFor={editEmailId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Email
+							{t("Email")}
 						</label>
 						<input
 							id={editEmailId}
@@ -1257,7 +1291,7 @@ const EditUserModal = ({
 								htmlFor={editFirstNameId}
 								className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 							>
-								First Name
+								{t("First Name")}
 							</label>
 							<input
 								id={editFirstNameId}
@@ -1273,7 +1307,7 @@ const EditUserModal = ({
 								htmlFor={editLastNameId}
 								className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 							>
-								Last Name
+								{t("Last Name")}
 							</label>
 							<input
 								id={editLastNameId}
@@ -1291,7 +1325,7 @@ const EditUserModal = ({
 							htmlFor={editRoleId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Role
+							{t("Role")}
 						</label>
 						<select
 							id={editRoleId}
@@ -1309,8 +1343,8 @@ const EditUserModal = ({
 								))
 							) : (
 								<>
-									<option value="user">User</option>
-									<option value="admin">Admin</option>
+									<option value="user">{t("User")}</option>
+									<option value="admin">{t("Admin")}</option>
 								</>
 							)}
 						</select>
@@ -1329,20 +1363,24 @@ const EditUserModal = ({
 							htmlFor={editActiveId}
 							className="ml-2 block text-sm text-secondary-700 dark:text-secondary-200"
 						>
-							Active user
+							{t("Active user")}
 						</label>
 					</div>
 
 					{user.oidc_linked && (
 						<div className="border-t border-secondary-200 dark:border-secondary-600 pt-4">
 							<p className="text-sm font-medium text-secondary-700 dark:text-secondary-200">
-								SSO identity
+								{t("SSO identity")}
 							</p>
 							<p className="mt-1 text-sm text-secondary-500 dark:text-secondary-400">
-								Linked
-								{user.oidc_provider ? ` via ${user.oidc_provider}` : ""}. Unlink
-								it if the user was re-created at the identity provider, or you
-								changed provider, and their SSO login is refused.
+								{user.oidc_provider
+									? t(
+											"Linked via {{provider}}. Unlink it if the user was re-created at the identity provider, or you changed provider, and their SSO login is refused.",
+											{ provider: user.oidc_provider },
+										)
+									: t(
+											"Linked. Unlink it if the user was re-created at the identity provider, or you changed provider, and their SSO login is refused.",
+										)}
 							</p>
 							<button
 								type="button"
@@ -1353,7 +1391,7 @@ const EditUserModal = ({
 								{isUnlinkingOidc && (
 									<RefreshCw className="h-4 w-4 animate-spin" />
 								)}
-								{isUnlinkingOidc ? "Unlinking..." : "Unlink SSO identity"}
+								{isUnlinkingOidc ? t("Unlinking...") : t("Unlink SSO identity")}
 							</button>
 						</div>
 					)}
@@ -1363,7 +1401,7 @@ const EditUserModal = ({
 							<div className="flex items-center">
 								<CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mr-2" />
 								<p className="text-sm text-green-700 dark:text-green-300">
-									User updated successfully!
+									{t("User updated successfully!")}
 								</p>
 							</div>
 						</div>
@@ -1383,14 +1421,14 @@ const EditUserModal = ({
 							onClick={onClose}
 							className="px-4 py-2 text-sm font-medium text-secondary-700 dark:text-secondary-200 bg-white dark:bg-secondary-700 border border-secondary-300 dark:border-secondary-600 rounded-md hover:bg-secondary-50 dark:hover:bg-secondary-600"
 						>
-							Cancel
+							{t("Cancel")}
 						</button>
 						<button
 							type="submit"
 							disabled={isLoading}
 							className="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 disabled:opacity-50"
 						>
-							{isLoading ? "Updating..." : "Update User"}
+							{isLoading ? t("Updating...") : t("Update User")}
 						</button>
 					</div>
 				</form>
@@ -1409,6 +1447,7 @@ const ResetPasswordModal = ({
 	onPasswordReset,
 	isLoading,
 }) => {
+	const { t } = useTranslation();
 	const newPasswordId = useId();
 	const confirmPasswordId = useId();
 	const [newPassword, setNewPassword] = useState("");
@@ -1421,12 +1460,12 @@ const ResetPasswordModal = ({
 
 		// Validate passwords
 		if (newPassword.length < 6) {
-			setError("Password must be at least 6 characters long");
+			setError(t("Password must be at least 6 characters long"));
 			return;
 		}
 
 		if (newPassword !== confirmPassword) {
-			setError("Passwords do not match");
+			setError(t("Passwords do not match"));
 			return;
 		}
 
@@ -1436,7 +1475,7 @@ const ResetPasswordModal = ({
 			setNewPassword("");
 			setConfirmPassword("");
 		} catch (err) {
-			setError(err.response?.data?.error || "Failed to reset password");
+			setError(err.response?.data?.error || t("Failed to reset password"));
 		}
 	};
 
@@ -1453,7 +1492,7 @@ const ResetPasswordModal = ({
 		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[120]">
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-md">
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-					Reset Password for {user.username}
+					{t("Reset Password for {{username}}", { username: user.username })}
 				</h3>
 
 				<form onSubmit={handleSubmit} className="space-y-4">
@@ -1462,7 +1501,7 @@ const ResetPasswordModal = ({
 							htmlFor={newPasswordId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							New Password
+							{t("New Password")}
 						</label>
 						<input
 							id={newPasswordId}
@@ -1472,7 +1511,7 @@ const ResetPasswordModal = ({
 							value={newPassword}
 							onChange={(e) => setNewPassword(e.target.value)}
 							className="block w-full border-secondary-300 dark:border-secondary-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
-							placeholder="Enter new password (min 6 characters)"
+							placeholder={t("Enter new password (min 6 characters)")}
 						/>
 					</div>
 
@@ -1481,7 +1520,7 @@ const ResetPasswordModal = ({
 							htmlFor={confirmPasswordId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Confirm Password
+							{t("Confirm Password")}
 						</label>
 						<input
 							id={confirmPasswordId}
@@ -1490,7 +1529,7 @@ const ResetPasswordModal = ({
 							value={confirmPassword}
 							onChange={(e) => setConfirmPassword(e.target.value)}
 							className="block w-full border-secondary-300 dark:border-secondary-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
-							placeholder="Confirm new password"
+							placeholder={t("Confirm new password")}
 						/>
 					</div>
 
@@ -1501,12 +1540,13 @@ const ResetPasswordModal = ({
 							</div>
 							<div className="ml-3">
 								<h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-									Password Reset Warning
+									{t("Password Reset Warning")}
 								</h3>
 								<div className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
 									<p>
-										This will immediately change the user's password. The user
-										will need to use the new password to login.
+										{t(
+											"This will immediately change the user's password. The user will need to use the new password to login.",
+										)}
 									</p>
 								</div>
 							</div>
@@ -1527,7 +1567,7 @@ const ResetPasswordModal = ({
 							onClick={handleClose}
 							className="px-4 py-2 text-sm font-medium text-secondary-700 dark:text-secondary-200 bg-white dark:bg-secondary-700 border border-secondary-300 dark:border-secondary-600 rounded-md hover:bg-secondary-50 dark:hover:bg-secondary-600"
 						>
-							Cancel
+							{t("Cancel")}
 						</button>
 						<button
 							type="submit"
@@ -1537,7 +1577,7 @@ const ResetPasswordModal = ({
 							{isLoading && (
 								<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
 							)}
-							{isLoading ? "Resetting..." : "Reset Password"}
+							{isLoading ? t("Resetting...") : t("Reset Password")}
 						</button>
 					</div>
 				</form>
@@ -1557,6 +1597,7 @@ const ResetTfaModal = ({
 	actorHasPassword,
 	actorTfaEnabled,
 }) => {
+	const { t } = useTranslation();
 	const titleId = useId();
 	const passwordId = useId();
 	const tokenId = useId();
@@ -1574,19 +1615,19 @@ const ResetTfaModal = ({
 		e.preventDefault();
 		setError("");
 		if (!password) {
-			setError("Enter your password to confirm");
+			setError(t("Enter your password to confirm"));
 			return;
 		}
 		if (actorTfaEnabled && !tfaToken.trim()) {
-			setError("Enter your two-factor code to confirm");
+			setError(t("Enter your two-factor code to confirm"));
 			return;
 		}
 		if (setTemp && !tempPassword) {
-			setError("Enter a temporary password for the user");
+			setError(t("Enter a temporary password for the user"));
 			return;
 		}
 		if (setTemp && tempPassword !== tempConfirm) {
-			setError("The temporary passwords do not match");
+			setError(t("The temporary passwords do not match"));
 			return;
 		}
 		try {
@@ -1601,7 +1642,7 @@ const ResetTfaModal = ({
 			setError(
 				err.response?.data?.error ||
 					err.response?.data?.message ||
-					"Failed to reset two-factor authentication",
+					t("Failed to reset two-factor authentication"),
 			);
 		}
 	};
@@ -1612,7 +1653,7 @@ const ResetTfaModal = ({
 				type="button"
 				onClick={onClose}
 				className="fixed inset-0 cursor-default"
-				aria-label="Close"
+				aria-label={t("Close")}
 			/>
 			<div
 				role="dialog"
@@ -1627,13 +1668,13 @@ const ResetTfaModal = ({
 							className="text-lg font-medium text-secondary-900 dark:text-white flex items-center gap-2"
 						>
 							<ShieldOff className="h-5 w-5 text-warning-600" />
-							Reset 2FA for {user.username}
+							{t("Reset 2FA for {{username}}", { username: user.username })}
 						</h3>
 						<button
 							type="button"
 							onClick={onClose}
 							className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700 text-secondary-400 hover:text-secondary-600 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center"
-							aria-label="Close"
+							aria-label={t("Close")}
 						>
 							<X className="h-5 w-5" />
 						</button>
@@ -1644,24 +1685,23 @@ const ResetTfaModal = ({
 					<div className="px-6 py-4 space-y-4 overflow-y-auto">
 						<div className="p-3 bg-danger-50 dark:bg-danger-900 border border-danger-200 dark:border-danger-700 rounded-md">
 							<p className="text-sm text-danger-700 dark:text-danger-300">
-								This removes {user.username}'s authenticator and backup codes,
-								forgets their trusted devices and signs them out everywhere. The
-								next time they sign in with their password they must set up
-								two-factor authentication again before they can use PatchMon.
-								Accounts that sign in through single sign-on are not asked to
-								set it up again.
+								{t(
+									"This removes {{username}}'s authenticator and backup codes, forgets their trusted devices and signs them out everywhere. The next time they sign in with their password they must set up two-factor authentication again before they can use PatchMon. Accounts that sign in through single sign-on are not asked to set it up again.",
+									{ username: user.username },
+								)}
 							</p>
 							<p className="mt-2 text-sm font-medium text-danger-700 dark:text-danger-300">
-								If you suspect the account is compromised, also set a temporary
-								password below.
+								{t(
+									"If you suspect the account is compromised, also set a temporary password below.",
+								)}
 							</p>
 						</div>
 
 						{!actorHasPassword ? (
 							<p className="text-sm text-secondary-700 dark:text-secondary-200">
-								Your account signs in through single sign-on and has no local
-								password, so it cannot confirm this action. Ask an administrator
-								with a local password to reset it.
+								{t(
+									"Your account signs in through single sign-on and has no local password, so it cannot confirm this action. Ask an administrator with a local password to reset it.",
+								)}
 							</p>
 						) : (
 							<>
@@ -1670,7 +1710,7 @@ const ResetTfaModal = ({
 										htmlFor={passwordId}
 										className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 									>
-										Your password
+										{t("Your password")}
 									</label>
 									<input
 										id={passwordId}
@@ -1687,8 +1727,8 @@ const ResetTfaModal = ({
 											htmlFor={tokenId}
 											className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 										>
-											Your two-factor code
-											{actorTfaEnabled === undefined && " (if enabled)"}
+											{t("Your two-factor code")}
+											{actorTfaEnabled === undefined && t(" (if enabled)")}
 										</label>
 										<input
 											id={tokenId}
@@ -1698,7 +1738,7 @@ const ResetTfaModal = ({
 											maxLength={6}
 											value={tfaToken}
 											onChange={(e) => setTfaToken(e.target.value)}
-											placeholder="6-digit or backup code"
+											placeholder={t("6-digit or backup code")}
 											className="w-full px-3 py-2 bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-secondary-400 font-mono"
 										/>
 									</div>
@@ -1717,12 +1757,12 @@ const ResetTfaModal = ({
 										)}
 										<span>
 											<span className="block text-sm font-medium text-secondary-900 dark:text-white">
-												Also set a new temporary password
+												{t("Also set a new temporary password")}
 											</span>
 											<span className="block text-xs text-secondary-500 dark:text-secondary-300">
-												Their current password stops working. They must replace
-												the temporary one when they next sign in, before setting
-												up two-factor authentication.
+												{t(
+													"Their current password stops working. They must replace the temporary one when they next sign in, before setting up two-factor authentication.",
+												)}
 											</span>
 										</span>
 									</button>
@@ -1734,7 +1774,7 @@ const ResetTfaModal = ({
 												htmlFor={tempId}
 												className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 											>
-												Temporary password
+												{t("Temporary password")}
 											</label>
 											<input
 												id={tempId}
@@ -1750,7 +1790,7 @@ const ResetTfaModal = ({
 												htmlFor={tempConfirmId}
 												className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 											>
-												Confirm temporary password
+												{t("Confirm temporary password")}
 											</label>
 											<input
 												id={tempConfirmId}
@@ -1762,7 +1802,9 @@ const ResetTfaModal = ({
 											/>
 										</div>
 										<p className="text-xs text-secondary-500 dark:text-secondary-300">
-											Give it to the user over a separate, secure channel.
+											{t(
+												"Give it to the user over a separate, secure channel.",
+											)}
 										</p>
 									</>
 								)}
@@ -1785,7 +1827,7 @@ const ResetTfaModal = ({
 							onClick={onClose}
 							className="btn-outline min-h-[44px] md:min-h-0"
 						>
-							Cancel
+							{t("Cancel")}
 						</button>
 						<button
 							type="submit"
@@ -1793,7 +1835,7 @@ const ResetTfaModal = ({
 							className="btn-danger min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							{isLoading && <RefreshCw className="h-4 w-4 mr-2 animate-spin" />}
-							{isLoading ? "Resetting..." : "Reset 2FA"}
+							{isLoading ? t("Resetting...") : t("Reset 2FA")}
 						</button>
 					</div>
 				</form>

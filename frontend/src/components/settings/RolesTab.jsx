@@ -116,24 +116,26 @@ const RolesTab = () => {
 			await updateRoleMutation.mutateAsync({ role, permissions });
 		} catch (error) {
 			console.error("Failed to update permissions:", error);
-			toast.error(error.response?.data?.error || "Failed to update role");
+			toast.error(error.response?.data?.error || t("Failed to update role"));
 		}
 	};
 
 	const handleDeleteRole = async (role) => {
 		const confirmed = await confirm({
-			title: "Delete role",
-			message: `Are you sure you want to delete the "${role}" role?`,
-			confirmLabel: "Delete role",
+			title: t("Delete role"),
+			message: t('Are you sure you want to delete the "{{role}}" role?', {
+				role,
+			}),
+			confirmLabel: t("Delete role"),
 		});
 		if (!confirmed) return;
 
 		try {
 			await deleteRoleMutation.mutateAsync(role);
-			toast.success(`Role "${role}" deleted`);
+			toast.success(t('Role "{{role}}" deleted', { role }));
 		} catch (error) {
 			console.error("Failed to delete role:", error);
-			toast.error(error.response?.data?.error || "Failed to delete role");
+			toast.error(error.response?.data?.error || t("Failed to delete role"));
 		}
 	};
 
@@ -152,7 +154,7 @@ const RolesTab = () => {
 					<AlertTriangle className="h-5 w-5 text-danger-400" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-danger-800">
-							Error loading permissions
+							{t("Error loading permissions")}
 						</h3>
 						<p className="mt-1 text-sm text-danger-700">{error.message}</p>
 					</div>
@@ -170,12 +172,12 @@ const RolesTab = () => {
 						<Info className="h-5 w-5 text-blue-500 dark:text-blue-400 flex-shrink-0" />
 						<div className="ml-3">
 							<h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-								OIDC Role Mapping Enabled
+								{t("OIDC Role Mapping Enabled")}
 							</h3>
 							<p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
-								Roles are managed via your Identity Provider (IdP) groups.
-								Configure the following environment variables to map IdP groups
-								to roles:
+								{t(
+									"Roles are managed via your Identity Provider (IdP) groups. Configure the following environment variables to map IdP groups to roles:",
+								)}
 							</p>
 							<ul className="mt-2 text-sm text-blue-600 dark:text-blue-400 list-disc list-inside space-y-1">
 								<li>
@@ -186,31 +188,31 @@ const RolesTab = () => {
 									<code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">
 										OIDC_ADMIN_GROUP
 									</code>{" "}
-									maps to Super Admin (highest)
+									{t("maps to Super Admin (highest)")}
 								</li>
 								<li>
 									<code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">
 										OIDC_ADMIN_GROUP
 									</code>{" "}
-									maps to Admin
+									{t("maps to Admin")}
 								</li>
 								<li>
 									<code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">
 										OIDC_HOST_MANAGER_GROUP
 									</code>{" "}
-									maps to Host Manager
+									{t("maps to Host Manager")}
 								</li>
 								<li>
 									<code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">
 										OIDC_USER_GROUP
 									</code>{" "}
-									maps to User (can export data)
+									{t("maps to User (can export data)")}
 								</li>
 								<li>
 									<code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">
 										OIDC_READONLY_GROUP
 									</code>{" "}
-									maps to Readonly (view only, lowest)
+									{t("maps to Readonly (view only, lowest)")}
 								</li>
 							</ul>
 						</div>
@@ -225,7 +227,7 @@ const RolesTab = () => {
 						<thead className="bg-secondary-50 dark:bg-secondary-700">
 							<tr>
 								<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider sticky left-0 z-10 bg-secondary-50 dark:bg-secondary-700 border-r border-secondary-200 dark:border-secondary-700">
-									Permission
+									{t("Permission")}
 								</th>
 								{roles &&
 									Array.isArray(roles) &&
@@ -249,7 +251,7 @@ const RolesTab = () => {
 														type="button"
 														onClick={() => setEditingRole(r.role)}
 														className="text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-200"
-														title="Edit role permissions"
+														title={t("Edit role permissions")}
 													>
 														<Edit className="h-4 w-4" />
 													</button>
@@ -275,10 +277,10 @@ const RolesTab = () => {
 												<div className="flex items-center gap-2">
 													<GroupIcon className="h-4 w-4 text-secondary-500 dark:text-secondary-300" />
 													<span className="text-sm font-semibold text-secondary-800 dark:text-secondary-100">
-														{group.name}
+														{t(group.name)}
 													</span>
 													<span className="text-xs text-secondary-500 dark:text-secondary-400 hidden sm:inline">
-														{group.description}
+														{t(group.description)}
 													</span>
 												</div>
 											</td>
@@ -417,12 +419,12 @@ const RolePermissionsCard = ({
 						</h3>
 						{isOIDCSyncRoles && isOIDCRole && (
 							<span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-								OIDC Synced
+								{t("OIDC Synced")}
 							</span>
 						)}
 						{!isOIDCSyncRoles && isBuiltInRole && (
 							<span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
-								Built-in Role
+								{t("Built-in Role")}
 							</span>
 						)}
 					</div>
@@ -435,7 +437,7 @@ const RolePermissionsCard = ({
 									className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
 								>
 									<Save className="h-4 w-4 mr-1" />
-									Save
+									{t("Save")}
 								</button>
 								<button
 									type="button"
@@ -443,7 +445,7 @@ const RolePermissionsCard = ({
 									className="inline-flex items-center px-3 py-1 border border-secondary-300 dark:border-secondary-600 text-sm font-medium rounded-md text-secondary-700 dark:text-secondary-200 bg-white dark:bg-secondary-700 hover:bg-secondary-50 dark:hover:bg-secondary-600"
 								>
 									<X className="h-4 w-4 mr-1" />
-									Cancel
+									{t("Cancel")}
 								</button>
 								{!cannotDelete && (
 									<button
@@ -452,7 +454,7 @@ const RolePermissionsCard = ({
 										className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
 									>
 										<Trash2 className="h-4 w-4 mr-1" />
-										Delete
+										{t("Delete")}
 									</button>
 								)}
 							</>
@@ -465,7 +467,7 @@ const RolePermissionsCard = ({
 									className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									<Edit className="h-4 w-4 mr-1" />
-									Edit
+									{t("Edit")}
 								</button>
 								{!cannotDelete && (
 									<button
@@ -474,7 +476,7 @@ const RolePermissionsCard = ({
 										className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
 									>
 										<Trash2 className="h-4 w-4 mr-1" />
-										Delete
+										{t("Delete")}
 									</button>
 								)}
 							</>
@@ -492,12 +494,12 @@ const RolePermissionsCard = ({
 							<div className="flex items-center gap-2 mb-3">
 								<GroupIcon className="h-4 w-4 text-secondary-500 dark:text-secondary-300" />
 								<h4 className="text-sm font-semibold text-secondary-800 dark:text-secondary-100">
-									{group.name}
+									{t(group.name)}
 								</h4>
 								<span
 									className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${riskBadgeClasses(group.riskLevel)}`}
 								>
-									{riskLabel(group.riskLevel)}
+									{t(riskLabel(group.riskLevel))}
 								</span>
 							</div>
 							{/* Permissions grid */}
@@ -565,7 +567,7 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 			await permissionsAPI.updateRole(formData.role, formData);
 			onSuccess();
 		} catch (err) {
-			setError(err.response?.data?.error || "Failed to create role");
+			setError(err.response?.data?.error || t("Failed to create role"));
 		} finally {
 			setIsLoading(false);
 		}
@@ -607,7 +609,7 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120]">
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-					Add New Role
+					{t("Add New Role")}
 				</h3>
 
 				<form onSubmit={handleSubmit} className="space-y-4">
@@ -617,7 +619,7 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 							htmlFor={roleNameInputId}
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Role Name
+							{t("Role Name")}
 						</label>
 						<input
 							id={roleNameInputId}
@@ -627,10 +629,10 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 							value={formData.role}
 							onChange={handleInputChange}
 							className="block w-full border-secondary-300 dark:border-secondary-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
-							placeholder="e.g., host_manager, readonly"
+							placeholder={t("e.g., host_manager, readonly")}
 						/>
 						<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-							Use lowercase with underscores (e.g., host_manager)
+							{t("Use lowercase with underscores (e.g., host_manager)")}
 						</p>
 					</div>
 
@@ -641,28 +643,28 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 							onClick={() => applyPreset("readonly")}
 							className="px-3 py-1.5 text-xs font-medium rounded-md border border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40"
 						>
-							Read Only
+							{t("Read Only")}
 						</button>
 						<button
 							type="button"
 							onClick={() => applyPreset("operator")}
 							className="px-3 py-1.5 text-xs font-medium rounded-md border border-yellow-300 dark:border-yellow-700 text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/40"
 						>
-							Operator
+							{t("Operator")}
 						</button>
 						<button
 							type="button"
 							onClick={() => applyPreset("admin")}
 							className="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40"
 						>
-							Admin
+							{t("Admin")}
 						</button>
 						<button
 							type="button"
 							onClick={() => applyPreset("clear")}
 							className="px-3 py-1.5 text-xs font-medium rounded-md border border-secondary-300 dark:border-secondary-600 text-secondary-700 dark:text-secondary-300 bg-white dark:bg-secondary-700 hover:bg-secondary-50 dark:hover:bg-secondary-600"
 						>
-							Clear All
+							{t("Clear All")}
 						</button>
 					</div>
 
@@ -681,12 +683,12 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 										<div className="flex items-center gap-2">
 											<GroupIcon className="h-4 w-4 text-secondary-500 dark:text-secondary-300" />
 											<span className="text-sm font-semibold text-secondary-800 dark:text-secondary-100">
-												{group.name}
+												{t(group.name)}
 											</span>
 											<span
 												className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${riskBadgeClasses(group.riskLevel)}`}
 											>
-												{riskLabel(group.riskLevel)}
+												{t(riskLabel(group.riskLevel))}
 											</span>
 										</div>
 										<button
@@ -694,7 +696,7 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 											onClick={() => toggleGroup(group, !allSelected)}
 											className="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 font-medium"
 										>
-											{allSelected ? "Deselect all" : "Select all"}
+											{allSelected ? t("Deselect all") : t("Select all")}
 										</button>
 									</div>
 									{/* Permission checkboxes */}
@@ -744,7 +746,10 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 
 					<div className="flex items-center justify-between pt-2">
 						<span className="text-sm text-secondary-500 dark:text-secondary-400">
-							{enabled}/{total} permissions selected
+							{t("{{enabled}}/{{total}} permissions selected", {
+								enabled,
+								total,
+							})}
 						</span>
 						<div className="flex space-x-3">
 							<button
@@ -752,14 +757,14 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 								onClick={onClose}
 								className="px-4 py-2 text-sm font-medium text-secondary-700 dark:text-secondary-200 bg-white dark:bg-secondary-700 border border-secondary-300 dark:border-secondary-600 rounded-md hover:bg-secondary-50 dark:hover:bg-secondary-600"
 							>
-								Cancel
+								{t("Cancel")}
 							</button>
 							<button
 								type="submit"
 								disabled={isLoading}
 								className="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 disabled:opacity-50"
 							>
-								{isLoading ? "Creating..." : "Create Role"}
+								{isLoading ? t("Creating...") : t("Create Role")}
 							</button>
 						</div>
 					</div>

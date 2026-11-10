@@ -1,15 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Edit2, Lock, RefreshCw, Variable } from "lucide-react";
 import { Fragment, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { TimezoneSelect } from "../../components/TimezoneSelect";
 import InfoTooltip from "../../components/ui/InfoTooltip";
+import { envText } from "../../constants/envSettingsText";
 import { useToast } from "../../contexts/ToastContext";
+import { tk } from "../../i18n";
 import { settingsAPI } from "../../utils/api";
 
 const sourceLabels = {
 	env: ".env",
-	db: "Database",
-	default: "Default",
+	db: tk("Database"),
+	default: tk("Default"),
 };
 
 const LOG_LEVEL_OPTIONS = ["debug", "info", "warn", "error"];
@@ -56,6 +59,7 @@ const getSelectOptionsForVar = (v) => {
 };
 
 const SourceBadge = ({ source }) => {
+	const { t } = useTranslation();
 	const colors = {
 		env: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
 		db: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
@@ -66,7 +70,7 @@ const SourceBadge = ({ source }) => {
 		<span
 			className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${colors[source] || colors.default}`}
 		>
-			{sourceLabels[source] ?? source}
+			{sourceLabels[source] ? t(sourceLabels[source]) : source}
 		</span>
 	);
 };
@@ -87,6 +91,7 @@ const VariableKey = ({ name }) => (
 );
 
 const EnvironmentSettings = () => {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const toast = useToast();
 	const [editingKey, setEditingKey] = useState(null);
@@ -104,10 +109,10 @@ const EnvironmentSettings = () => {
 			await queryClient.invalidateQueries({ queryKey: ["environment-config"] });
 			setEditingKey(null);
 			setEditValue("");
-			toast.success(response?.data?.message || "Saved.");
+			toast.success(response?.data?.message || t("Saved."));
 		},
 		onError: (err) => {
-			toast.error(err.response?.data?.error || "Failed to update");
+			toast.error(err.response?.data?.error || t("Failed to update"));
 		},
 	});
 
@@ -233,14 +238,14 @@ const EnvironmentSettings = () => {
 				disabled={updateMutation.isPending}
 				className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 min-h-[44px] md:min-h-0"
 			>
-				Save
+				{t("Save")}
 			</button>
 			<button
 				type="button"
 				onClick={handleCancel}
 				className="text-sm text-secondary-500 hover:text-secondary-700 dark:text-secondary-400 min-h-[44px] md:min-h-0"
 			>
-				Cancel
+				{t("Cancel")}
 			</button>
 		</div>
 	);
@@ -254,7 +259,9 @@ const EnvironmentSettings = () => {
 					{renderEditor(v)}
 					{v.defaultValue && (
 						<div className="mt-0.5 text-xs text-secondary-500 dark:text-secondary-400 [overflow-wrap:anywhere]">
-							Default: {v.defaultValue}
+							{t("Default: {{value}}", {
+								value: envText(t, v.defaultValue),
+							})}
 						</div>
 					)}
 				</div>
@@ -276,7 +283,9 @@ const EnvironmentSettings = () => {
 				)}
 				{showDefault && (
 					<div className="mt-0.5 text-xs text-secondary-500 dark:text-secondary-400 [overflow-wrap:anywhere]">
-						Default: {v.defaultValue}
+						{t("Default: {{value}}", {
+							value: envText(t, v.defaultValue),
+						})}
 					</div>
 				)}
 			</div>
@@ -289,16 +298,21 @@ const EnvironmentSettings = () => {
 				<div className="flex flex-col items-start gap-0.5">
 					<span
 						className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300 whitespace-nowrap"
-						title={`${v.key} is set in .env, which takes priority over the database. Change it in .env and restart PatchMon.`}
+						title={t(
+							"{{key}} is set in .env, which takes priority over the database. Change it in .env and restart PatchMon.",
+							{ key: v.key },
+						)}
 					>
 						<Lock className="h-3.5 w-3.5" />
-						Set in .env
+						{t("Set in .env")}
 					</span>
 					{v.conflict && (
 						<span className="text-xs text-secondary-500 dark:text-secondary-400 [overflow-wrap:anywhere]">
 							{v.dbValue
-								? `Database value "${v.dbValue}" is ignored`
-								: "Database value is ignored"}
+								? t('Database value "{{value}}" is ignored', {
+										value: v.dbValue,
+									})
+								: t("Database value is ignored")}
 						</span>
 					)}
 				</div>
@@ -313,16 +327,16 @@ const EnvironmentSettings = () => {
 					className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 disabled:opacity-50 min-h-[44px] md:min-h-0"
 				>
 					<Edit2 className="h-4 w-4" />
-					Edit
+					{t("Edit")}
 				</button>
 			);
 		}
 		return (
 			<span
 				className="text-xs text-secondary-400 whitespace-nowrap"
-				title="Startup/deployment only - configure via .env"
+				title={t("Startup/deployment only - configure via .env")}
 			>
-				Configure via .env
+				{t("Configure via .env")}
 			</span>
 		);
 	};
@@ -342,10 +356,10 @@ const EnvironmentSettings = () => {
 					<AlertTriangle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-							Error loading environment config
+							{t("Error loading environment config")}
 						</h3>
 						<p className="mt-1 text-sm text-red-700 dark:text-red-300">
-							{error.message || "Failed to load settings"}
+							{error.message || t("Failed to load settings")}
 						</p>
 					</div>
 				</div>
@@ -359,26 +373,28 @@ const EnvironmentSettings = () => {
 				<Variable className="h-6 w-6 flex-shrink-0 text-primary-600 mr-3" />
 				<div>
 					<h2 className="text-lg font-semibold text-secondary-900 dark:text-white">
-						Environment Variables
+						{t("Environment Variables")}
 					</h2>
 					<p className="text-sm text-secondary-500 dark:text-secondary-400 mt-1">
-						<strong>Priority 1</strong> - .env file •{" "}
-						<strong>Priority 2</strong> - Database settings (configurable below){" "}
-						• <strong>Priority 3</strong> - Coded defaults
+						<strong>{t("Priority 1")}</strong> - {t(".env file")} •{" "}
+						<strong>{t("Priority 2")}</strong> -{" "}
+						{t("Database settings (configurable below)")} •{" "}
+						<strong>{t("Priority 3")}</strong> - {t("Coded defaults")}
 					</p>
 					<p className="text-sm text-secondary-500 dark:text-secondary-400 mt-1">
-						Variables marked &quot;Configure via .env&quot; are
-						startup/deployment related and can only be changed in the .env file
-						(not in the database).
+						{t(
+							'Variables marked "Configure via .env" are startup/deployment related and can only be changed in the .env file (not in the database).',
+						)}
 					</p>
 					<p className="text-sm text-secondary-500 dark:text-secondary-400 mt-1">
-						Variables marked &quot;Set in .env&quot; already have a value in the
-						.env file, which takes priority, so they cannot be changed here.
-						Edit or remove them in .env and restart the PatchMon server.
+						{t(
+							'Variables marked "Set in .env" already have a value in the .env file, which takes priority, so they cannot be changed here. Edit or remove them in .env and restart the PatchMon server.',
+						)}
 					</p>
 					<p className="text-sm text-secondary-500 dark:text-secondary-400 mt-1">
-						Most changes apply straight away. After saving you will be told if a
-						restart is needed.
+						{t(
+							"Most changes apply straight away. After saving you will be told if a restart is needed.",
+						)}
 					</p>
 				</div>
 			</div>
@@ -389,13 +405,12 @@ const EnvironmentSettings = () => {
 						<AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
 						<div className="ml-3">
 							<h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
-								Misconfiguration detected
+								{t("Misconfiguration detected")}
 							</h3>
 							<p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
-								Some variables have both .env and database values. The .env
-								value takes precedence and the database value is ignored. Remove
-								the variable from .env and restart for the database value to
-								take effect.
+								{t(
+									"Some variables have both .env and database values. The .env value takes precedence and the database value is ignored. Remove the variable from .env and restart for the database value to take effect.",
+								)}
 							</p>
 						</div>
 					</div>
@@ -406,7 +421,7 @@ const EnvironmentSettings = () => {
 				{orderedCategories.map((category) => (
 					<section key={category} className="space-y-2">
 						<h3 className="text-sm font-semibold text-secondary-700 dark:text-secondary-200">
-							{category}
+							{envText(t, category)}
 						</h3>
 						{byCategory[category].map((v) => (
 							<div
@@ -420,8 +435,8 @@ const EnvironmentSettings = () => {
 									<div className="flex items-center gap-1.5 min-w-0">
 										<VariableKey name={v.key} />
 										<InfoTooltip
-											content={v.description}
-											label={`About ${v.key}`}
+											content={envText(t, v.description)}
+											label={t("About {{key}}", { key: v.key })}
 										/>
 									</div>
 									<SourceBadge source={v.effectiveSource} />
@@ -441,16 +456,16 @@ const EnvironmentSettings = () => {
 					<thead className="bg-secondary-50 dark:bg-secondary-700">
 						<tr>
 							<th className="w-1/3 px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-								Variable
+								{t("Variable")}
 							</th>
 							<th className="px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-								Value
+								{t("Value")}
 							</th>
 							<th className="w-px px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-								Source
+								{t("Source")}
 							</th>
 							<th className="w-px px-3 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider">
-								Action
+								{t("Action")}
 							</th>
 						</tr>
 					</thead>
@@ -462,7 +477,7 @@ const EnvironmentSettings = () => {
 										colSpan={4}
 										className="px-3 py-1.5 text-sm font-semibold text-secondary-700 dark:text-secondary-200"
 									>
-										{category}
+										{envText(t, category)}
 									</td>
 								</tr>
 								{byCategory[category].map((v) => (
@@ -476,8 +491,8 @@ const EnvironmentSettings = () => {
 											<div className="flex items-center gap-1.5">
 												<VariableKey name={v.key} />
 												<InfoTooltip
-													content={v.description}
-													label={`About ${v.key}`}
+													content={envText(t, v.description)}
+													label={t("About {{key}}", { key: v.key })}
 												/>
 											</div>
 										</td>

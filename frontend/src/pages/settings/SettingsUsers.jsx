@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Shield, Users } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import RolesTab from "../../components/settings/RolesTab";
 import UsersTab from "../../components/settings/UsersTab";
 
 const SettingsUsers = () => {
+	const { t } = useTranslation();
 	const location = useLocation();
 	const navigate = useNavigate();
 	const [activeTab, setActiveTab] = useState(() => {
@@ -34,8 +36,8 @@ const SettingsUsers = () => {
 	const isOIDCSyncRoles = isOIDCEnabled && (oidcConfig?.syncRoles || false);
 
 	const tabs = [
-		{ id: "users", name: "Users", icon: Users, href: "/settings/users" },
-		{ id: "roles", name: "Roles", icon: Shield, href: "/settings/roles" },
+		{ id: "users", name: t("Users"), icon: Users, href: "/settings/users" },
+		{ id: "roles", name: t("Roles"), icon: Shield, href: "/settings/roles" },
 	];
 
 	// Update active tab when route changes
@@ -93,10 +95,10 @@ const SettingsUsers = () => {
 								window.dispatchEvent(new Event("openAddUserModal"))
 							}
 							className="btn-primary flex items-center gap-2"
-							title="Add user"
+							title={t("Add user")}
 						>
 							<Plus className="h-4 w-4" />
-							Add User
+							{t("Add User")}
 						</button>
 					)}
 					{activeTab === "roles" && !isOIDCSyncRoles && (
@@ -106,10 +108,10 @@ const SettingsUsers = () => {
 								window.dispatchEvent(new Event("openAddRoleModal"))
 							}
 							className="btn-primary flex items-center gap-2"
-							title="Add role"
+							title={t("Add role")}
 						>
 							<Plus className="h-4 w-4" />
-							Add Role
+							{t("Add Role")}
 						</button>
 					)}
 				</nav>

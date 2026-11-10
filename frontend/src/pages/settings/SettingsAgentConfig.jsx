@@ -1,10 +1,12 @@
 import { CheckCircle, Code, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import AgentManagementTab from "../../components/settings/AgentManagementTab";
 import AgentUpdatesTab from "../../components/settings/AgentUpdatesTab";
 
 const SettingsAgentConfig = () => {
+	const { t } = useTranslation();
 	const location = useLocation();
 	const navigate = useNavigate();
 	const [activeTab, setActiveTab] = useState(() => {
@@ -25,13 +27,13 @@ const SettingsAgentConfig = () => {
 	const tabs = [
 		{
 			id: "updates",
-			name: "Agent Updates",
+			name: t("Agent Updates"),
 			icon: Settings,
 			href: "/settings/agent-config",
 		},
 		{
 			id: "management",
-			name: "Agent Version",
+			name: t("Agent Version"),
 			icon: Code,
 			href: "/settings/agent-version",
 		},

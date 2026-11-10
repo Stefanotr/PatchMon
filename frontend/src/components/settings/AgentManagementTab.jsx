@@ -9,6 +9,8 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { currentLanguage } from "../../i18n";
 import {
 	agentVersionAPI,
 	getGlobalTimezone,
@@ -17,6 +19,7 @@ import {
 import { repoUrl, sourceRepo } from "../../utils/sourceRepo";
 
 const AgentManagementTab = () => {
+	const { t } = useTranslation();
 	const [toasts, setToasts] = useState([]);
 
 	// Auto-hide toasts after 5 seconds
@@ -74,10 +77,15 @@ const AgentManagementTab = () => {
 		},
 		onSuccess: () => {
 			refetchVersion();
-			showToast("Successfully checked for updates", "success");
+			showToast(t("Successfully checked for updates"), "success");
 		},
 		onError: (error) => {
-			showToast(`Failed to check for updates: ${error.message}`, "error");
+			showToast(
+				t("Failed to check for updates: {{message}}", {
+					message: error.message,
+				}),
+				"error",
+			);
 		},
 	});
 
@@ -85,7 +93,7 @@ const AgentManagementTab = () => {
 		if (versionError) {
 			return {
 				status: "error",
-				message: "Failed to load version info",
+				message: t("Failed to load version info"),
 				Icon: AlertCircle,
 				color: "text-red-600",
 			};
@@ -94,7 +102,7 @@ const AgentManagementTab = () => {
 		if (!versionInfo || versionLoading) {
 			return {
 				status: "loading",
-				message: "Loading version info...",
+				message: t("Loading version info..."),
 				Icon: RefreshCw,
 				color: "text-gray-600",
 			};
@@ -105,49 +113,58 @@ const AgentManagementTab = () => {
 			case "update-available":
 				return {
 					status: "update-available",
-					message: `Update available: ${versionInfo.upstreamVersion}`,
+					message: t("Update available: {{version}}", {
+						version: versionInfo.upstreamVersion,
+					}),
 					Icon: Clock,
 					color: "text-yellow-600",
 				};
 			case "newer-version":
 				return {
 					status: "newer-version",
-					message: `Newer version running: ${versionInfo.currentVersion}`,
+					message: t("Newer version running: {{version}}", {
+						version: versionInfo.currentVersion,
+					}),
 					Icon: CheckCircle,
 					color: "text-blue-600",
 				};
 			case "up-to-date":
 				return {
 					status: "up-to-date",
-					message: `Up to date: ${versionInfo.upstreamVersion}`,
+					message: t("Up to date: {{version}}", {
+						version: versionInfo.upstreamVersion,
+					}),
 					Icon: CheckCircle,
 					color: "text-green-600",
 				};
 			case "no-agent":
 				return {
 					status: "no-agent",
-					message: "No agent binary found",
+					message: t("No agent binary found"),
 					Icon: AlertCircle,
 					color: "text-orange-600",
 				};
 			case "github-unavailable":
 				return {
 					status: "github-unavailable",
-					message: `Agent running: ${versionInfo.currentVersion} (upstream version check unavailable)`,
+					message: t(
+						"Agent running: {{version}} (upstream version check unavailable)",
+						{ version: versionInfo.currentVersion },
+					),
 					Icon: CheckCircle,
 					color: "text-purple-600",
 				};
 			case "no-data":
 				return {
 					status: "no-data",
-					message: "No version data available",
+					message: t("No version data available"),
 					Icon: AlertCircle,
 					color: "text-gray-600",
 				};
 			default:
 				return {
 					status: "unknown",
-					message: "Version status unknown",
+					message: t("Version status unknown"),
 					Icon: AlertCircle,
 					color: "text-gray-600",
 				};
@@ -176,9 +193,12 @@ const AgentManagementTab = () => {
 			a.click();
 			window.URL.revokeObjectURL(url);
 			a.remove();
-			showToast(`Downloaded ${filename}`, "success");
+			showToast(t("Downloaded {{filename}}", { filename }), "success");
 		} catch (err) {
-			showToast(`Download failed: ${err.message}`, "error");
+			showToast(
+				t("Download failed: {{message}}", { message: err.message }),
+				"error",
+			);
 		}
 	};
 
@@ -247,10 +267,10 @@ const AgentManagementTab = () => {
 			{/* Header */}
 			<div className="mb-4 md:mb-6">
 				<h2 className="text-xl md:text-2xl font-bold text-secondary-900 dark:text-white mb-2">
-					Agent Version Management
+					{t("Agent Version Management")}
 				</h2>
 				<p className="text-sm md:text-base text-secondary-600 dark:text-white">
-					Monitor and manage agent versions across your infrastructure
+					{t("Monitor and manage agent versions across your infrastructure")}
 				</p>
 			</div>
 
@@ -291,20 +311,22 @@ const AgentManagementTab = () => {
 							</h3>
 							<p className="text-xs md:text-sm text-secondary-600 dark:text-white">
 								{versionStatus.status === "up-to-date" &&
-									"All agent binaries are current"}
+									t("All agent binaries are current")}
 								{versionStatus.status === "update-available" &&
-									"A newer version is available. Deploy a new server image to update."}
+									t(
+										"A newer version is available. Deploy a new server image to update.",
+									)}
 								{versionStatus.status === "no-agent" &&
-									"Agent binaries are included in the server image."}
+									t("Agent binaries are included in the server image.")}
 								{versionStatus.status === "github-unavailable" &&
-									"Cannot check for updates at this time"}
+									t("Cannot check for updates at this time")}
 								{![
 									"up-to-date",
 									"update-available",
 									"no-agent",
 									"github-unavailable",
 								].includes(versionStatus.status) &&
-									"Version information unavailable"}
+									t("Version information unavailable")}
 							</p>
 						</div>
 					</div>
@@ -318,8 +340,8 @@ const AgentManagementTab = () => {
 							className={`h-4 w-4 mr-2 ${checkUpdatesMutation.isPending ? "animate-spin" : ""}`}
 						/>
 						{checkUpdatesMutation.isPending
-							? "Checking..."
-							: "Check for Updates"}
+							? t("Checking...")
+							: t("Check for Updates")}
 					</button>
 				</div>
 			</div>
@@ -329,12 +351,12 @@ const AgentManagementTab = () => {
 				{/* Current Version Card */}
 				<div className="bg-white dark:bg-secondary-800 rounded-xl shadow-sm p-4 md:p-6 border border-secondary-200 dark:border-secondary-600 hover:shadow-md transition-shadow duration-200">
 					<h4 className="text-xs md:text-sm font-medium text-secondary-500 dark:text-white mb-2">
-						Current Version
+						{t("Current Version")}
 					</h4>
 					<p className="text-xl md:text-2xl font-bold text-secondary-900 dark:text-white">
 						{versionInfo?.currentVersion || (
 							<span className="text-base md:text-lg text-secondary-400 dark:text-white">
-								Not detected
+								{t("Not detected")}
 							</span>
 						)}
 					</p>
@@ -343,12 +365,12 @@ const AgentManagementTab = () => {
 				{/* Latest Version Card */}
 				<div className="bg-white dark:bg-secondary-800 rounded-xl shadow-sm p-4 md:p-6 border border-secondary-200 dark:border-secondary-600 hover:shadow-md transition-shadow duration-200">
 					<h4 className="text-xs md:text-sm font-medium text-secondary-500 dark:text-white mb-2">
-						Latest Available
+						{t("Latest Available")}
 					</h4>
 					<p className="text-xl md:text-2xl font-bold text-secondary-900 dark:text-white">
 						{versionInfo?.upstreamVersion || (
 							<span className="text-base md:text-lg text-secondary-400 dark:text-white">
-								Unable to check
+								{t("Unable to check")}
 							</span>
 						)}
 					</p>
@@ -357,18 +379,21 @@ const AgentManagementTab = () => {
 				{/* Last Checked Card */}
 				<div className="bg-white dark:bg-secondary-800 rounded-xl shadow-sm p-4 md:p-6 border border-secondary-200 dark:border-secondary-600 hover:shadow-md transition-shadow duration-200 col-span-2 lg:col-span-1">
 					<h4 className="text-xs md:text-sm font-medium text-secondary-500 dark:text-white mb-2">
-						Last Checked
+						{t("Last Checked")}
 					</h4>
 					<p className="text-base md:text-lg font-semibold text-secondary-900 dark:text-white">
 						{versionInfo?.lastChecked
-							? new Date(versionInfo.lastChecked).toLocaleString("en-US", {
-									month: "short",
-									day: "numeric",
-									hour: "2-digit",
-									minute: "2-digit",
-									timeZone: getGlobalTimezone() || undefined,
-								})
-							: "Never"}
+							? new Date(versionInfo.lastChecked).toLocaleString(
+									currentLanguage() === "fr" ? "fr-FR" : "en-US",
+									{
+										month: "short",
+										day: "numeric",
+										hour: "2-digit",
+										minute: "2-digit",
+										timeZone: getGlobalTimezone() || undefined,
+									},
+								)
+							: t("Never")}
 					</p>
 				</div>
 			</div>
@@ -376,11 +401,12 @@ const AgentManagementTab = () => {
 			{/* Agent Binaries Info */}
 			<div className="bg-gradient-to-br from-primary-50 to-blue-50 dark:from-secondary-800 dark:to-secondary-800 rounded-xl shadow-sm p-4 md:p-8 border border-primary-200 dark:border-secondary-600">
 				<h3 className="text-lg md:text-xl font-bold text-secondary-900 dark:text-white mb-3">
-					Agent Binaries
+					{t("Agent Binaries")}
 				</h3>
 				<p className="text-sm md:text-base text-secondary-700 dark:text-white mb-4">
-					Agent binaries are included in the server image. Deploy or pull a new
-					image to update.
+					{t(
+						"Agent binaries are included in the server image. Deploy or pull a new image to update.",
+					)}
 				</p>
 				<a
 					href={repoUrl(sourceRepo(buildInfo))}
@@ -389,7 +415,7 @@ const AgentManagementTab = () => {
 					className="inline-flex items-center justify-center px-4 py-3 text-secondary-700 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 transition-colors duration-200 font-medium border border-secondary-300 dark:border-secondary-600 rounded-lg hover:bg-secondary-50 dark:hover:bg-secondary-700"
 				>
 					<ExternalLink className="h-4 w-4 mr-2" />
-					View on GitHub
+					{t("View on GitHub")}
 				</a>
 			</div>
 
@@ -398,11 +424,12 @@ const AgentManagementTab = () => {
 				versionInfo.supportedArchitectures.length > 0 && (
 					<div className="bg-white dark:bg-secondary-800 rounded-xl shadow-sm p-4 md:p-6 border border-secondary-200 dark:border-secondary-600">
 						<h4 className="text-base md:text-lg font-semibold text-secondary-900 dark:text-white mb-4">
-							Supported Architectures
+							{t("Supported Architectures")}
 						</h4>
 						<p className="text-sm text-secondary-600 dark:text-secondary-300 mb-4">
-							Download agent binaries for your platform (authenticated users
-							only).
+							{t(
+								"Download agent binaries for your platform (authenticated users only).",
+							)}
 						</p>
 						<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
 							{versionInfo.supportedArchitectures.map((arch) => (
@@ -417,7 +444,7 @@ const AgentManagementTab = () => {
 										type="button"
 										onClick={() => handleDownload(arch)}
 										className="flex-shrink-0 p-1.5 rounded-lg text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
-										title={`Download ${arch} binary`}
+										title={t("Download {{arch}} binary", { arch })}
 									>
 										<Download className="h-4 w-4" />
 									</button>

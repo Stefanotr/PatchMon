@@ -1,0 +1,4 @@
+{
+	"{{count}} hour {{minutes}} min_one": "{{count}} hour {{minutes}} min",
+	"{{count}} hour {{minutes}} min_other": "{{count}} hours {{minutes}} min"
+}

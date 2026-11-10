@@ -165,6 +165,29 @@ describe("translations", () => {
 		expect(conflicts).toEqual([]);
 	});
 
+	it("never names a placeholder after an i18next option", () => {
+		// t(key, { defaultValue }) reads the value as the fallback text of a
+		// missing key, so English (which has no file) shows the bare value.
+		const reserved = new Set([
+			"defaultValue",
+			"context",
+			"lng",
+			"lngs",
+			"ns",
+			"replace",
+			"returnObjects",
+			"joinArrays",
+			"ordinal",
+			"postProcess",
+			"fallbackLng",
+			"interpolation",
+		]);
+		const bad = [...usedKeys().entries()]
+			.filter(([key]) => placeholders(key).some((p) => reserved.has(p)))
+			.map(([key, file]) => `${file}: ${key}`);
+		expect(bad).toEqual([]);
+	});
+
 	it("reads the keys of JS string literals", () => {
 		// String.raw holds the literal's body exactly as written in a source file.
 		expect(unquote(String.raw`Click \"Add Host\" to start`)).toBe(

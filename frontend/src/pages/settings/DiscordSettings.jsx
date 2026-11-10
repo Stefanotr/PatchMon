@@ -10,10 +10,12 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import DiscordIcon from "../../components/DiscordIcon";
 import { discordAPI } from "../../utils/api";
 
 const DiscordSettings = () => {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const [showSecret, setShowSecret] = useState(false);
 	const [secretInput, setSecretInput] = useState("");
@@ -100,10 +102,10 @@ const DiscordSettings = () => {
 				</div>
 				<div>
 					<h1 className="text-xl font-semibold text-secondary-900 dark:text-white">
-						Discord Authentication
+						{t("Discord Authentication")}
 					</h1>
 					<p className="text-sm text-secondary-500 dark:text-white">
-						Allow users to sign in with their Discord account
+						{t("Allow users to sign in with their Discord account")}
 					</p>
 				</div>
 			</div>
@@ -113,10 +115,10 @@ const DiscordSettings = () => {
 				<div className="flex items-center justify-between">
 					<div>
 						<h3 className="font-medium text-secondary-900 dark:text-white">
-							Enable Discord OAuth
+							{t("Enable Discord OAuth")}
 						</h3>
 						<p className="text-sm text-secondary-500 dark:text-white">
-							Allow users to log in and link their Discord accounts
+							{t("Allow users to log in and link their Discord accounts")}
 						</p>
 					</div>
 					<button
@@ -143,7 +145,7 @@ const DiscordSettings = () => {
 			{/* Configuration */}
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-4 border border-secondary-200 dark:border-secondary-700">
 				<h3 className="font-medium text-secondary-900 dark:text-white mb-4">
-					OAuth2 Configuration
+					{t("OAuth2 Configuration")}
 				</h3>
 
 				<div className="space-y-4">
@@ -153,7 +155,7 @@ const DiscordSettings = () => {
 							htmlFor="discord-client-id"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Client ID
+							{t("Client ID")}
 						</label>
 						<input
 							id="discord-client-id"
@@ -163,7 +165,7 @@ const DiscordSettings = () => {
 								handleFieldChange("discord_client_id", e.target.value)
 							}
 							disabled={updateMutation.isPending}
-							placeholder="Enter your Discord application Client ID"
+							placeholder={t("Enter your Discord application Client ID")}
 							className="w-full px-3 py-2 bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-[#5865F2] focus:border-[#5865F2] placeholder-secondary-400"
 						/>
 					</div>
@@ -174,15 +176,15 @@ const DiscordSettings = () => {
 							htmlFor="discord-client-secret"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Client Secret
+							{t("Client Secret")}
 							{settings?.discord_client_secret_set ? (
 								<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
 									<Check className="h-3 w-3 mr-1" />
-									Set
+									{t("Set")}
 								</span>
 							) : (
 								<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-white">
-									Not set
+									{t("Not set")}
 								</span>
 							)}
 						</label>
@@ -196,8 +198,8 @@ const DiscordSettings = () => {
 									disabled={updateMutation.isPending}
 									placeholder={
 										settings?.discord_client_secret_set
-											? "Enter new secret to replace"
-											: "Enter your Discord Client Secret"
+											? t("Enter new secret to replace")
+											: t("Enter your Discord Client Secret")
 									}
 									className="w-full px-3 py-2 pr-10 bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-[#5865F2] focus:border-[#5865F2] placeholder-secondary-400"
 								/>
@@ -220,7 +222,7 @@ const DiscordSettings = () => {
 								className="px-4 py-2 text-sm font-medium text-white rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
 								style={{ backgroundColor: "#5865F2" }}
 							>
-								Save
+								{t("Save")}
 							</button>
 							{settings?.discord_client_secret_set && (
 								<button
@@ -241,7 +243,7 @@ const DiscordSettings = () => {
 							htmlFor="discord-redirect-uri"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Redirect URI
+							{t("Redirect URI")}
 						</label>
 						<input
 							id="discord-redirect-uri"
@@ -256,7 +258,7 @@ const DiscordSettings = () => {
 						/>
 						{settings?.server_url && (
 							<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-								Your redirect URI should be:{" "}
+								{t("Your redirect URI should be:")}{" "}
 								<code className="bg-secondary-100 dark:bg-secondary-700 px-1 rounded">
 									{settings.server_url}/api/v1/auth/discord/callback
 								</code>
@@ -270,7 +272,7 @@ const DiscordSettings = () => {
 							htmlFor="discord-button-text"
 							className="block text-sm font-medium text-secondary-700 dark:text-white mb-1"
 						>
-							Button Text
+							{t("Button Text")}
 						</label>
 						<input
 							id="discord-button-text"
@@ -280,7 +282,7 @@ const DiscordSettings = () => {
 								handleFieldChange("discord_button_text", e.target.value)
 							}
 							disabled={updateMutation.isPending}
-							placeholder="Login with Discord"
+							placeholder={t("Login with Discord")}
 							className="w-full px-3 py-2 bg-white dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md text-secondary-900 dark:text-white focus:ring-2 focus:ring-[#5865F2] focus:border-[#5865F2] placeholder-secondary-400"
 						/>
 					</div>
@@ -297,10 +299,10 @@ const DiscordSettings = () => {
 							{updateMutation.isPending ? (
 								<>
 									<Loader2 className="inline h-4 w-4 animate-spin mr-2" />
-									Applying...
+									{t("Applying...")}
 								</>
 							) : (
-								"Apply"
+								t("Apply")
 							)}
 						</button>
 					</div>
@@ -317,7 +319,7 @@ const DiscordSettings = () => {
 					<div className="flex items-center gap-2">
 						<AlertTriangle className="h-5 w-5 text-amber-500" />
 						<h3 className="font-medium text-secondary-900 dark:text-white">
-							Setup Instructions
+							{t("Setup Instructions")}
 						</h3>
 					</div>
 					{showSetupGuide ? (
@@ -338,16 +340,21 @@ const DiscordSettings = () => {
 									1
 								</span>
 								<span>
-									Go to the{" "}
-									<a
-										href="https://discord.com/developers/applications"
-										target="_blank"
-										rel="noopener noreferrer"
-										className="font-medium underline"
-										style={{ color: "#5865F2" }}
-									>
-										Discord Developer Portal
-									</a>
+									<Trans
+										i18nKey="Go to the <a>Discord Developer Portal</a>"
+										components={{
+											a: (
+												// biome-ignore lint/a11y/useAnchorContent: Trans fills the link text
+												<a
+													href="https://discord.com/developers/applications"
+													target="_blank"
+													rel="noopener noreferrer"
+													className="font-medium underline"
+													style={{ color: "#5865F2" }}
+												/>
+											),
+										}}
+									/>
 								</span>
 							</li>
 							<li className="flex gap-3">
@@ -357,9 +364,7 @@ const DiscordSettings = () => {
 								>
 									2
 								</span>
-								<span>
-									Click &quot;New Application&quot; and give it a name
-								</span>
+								<span>{t('Click "New Application" and give it a name')}</span>
 							</li>
 							<li className="flex gap-3">
 								<span
@@ -369,7 +374,7 @@ const DiscordSettings = () => {
 									3
 								</span>
 								<span>
-									Navigate to the &quot;OAuth2&quot; section in the sidebar
+									{t('Navigate to the "OAuth2" section in the sidebar')}
 								</span>
 							</li>
 							<li className="flex gap-3">
@@ -380,7 +385,7 @@ const DiscordSettings = () => {
 									4
 								</span>
 								<span>
-									Add your redirect URI:{" "}
+									{t("Add your redirect URI:")}{" "}
 									<code className="bg-secondary-100 dark:bg-secondary-700 px-1 rounded">
 										{settings?.server_url
 											? `${settings.server_url}/api/v1/auth/discord/callback`
@@ -396,7 +401,9 @@ const DiscordSettings = () => {
 									5
 								</span>
 								<span>
-									Copy the Client ID and Client Secret into the fields above
+									{t(
+										"Copy the Client ID and Client Secret into the fields above",
+									)}
 								</span>
 							</li>
 							<li className="flex gap-3">
@@ -407,7 +414,7 @@ const DiscordSettings = () => {
 									6
 								</span>
 								<span>
-									Set scopes to:{" "}
+									{t("Set scopes to:")}{" "}
 									<code className="bg-secondary-100 dark:bg-secondary-700 px-1 rounded">
 										identify email
 									</code>

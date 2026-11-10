@@ -1,9 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle, Save, Shield, X } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { settingsAPI } from "../../utils/api";
 
+const codeClass =
+	"text-xs bg-secondary-200 dark:bg-secondary-700 px-1 py-0.5 rounded";
+
 const AgentUpdatesTab = () => {
+	const { t } = useTranslation();
 	const updateIntervalId = useId();
 	const autoUpdateId = useId();
 	const aptDisableRetriesId = useId();
@@ -129,7 +134,8 @@ const AgentUpdatesTab = () => {
 				);
 			} else {
 				setErrors({
-					general: error.response?.data?.error || "Failed to update settings",
+					general:
+						error.response?.data?.error || t("Failed to update settings"),
 				});
 			}
 		},
@@ -182,8 +188,9 @@ const AgentUpdatesTab = () => {
 			formData.updateInterval < 5 ||
 			formData.updateInterval > 1440
 		) {
-			newErrors.updateInterval =
-				"Update interval must be between 5 and 1440 minutes";
+			newErrors.updateInterval = t(
+				"Update interval must be between 5 and 1440 minutes",
+			);
 		}
 
 		setErrors(newErrors);
@@ -211,10 +218,10 @@ const AgentUpdatesTab = () => {
 					<AlertCircle className="h-5 w-5 text-red-400 dark:text-red-300" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-							Error loading settings
+							{t("Error loading settings")}
 						</h3>
 						<p className="mt-1 text-sm text-red-700 dark:text-red-300">
-							{error.response?.data?.error || "Failed to load settings"}
+							{error.response?.data?.error || t("Failed to load settings")}
 						</p>
 					</div>
 				</div>
@@ -291,7 +298,7 @@ const AgentUpdatesTab = () => {
 						htmlFor={updateIntervalId}
 						className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2"
 					>
-						Agent Update Interval (minutes)
+						{t("Agent Update Interval (minutes)")}
 					</label>
 
 					{/* Numeric input (concise width) */}
@@ -335,7 +342,7 @@ const AgentUpdatesTab = () => {
 										? "bg-primary-600 text-white border-primary-600"
 										: "bg-white dark:bg-secondary-700 text-secondary-700 dark:text-secondary-200 border-secondary-300 dark:border-secondary-600 hover:bg-secondary-50 dark:hover:bg-secondary-600"
 								}`}
-								aria-label={`Set ${m} minutes`}
+								aria-label={t("Set {{minutes}} minutes", { minutes: m })}
 							>
 								{m % 60 === 0 ? `${m / 60}h` : `${m}m`}
 							</button>
@@ -355,7 +362,7 @@ const AgentUpdatesTab = () => {
 								handleInputChange("updateInterval", normalizeInterval(raw));
 							}}
 							className="w-full accent-primary-600"
-							aria-label="Update interval slider"
+							aria-label={t("Update interval slider")}
 						/>
 					</div>
 
@@ -367,18 +374,25 @@ const AgentUpdatesTab = () => {
 
 					{/* Helper text */}
 					<div className="mt-2 text-sm text-secondary-600 dark:text-white">
-						<span className="font-medium">Effective cadence:</span> {(() => {
+						<span className="font-medium">{t("Effective cadence:")}</span>{" "}
+						{(() => {
 							const mins = parseInt(formData.updateInterval, 10) || 60;
-							if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"}`;
+							if (mins < 60) return t("{{count}} minute", { count: mins });
 							const hrs = Math.floor(mins / 60);
 							const rem = mins % 60;
-							return `${hrs} hour${hrs === 1 ? "" : "s"}${rem ? ` ${rem} min` : ""}`;
+							return rem
+								? t("{{count}} hour {{minutes}} min", {
+										count: hrs,
+										minutes: rem,
+									})
+								: t("{{count}} hour", { count: hrs });
 						})()}
 					</div>
 
 					<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-						This affects new installations and will update existing ones when
-						they next reach out.
+						{t(
+							"This affects new installations and will update existing ones when they next reach out.",
+						)}
 					</p>
 				</div>
 
@@ -390,16 +404,16 @@ const AgentUpdatesTab = () => {
 								htmlFor={autoUpdateId}
 								className="text-sm font-medium text-secondary-900 dark:text-secondary-100"
 							>
-								Enable Automatic Agent Updates
+								{t("Enable Automatic Agent Updates")}
 							</label>
 							<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900/50 dark:text-primary-300">
-								Master
+								{t("Master")}
 							</span>
 						</div>
 						<p className="mt-1 text-sm text-secondary-500 dark:text-white">
-							Master switch for all agent auto-updates. Per-host toggles in the
-							dashboard control individual agents. Enabling a host toggle will
-							automatically enable this master switch.
+							{t(
+								"Master switch for all agent auto-updates. Per-host toggles in the dashboard control individual agents. Enabling a host toggle will automatically enable this master switch.",
+							)}
 						</p>
 					</div>
 					<button
@@ -426,23 +440,22 @@ const AgentUpdatesTab = () => {
 				<div className="p-4 bg-secondary-50 dark:bg-secondary-800/50 rounded-lg border border-secondary-200 dark:border-secondary-700">
 					<div className="mb-3">
 						<h3 className="text-sm font-medium text-secondary-900 dark:text-secondary-100">
-							Host Package Cache Refresh
+							{t("Host Package Cache Refresh")}
 						</h3>
 						<p className="mt-1 text-sm text-secondary-500 dark:text-white">
-							Controls whether agents refresh the host's package cache (e.g.{" "}
-							<code className="text-xs bg-secondary-200 dark:bg-secondary-700 px-1 py-0.5 rounded">
-								apt update
-							</code>
-							) before collecting package data.
+							<Trans
+								i18nKey="Controls whether agents refresh the host's package cache (e.g. <code>apt update</code>) before collecting package data."
+								components={{ code: <code className={codeClass} /> }}
+							/>
 						</p>
 					</div>
 
 					{/* Mode selector */}
 					<div className="flex flex-wrap gap-2 mb-3">
 						{[
-							{ value: "always", label: "Refresh every time" },
-							{ value: "if_stale", label: "Refresh if stale" },
-							{ value: "never", label: "Don't refresh" },
+							{ value: "always", label: t("Refresh every time") },
+							{ value: "if_stale", label: t("Refresh if stale") },
+							{ value: "never", label: t("Don't refresh") },
 						].map((option) => (
 							<button
 								key={option.value}
@@ -465,7 +478,7 @@ const AgentUpdatesTab = () => {
 					{formData.packageCacheRefreshMode === "if_stale" && (
 						<div className="mt-3">
 							<label className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2">
-								Maximum cache age (minutes)
+								{t("Maximum cache age (minutes)")}
 							</label>
 							<div className="flex items-center gap-2">
 								<input
@@ -505,19 +518,26 @@ const AgentUpdatesTab = () => {
 								))}
 							</div>
 							<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-								The agent will only run a cache refresh if the host's package
-								cache is older than this value.
+								{t(
+									"The agent will only run a cache refresh if the host's package cache is older than this value.",
+								)}
 							</p>
 						</div>
 					)}
 
 					<p className="mt-3 text-xs text-secondary-500 dark:text-white">
 						{formData.packageCacheRefreshMode === "always" &&
-							"The agent will always refresh the package cache before collecting updates. This ensures the most accurate data but adds time to each report."}
+							t(
+								"The agent will always refresh the package cache before collecting updates. This ensures the most accurate data but adds time to each report.",
+							)}
 						{formData.packageCacheRefreshMode === "if_stale" &&
-							"The agent will only refresh the cache if it is older than the specified maximum age. Balances accuracy with performance."}
+							t(
+								"The agent will only refresh the cache if it is older than the specified maximum age. Balances accuracy with performance.",
+							)}
 						{formData.packageCacheRefreshMode === "never" &&
-							"The agent will never refresh the package cache. It relies on the host's own update schedule (e.g. systemd timers, cron). Fastest but may report stale data."}
+							t(
+								"The agent will never refresh the package cache. It relies on the host's own update schedule (e.g. systemd timers, cron). Fastest but may report stale data.",
+							)}
 					</p>
 				</div>
 
@@ -527,25 +547,18 @@ const AgentUpdatesTab = () => {
 							htmlFor={aptDisableRetriesId}
 							className="text-sm font-medium text-secondary-900 dark:text-secondary-100"
 						>
-							Disable apt download retries
+							{t("Disable apt download retries")}
 						</label>
 						<p className="mt-1 text-sm text-secondary-500 dark:text-white">
-							On Debian and Ubuntu hosts, PatchMon patch runs use{" "}
-							<code className="text-xs bg-secondary-200 dark:bg-secondary-700 px-1 py-0.5 rounded">
-								Acquire::Retries=0
-							</code>
-							. This closes the CVE-2026-109518 package-swap window, where an
-							on-path attacker can swap a package when apt retries a redirected
-							download. Recommended. Turn it off only if your mirrors are
-							unreliable: a transient download failure then fails the patch run
-							instead of being retried.
+							<Trans
+								i18nKey="On Debian and Ubuntu hosts, PatchMon patch runs use <code>Acquire::Retries=0</code>. This closes the CVE-2026-109518 package-swap window, where an on-path attacker can swap a package when apt retries a redirected download. Recommended. Turn it off only if your mirrors are unreliable: a transient download failure then fails the patch run instead of being retried."
+								components={{ code: <code className={codeClass} /> }}
+							/>
 						</p>
 						<p className="mt-1 text-xs text-secondary-500 dark:text-white">
-							Applies to PatchMon patch runs on hosts running agent 2.1.8 or
-							later. The compliance scanner install always uses it. Saving here
-							replaces any per-host apt.disable_retries value in config.yml when
-							an agent restarts or this setting changes. Updating apt itself is
-							still required.
+							{t(
+								"Applies to PatchMon patch runs on hosts running agent 2.1.8 or later. The compliance scanner install always uses it. Saving here replaces any per-host apt.disable_retries value in config.yml when an agent restarts or this setting changes. Updating apt itself is still required.",
+							)}
 						</p>
 					</div>
 					<button
@@ -576,9 +589,9 @@ const AgentUpdatesTab = () => {
 				{/* Save Button */}
 				<div className="flex flex-col items-end gap-2">
 					<p className="text-sm text-secondary-600 dark:text-secondary-400">
-						Note: This will push out the change to each connected agent
-						immediately. Their report schedule will update without restarting
-						the service.
+						{t(
+							"Note: This will push out the change to each connected agent immediately. Their report schedule will update without restarting the service.",
+						)}
 					</p>
 					<button
 						type="button"
@@ -593,12 +606,12 @@ const AgentUpdatesTab = () => {
 						{updateSettingsMutation.isPending ? (
 							<>
 								<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-								Deploying...
+								{t("Deploying...")}
 							</>
 						) : (
 							<>
 								<Save className="h-4 w-4 mr-2" />
-								Save and deploy
+								{t("Save and deploy")}
 							</>
 						)}
 					</button>
@@ -610,7 +623,7 @@ const AgentUpdatesTab = () => {
 							<CheckCircle className="h-5 w-5 text-green-400 dark:text-green-300" />
 							<div className="ml-3">
 								<p className="text-sm text-green-700 dark:text-green-300">
-									Settings saved successfully!
+									{t("Settings saved successfully!")}
 								</p>
 							</div>
 						</div>
@@ -624,10 +637,12 @@ const AgentUpdatesTab = () => {
 					<Shield className="h-5 w-5 text-red-400 dark:text-red-300" />
 					<div className="ml-3">
 						<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-							Agent Uninstall Command
+							{t("Agent Uninstall Command")}
 						</h3>
 						<div className="mt-2 text-sm text-red-700 dark:text-red-300">
-							<p className="mb-3">To completely remove PatchMon from a host:</p>
+							<p className="mb-3">
+								{t("To completely remove PatchMon from a host:")}
+							</p>
 
 							{/* OS Selector */}
 							<div className="flex gap-2 mb-3">
@@ -640,7 +655,7 @@ const AgentUpdatesTab = () => {
 											: "bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 hover:bg-red-300 dark:hover:bg-red-700"
 									}`}
 								>
-									Linux / Unix
+									{t("Linux / Unix")}
 								</button>
 								<button
 									type="button"
@@ -651,7 +666,7 @@ const AgentUpdatesTab = () => {
 											: "bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 hover:bg-red-300 dark:hover:bg-red-700"
 									}`}
 								>
-									Windows
+									{t("Windows")}
 								</button>
 							</div>
 
@@ -661,7 +676,7 @@ const AgentUpdatesTab = () => {
 									<div className="mb-3">
 										<div className="space-y-2">
 											<div className="text-xs font-semibold text-red-700 dark:text-red-300 mb-1">
-												Standard Removal (preserves backups):
+												{t("Standard Removal (preserves backups):")}
 											</div>
 											<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
 												<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1 break-all overflow-x-auto">
@@ -679,17 +694,20 @@ const AgentUpdatesTab = () => {
 																`curl ${curlFlags} ${serverUrl}/api/v1/hosts/remove | sudo sh`,
 															);
 															showToast(
-																"Standard removal command copied!",
+																t("Standard removal command copied!"),
 																"success",
 															);
 														} catch (err) {
 															console.error("Failed to copy:", err);
-															showToast("Failed to copy to clipboard", "error");
+															showToast(
+																t("Failed to copy to clipboard"),
+																"error",
+															);
 														}
 													}}
 													className="px-3 py-2 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors flex-shrink-0 whitespace-nowrap"
 												>
-													Copy
+													{t("Copy")}
 												</button>
 											</div>
 										</div>
@@ -699,7 +717,7 @@ const AgentUpdatesTab = () => {
 									<div className="mb-3">
 										<div className="space-y-2">
 											<div className="text-xs font-semibold text-red-700 dark:text-red-300 mb-1">
-												Complete Removal (includes backups):
+												{t("Complete Removal (includes backups):")}
 											</div>
 											<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
 												<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1 break-all overflow-x-auto">
@@ -718,23 +736,26 @@ const AgentUpdatesTab = () => {
 																`curl ${curlFlags} ${serverUrl}/api/v1/hosts/remove | sudo REMOVE_BACKUPS=1 sh`,
 															);
 															showToast(
-																"Complete removal command copied!",
+																t("Complete removal command copied!"),
 																"success",
 															);
 														} catch (err) {
 															console.error("Failed to copy:", err);
-															showToast("Failed to copy to clipboard", "error");
+															showToast(
+																t("Failed to copy to clipboard"),
+																"error",
+															);
 														}
 													}}
 													className="px-3 py-2 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors flex-shrink-0 whitespace-nowrap"
 												>
-													Copy
+													{t("Copy")}
 												</button>
 											</div>
 											<div className="text-xs text-red-600 dark:text-red-400">
-												This removes: binaries, systemd/OpenRC services,
-												configuration files, logs, crontab entries, and backup
-												files
+												{t(
+													"This removes: binaries, systemd/OpenRC services, configuration files, logs, crontab entries, and backup files",
+												)}
 											</div>
 										</div>
 									</div>
@@ -744,13 +765,13 @@ const AgentUpdatesTab = () => {
 							{uninstallOs === "windows" && (
 								<>
 									<p className="mb-2 text-xs">
-										Run PowerShell as Administrator.
+										{t("Run PowerShell as Administrator.")}
 									</p>
 									{/* Windows - Standard Removal */}
 									<div className="mb-3">
 										<div className="space-y-2">
 											<div className="text-xs font-semibold text-red-700 dark:text-red-300 mb-1">
-												Standard Removal (preserves config/logs):
+												{t("Standard Removal (preserves config/logs):")}
 											</div>
 											<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
 												<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1 break-all overflow-x-auto">
@@ -762,16 +783,19 @@ const AgentUpdatesTab = () => {
 														try {
 															await copyToClipboard(windowsRemoveCommand());
 															showToast(
-																"Standard removal command copied!",
+																t("Standard removal command copied!"),
 																"success",
 															);
 														} catch (_err) {
-															showToast("Failed to copy to clipboard", "error");
+															showToast(
+																t("Failed to copy to clipboard"),
+																"error",
+															);
 														}
 													}}
 													className="px-3 py-2 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors flex-shrink-0 whitespace-nowrap"
 												>
-													Copy
+													{t("Copy")}
 												</button>
 											</div>
 										</div>
@@ -780,7 +804,7 @@ const AgentUpdatesTab = () => {
 									<div className="mb-3">
 										<div className="space-y-2">
 											<div className="text-xs font-semibold text-red-700 dark:text-red-300 mb-1">
-												Complete Removal (config + logs):
+												{t("Complete Removal (config + logs):")}
 											</div>
 											<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
 												<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1 break-all overflow-x-auto">
@@ -794,21 +818,25 @@ const AgentUpdatesTab = () => {
 																windowsRemoveCommand(" -RemoveAll -Force"),
 															);
 															showToast(
-																"Complete removal command copied!",
+																t("Complete removal command copied!"),
 																"success",
 															);
 														} catch (_err) {
-															showToast("Failed to copy to clipboard", "error");
+															showToast(
+																t("Failed to copy to clipboard"),
+																"error",
+															);
 														}
 													}}
 													className="px-3 py-2 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors flex-shrink-0 whitespace-nowrap"
 												>
-													Copy
+													{t("Copy")}
 												</button>
 											</div>
 											<div className="text-xs text-red-600 dark:text-red-400">
-												Removes: Windows Service, binaries, configuration, logs,
-												and backup files
+												{t(
+													"Removes: Windows Service, binaries, configuration, logs, and backup files",
+												)}
 											</div>
 										</div>
 									</div>
@@ -816,8 +844,9 @@ const AgentUpdatesTab = () => {
 							)}
 
 							<p className="mt-2 text-xs text-red-700 dark:text-red-400">
-								⚠️ Standard removal preserves backup files (and config/logs on
-								Windows). Use complete removal to delete everything.
+								{t(
+									"⚠️ Standard removal preserves backup files (and config/logs on Windows). Use complete removal to delete everything.",
+								)}
 							</p>
 						</div>
 					</div>
