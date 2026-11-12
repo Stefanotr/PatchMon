@@ -516,10 +516,6 @@ func TestApplyConfigWaitsForPatchRuns(t *testing.T) {
 	restartGate.agentRestartWaiting = false
 	restartGate.Unlock()
 
-	dry, err := registerPatchRun("dry", noop, true)
-	if err != nil {
-		t.Fatal(err)
-	}
 	realRun, err := registerPatchRun("real", noop, false)
 	if err != nil {
 		t.Fatal(err)
@@ -544,14 +540,46 @@ func TestApplyConfigWaitsForPatchRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unregisterPatchRun("dry", dry)
 	if s.agentRestarts.Load() != 1 {
 		t.Fatal("the agent restarted while a run was still in progress")
 	}
 	unregisterPatchRun("real", realRun)
 	if s.agentRestarts.Load() != 2 {
-		t.Fatalf("agent restarted %d time(s) in all, want 2: once after the last run", s.agentRestarts.Load())
+		t.Fatalf("agent restarted %d time(s) in all, want 2: once after the run", s.agentRestarts.Load())
 	}
+}
+
+// One run at a time on a host: a second run, dry or real, is refused while
+// the first is registered, and starts once it is over. A duplicate of the
+// run in progress is still told apart and ignored.
+func TestRegisterPatchRunRefusesASecondRun(t *testing.T) {
+	resetRestartState(t)
+	noop := context.CancelFunc(func() {})
+	first, err := registerPatchRun("first", noop, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dryRun := range []bool{true, false} {
+		if _, err := registerPatchRun("second", noop, dryRun); !errors.Is(err, errPatchRunBusy) {
+			t.Fatalf("second run (dry run %v) next to a run in progress: %v", dryRun, err)
+		}
+	}
+	if _, ok := lookupPatchRun("second"); ok {
+		t.Fatal("the refused run was registered")
+	}
+	var refused []string
+	if _, err := beginPatchRun("second", noop, true, func(reason string) { refused = append(refused, reason) }); !errors.Is(err, errPatchRunBusy) || len(refused) != 1 {
+		t.Fatalf("the server was not told why: %v, %q", err, refused)
+	}
+	if _, err := registerPatchRun("first", noop, false); !errors.Is(err, errDuplicatePatchRun) {
+		t.Fatalf("a duplicate of the run in progress: %v", err)
+	}
+	unregisterPatchRun("first", first)
+	second, err := registerPatchRun("second", noop, true)
+	if err != nil {
+		t.Fatalf("the next run was refused after the first ended: %v", err)
+	}
+	unregisterPatchRun("second", second)
 }
 
 // When the agent cannot restart itself, runs start again; the configuration
