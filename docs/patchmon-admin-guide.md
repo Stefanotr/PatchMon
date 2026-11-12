@@ -2150,7 +2150,7 @@ PatchMon allows one queued, validating or running patch run per host at a time, 
 
 A **patch policy** controls *when* an approved patch run actually fires on a host. Policies let you carve out maintenance windows, build in a delay for "I might change my mind" runs, or force an immediate execution on anything that matters. Assignments and exclusions let you apply a policy broadly (to a host group) while still carving specific hosts out of it.
 
-A policy never starts a run by itself, and PatchMon has no recurring patch schedule. A policy only affects runs that a user triggers (from the Patching wizard, **Patch all** on a host, or the Packages page): it decides whether each run executes immediately, after a delay, or at the next fixed time. Assigning a policy with a fixed time of 01:00 to a host therefore does nothing until someone queues a run for that host.
+A policy never starts a run by itself. It only affects runs that a user triggers (from the Patching wizard, **Patch all** on a host, or the Packages page) or approves after the dry run of a [patch schedule](#patch-schedules): it decides whether each run executes immediately, after a delay, or at the next fixed time. Assigning a policy with a fixed time of 01:00 to a host therefore does nothing until someone queues a run for that host.
 
 This page walks through the policy model, how effective policies are resolved, the Settings UI, and how policies interact with run triggers.
 
@@ -2364,6 +2364,29 @@ Create a `Delayed 30min` policy with `patch_delay_type=delayed`, `delay_minutes=
 - A patch triggered from the Packages page across the fleet then runs immediately on dev/staging and waits for the next 03:00 UTC on production.
 
 ---
+
+### Patch Schedules {#patch-schedules}
+
+A patch schedule dry-runs the pending updates of a host group at a recurring time. It never installs anything: each dry run ends **Validated**, like a dry run from the Patch Wizard, and waits for a person to approve it in **Runs & History** (filter on the Validated status). Once approved, the run follows the host's effective policy, so a schedule that dry-runs on Wednesday at 03:00 and a fixed-time policy at 22:00 give "checked in the morning, approved during the day, installed in the evening".
+
+Schedules live under **Patching → Schedules**. Viewing them needs `can_view_hosts`; creating, editing, deleting and **Run now** need `can_manage_patching`, and each of these is written to the audit log.
+
+Each schedule has:
+
+- **Hosts**: one host group, or all hosts. Deleting the group deletes its schedules, so a schedule never widens to every host on its own.
+- **Updates**: security updates only, or every pending update. A dry run carries at most 100 packages, security updates first.
+- **When**: weekly on chosen days, or monthly on the first, second, third, fourth or last given day of the week (the second Wednesday is the day after Patch Tuesday), at a time in the organisation timezone (Settings, or `TZ` / `TIMEZONE`).
+
+At each slot, for every active host of the group:
+
+- a host with nothing to patch in scope is counted **up to date**;
+- a host with a patch run already queued, validating or running is counted **busy** and skipped (one run per host);
+- Windows hosts and pacman hosts are counted **not supported**: they cannot dry-run a list of packages;
+- every other host gets its dry run, triggered by the system and marked in its run details as started by the schedule.
+
+The server checks for due schedules every minute, and each slot fires once even with several server instances. A slot found more than one hour late, because the server was down, is not run: it is recorded as **Missed** and the schedule moves to its next slot. Saving a schedule moves it to its next slot from now; **Run now** dry-runs straight away and leaves the next slot unchanged.
+
+The dry runs raise the usual notifications (`patch_run_completed`, titled "Dry Run Completed"): route that event to a destination to be told when dry runs wait for approval.
 
 ### Related Documentation
 

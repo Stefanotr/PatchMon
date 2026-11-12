@@ -290,6 +290,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 	patchAssignmentsStore := store.NewPatchPolicyAssignmentsStore(dbProvider)
 	patchExclusionsStore := store.NewPatchPolicyExclusionsStore(dbProvider)
 	patchingHandler := handler.NewPatchingHandler(patchRunsStore, patchPoliciesStore, patchAssignmentsStore, patchExclusionsStore, hostsStore, settingsStore, cfg, queueClient, queueInspector, notifyEmit, log)
+	patchSchedulesHandler := handler.NewPatchSchedulesHandler(dbProvider, patchRunsStore, auditLogsStore, queueClient, log)
 	// Wire up the live patch-run stream hub and the agent WebSocket registry
 	// for the stop-run endpoint. Kept as optional dependencies so unrelated
 	// call-sites don't need to thread them.
@@ -659,6 +660,12 @@ func NewRouter(ctx context.Context, cfg *config.Config, db *database.DB, rdb *re
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore), hostctx.RequireModule("patching")).Get("/patching/preview-run", patchingHandler.PreviewRun)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore), hostctx.RequireModule("patching")).Get("/patching/runs/active", patchingHandler.ActiveRuns)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore), hostctx.RequireModule("patching")).Get("/patching/runs", patchingHandler.ListRuns)
+			// Patch schedules (fork): recurring dry runs, approved before anything installs.
+			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore), hostctx.RequireModule("patching")).Get("/patching/schedules", patchSchedulesHandler.List)
+			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/patching/schedules", patchSchedulesHandler.Create)
+			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Put("/patching/schedules/{id}", patchSchedulesHandler.Update)
+			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Delete("/patching/schedules/{id}", patchSchedulesHandler.Delete)
+			r.With(middleware.RequirePermission("can_manage_patching", permissionsStore), hostctx.RequireModule("patching")).Post("/patching/schedules/{id}/run", patchSchedulesHandler.RunNow)
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore), hostctx.RequireModule("patching")).Get("/patching/runs/{id}", patchingHandler.GetRun)
 			// Live patch-run output stream (WebSocket, JWT cookie/bearer auth via outer group).
 			r.With(middleware.RequirePermission("can_view_hosts", permissionsStore), hostctx.RequireModule("patching")).Get("/patching/runs/{id}/stream", patchingHandler.ServeRunStream)

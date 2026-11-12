@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertTriangle,
+	CalendarClock,
 	CheckCircle,
 	CheckSquare,
 	ChevronDown,
@@ -35,6 +36,7 @@ import {
 import { CompactPackageSummary } from "../components/PackageListDisplay";
 import { PatchRunStatusBadge } from "../components/PatchRunStatusBadge";
 import PatchWizard from "../components/PatchWizard";
+import PatchSchedulesTab from "../components/patching/PatchSchedulesTab";
 import {
 	PatchingActivePolicies,
 	PatchingPendingApproval,
@@ -67,7 +69,10 @@ const PATCHING_TABS = [
 	{ id: "overview", label: tk("Overview"), icon: LayoutDashboard },
 	{ id: "runs", label: tk("Runs & History"), icon: History },
 	{ id: "policies", label: tk("Policies"), icon: Shield },
+	{ id: "schedules", label: tk("Schedules"), icon: CalendarClock },
 ];
+
+const URL_TABS = ["overview", "runs", "policies", "schedules"];
 
 const ValidatedBadge = () => {
 	const { t } = useTranslation();
@@ -87,9 +92,7 @@ const Patching = () => {
 	const { hasModule } = useAuth();
 	const policiesLocked = !hasModule("patching_policies");
 	const urlTab = searchParams.get("tab");
-	const initialTab = ["runs", "policies"].includes(urlTab)
-		? urlTab
-		: "overview";
+	const initialTab = URL_TABS.includes(urlTab) ? urlTab : "overview";
 	const initialStatus = searchParams.get("status") || "";
 	const initialType = searchParams.get("type") || "";
 	const [activeTab, setActiveTab] = useState(initialTab);
@@ -97,7 +100,7 @@ const Patching = () => {
 	useTabParam(activeTab);
 
 	useEffect(() => {
-		if (urlTab && ["overview", "runs", "policies"].includes(urlTab)) {
+		if (urlTab && URL_TABS.includes(urlTab)) {
 			setActiveTab(urlTab);
 		}
 	}, [urlTab]);
@@ -549,6 +552,7 @@ const Patching = () => {
 				) : (
 					<PoliciesTab />
 				))}
+			{activeTab === "schedules" && <PatchSchedulesTab />}
 
 			{/* Flow 7: Approve wizard - single-row Approve/Skip & Patch and
 			    bulk Approve selected both route through here. Step 3 only
