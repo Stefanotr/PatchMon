@@ -17,6 +17,7 @@ import {
 	TerminalSquare,
 	X,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 // Note: Auth is handled via httpOnly cookies - no need for useAuth token
 import { useSidebar } from "../contexts/SidebarContext";
 import { aiAPI, settingsAPI } from "../utils/api";
@@ -31,27 +32,30 @@ function sanitizeForLog(value) {
 	return String(value).replace(/\n|\r/g, "");
 }
 
-const WindowsSshNote = () => (
-	<div className="flex items-start gap-2 p-3 bg-blue-900/30 border border-blue-700 rounded text-blue-200 text-xs">
-		<Info className="h-4 w-4 flex-shrink-0 mt-0.5 text-blue-400" />
-		<p>
-			Windows hosts need the OpenSSH Server feature enabled and running. Sign in
-			as Administrator or another local administrator. On Windows 10 and 11 the
-			built-in Administrator is disabled by default and its name is localised on
-			non-English installs, so use your own admin account.{" "}
-			<a
-				href="https://patchmon.net/docs/patchmon-admin-guide#web-ssh-terminal-windows"
-				target="_blank"
-				rel="noopener noreferrer"
-				className="inline-flex items-center min-h-[44px] md:min-h-0 font-medium underline hover:text-white"
-			>
-				How to enable OpenSSH Server
-			</a>
-		</p>
-	</div>
-);
+const WindowsSshNote = () => {
+	const { t } = useTranslation();
+	return (
+		<div className="flex items-start gap-2 p-3 bg-blue-900/30 border border-blue-700 rounded text-blue-200 text-xs">
+			<Info className="h-4 w-4 flex-shrink-0 mt-0.5 text-blue-400" />
+			<p>
+				{t(
+					"Windows hosts need the OpenSSH Server feature enabled and running. Sign in as Administrator or another local administrator. On Windows 10 and 11 the built-in Administrator is disabled by default and its name is localised on non-English installs, so use your own admin account.",
+				)}{" "}
+				<a
+					href="https://patchmon.net/docs/patchmon-admin-guide#web-ssh-terminal-windows"
+					target="_blank"
+					rel="noopener noreferrer"
+					className="inline-flex items-center min-h-[44px] md:min-h-0 font-medium underline hover:text-white"
+				>
+					{t("How to enable OpenSSH Server")}
+				</a>
+			</p>
+		</div>
+	);
+};
 
 const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
+	const { t } = useTranslation();
 	const { setSidebarCollapsed, sidebarCollapsed } = useSidebar();
 	const previousSidebarStateRef = useRef(null);
 	const terminalRef = useRef(null);
@@ -190,7 +194,10 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 				{
 					id: ++aiMsgIdRef.current,
 					role: "assistant",
-					content: `Error: ${err.response?.data?.error || "Failed to get AI response"}`,
+					content: t("Error: {{message}}", {
+						message:
+							err.response?.data?.error || t("Failed to get AI response"),
+					}),
 					isError: true,
 				},
 			]);
@@ -412,11 +419,11 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 
 		// Validate credentials based on auth method
 		if (sshConfig.authMethod === "password" && !sshConfig.password) {
-			setError("Password is required");
+			setError(t("Password is required"));
 			return;
 		}
 		if (sshConfig.authMethod === "key" && !sshConfig.privateKey) {
-			setError("Private key is required");
+			setError(t("Private key is required"));
 			return;
 		}
 
@@ -445,13 +452,13 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 		} catch (err) {
 			const safeErr = String(err).replace(/[\n\r]/g, " ");
 			console.error("[SSH Terminal] Failed to get SSH ticket:", safeErr);
-			setError("Authentication required. Please log in again.");
+			setError(t("Authentication required. Please log in again."));
 			if (terminalInstanceRef.current) {
 				terminalInstanceRef.current.writeln(
-					"\r\n\x1b[31m✗ Error: Authentication required\x1b[0m",
+					`\r\n\x1b[31m✗ ${t("Error: Authentication required")}\x1b[0m`,
 				);
 				terminalInstanceRef.current.writeln(
-					"\x1b[33mPlease log in again and try connecting.\x1b[0m",
+					`\x1b[33m${t("Please log in again and try connecting.")}\x1b[0m`,
 				);
 			}
 			setIsConnecting(false);
@@ -471,10 +478,10 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 				console.log("[SSH Terminal] WebSocket connected");
 				if (terminalInstanceRef.current) {
 					terminalInstanceRef.current.writeln(
-						"\x1b[32m✓ WebSocket connected\x1b[0m",
+						`\x1b[32m✓ ${t("WebSocket connected")}\x1b[0m`,
 					);
 					terminalInstanceRef.current.writeln(
-						"\x1b[33mEstablishing SSH connection...\x1b[0m",
+						`\x1b[33m${t("Establishing SSH connection...")}\x1b[0m`,
 					);
 				}
 
@@ -516,14 +523,18 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 							"[SSH Terminal] Error sending connect message:",
 							safeErr,
 						);
-						setError(`Failed to send connection request: ${err.message}`);
+						setError(
+							t("Failed to send connection request: {{message}}", {
+								message: err.message,
+							}),
+						);
 					}
 				} else {
 					console.error(
 						"[SSH Terminal] WebSocket not ready, state:",
 						ws.readyState,
 					);
-					setError("WebSocket connection not ready");
+					setError(t("WebSocket connection not ready"));
 				}
 			};
 
@@ -537,7 +548,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 							if (terminalInstanceRef.current) {
 								terminalInstanceRef.current.write("\x1b[?25h"); // Show cursor when connected
 								terminalInstanceRef.current.writeln(
-									"\x1b[32m✓ SSH connection established\x1b[0m",
+									`\x1b[32m✓ ${t("SSH connection established")}\x1b[0m`,
 								);
 								terminalInstanceRef.current.writeln("");
 							}
@@ -568,12 +579,12 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 							break;
 
 						case "error":
-							setError(message.message || "SSH connection error");
+							setError(message.message || t("SSH connection error"));
 							setIsConnecting(false);
 							setIsConnected(false);
 							if (terminalInstanceRef.current) {
 								terminalInstanceRef.current.writeln(
-									`\r\n\x1b[31mError: ${message.message}\x1b[0m`,
+									`\r\n\x1b[31m${t("Error: {{message}}", { message: message.message })}\x1b[0m`,
 								);
 							}
 							break;
@@ -582,7 +593,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 							setIsConnected(false);
 							if (terminalInstanceRef.current) {
 								terminalInstanceRef.current.writeln(
-									"\r\n\x1b[33mSSH connection closed\x1b[0m",
+									`\r\n\x1b[33m${t("SSH connection closed")}\x1b[0m`,
 								);
 							}
 							break;
@@ -602,15 +613,16 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 			ws.onerror = (err) => {
 				const safeErr = String(err).replace(/[\n\r]/g, " ");
 				console.error("[SSH Terminal] WebSocket error:", safeErr);
-				const errorMsg =
-					"Failed to connect to terminal server. Check browser console and ensure backend is running.";
+				const errorMsg = t(
+					"Failed to connect to terminal server. Check browser console and ensure backend is running.",
+				);
 				setError(errorMsg);
 				if (terminalInstanceRef.current) {
 					terminalInstanceRef.current.writeln(
-						`\r\n\x1b[31m✗ WebSocket Error:\x1b[0m ${errorMsg}`,
+						`\r\n\x1b[31m✗ ${t("WebSocket error:")}\x1b[0m ${errorMsg}`,
 					);
 					terminalInstanceRef.current.writeln(
-						"\x1b[33mCheck browser console (F12) for details.\x1b[0m",
+						`\x1b[33m${t("Check browser console (F12) for details.")}\x1b[0m`,
 					);
 				}
 				setIsConnecting(false);
@@ -630,8 +642,9 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 
 				// Check for authentication errors (1006 = abnormal closure, often means auth failed)
 				if (event.code === 1006 && !wasConnected) {
-					const errorMsg =
-						"Connection failed: Session may have expired. Please refresh the page or log in again.";
+					const errorMsg = t(
+						"Connection failed: Session may have expired. Please refresh the page or log in again.",
+					);
 					setError(errorMsg);
 					if (terminalInstanceRef.current) {
 						terminalInstanceRef.current.writeln(
@@ -640,7 +653,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 					}
 				} else if (terminalInstanceRef.current && wasConnected) {
 					terminalInstanceRef.current.writeln(
-						`\r\n\x1b[33m⚠ WebSocket closed (code: ${event.code})\x1b[0m`,
+						`\r\n\x1b[33m⚠ ${t("WebSocket closed (code: {{code}})", { code: event.code })}\x1b[0m`,
 					);
 				}
 
@@ -657,7 +670,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 						console.log("[SSH Terminal] Attempting to reconnect...");
 						if (terminalInstanceRef.current) {
 							terminalInstanceRef.current.writeln(
-								"\x1b[33mAttempting to reconnect...\x1b[0m",
+								`\x1b[33m${t("Attempting to reconnect...")}\x1b[0m`,
 							);
 						}
 						connectSsh();
@@ -669,11 +682,11 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 		} catch (err) {
 			const safeErr = String(err).replace(/[\n\r]/g, " ");
 			console.error("[SSH Terminal] Connection error:", safeErr);
-			const errorMsg = err.message || "Failed to establish connection";
+			const errorMsg = err.message || t("Failed to establish connection");
 			setError(errorMsg);
 			if (terminalInstanceRef.current) {
 				terminalInstanceRef.current.writeln(
-					`\r\n\x1b[31m✗ Connection Error:\x1b[0m ${errorMsg}`,
+					`\r\n\x1b[31m✗ ${t("Connection error:")}\x1b[0m ${errorMsg}`,
 				);
 			}
 			setIsConnecting(false);
@@ -748,7 +761,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 			setIdleWarning(true);
 			if (terminalInstanceRef.current) {
 				terminalInstanceRef.current.writeln(
-					"\r\n\x1b[33m⚠ Warning: Connection will close in 1 minute due to inactivity.\x1b[0m",
+					`\r\n\x1b[33m⚠ ${t("Warning: Connection will close in 1 minute due to inactivity.")}\x1b[0m`,
 				);
 			}
 		}, IDLE_TIMEOUT_MS - IDLE_WARNING_MS);
@@ -757,12 +770,12 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 		idleTimeoutRef.current = setTimeout(() => {
 			if (terminalInstanceRef.current) {
 				terminalInstanceRef.current.writeln(
-					"\r\n\x1b[31m✗ Connection closed due to 30 minutes of inactivity.\x1b[0m",
+					`\r\n\x1b[31m✗ ${t("Connection closed after {{minutes}} minutes of inactivity.", { minutes: IDLE_TIMEOUT_MS / 60000 })}\x1b[0m`,
 				);
 			}
 			handleDisconnect();
 		}, IDLE_TIMEOUT_MS);
-	}, [isConnected, handleDisconnect]);
+	}, [isConnected, handleDisconnect, t]);
 
 	// Handle terminal input with AI completion support
 	useEffect(() => {
@@ -924,11 +937,11 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 							<>
 								{idleWarning && (
 									<span className="px-2 py-0.5 text-xs font-medium bg-yellow-900 text-yellow-200 rounded animate-pulse">
-										Idle - Closing soon
+										{t("Idle - Closing soon")}
 									</span>
 								)}
 								<span className="px-2 py-0.5 text-xs font-medium bg-green-900 text-green-200 rounded">
-									Connected
+									{t("Connected")}
 								</span>
 								{!isWindows && host?.api_id && host?.api_key && (
 									<div className="relative" data-install-commands>
@@ -940,14 +953,14 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 											className="px-2 py-0.5 text-xs font-medium text-secondary-300 hover:text-white hover:bg-secondary-700 rounded transition-colors flex items-center gap-1"
 											title={
 												host?.agent_version
-													? "Reinstall Agent"
-													: "Install Agent"
+													? t("Reinstall Agent")
+													: t("Install Agent")
 											}
 										>
 											<Download className="h-3 w-3" />
 											{host?.agent_version
-												? "Reinstall Agent"
-												: "Install Agent"}
+												? t("Reinstall Agent")
+												: t("Install Agent")}
 											<ChevronDown className="h-3 w-3" />
 										</button>
 										{showInstallCommands && (
@@ -957,8 +970,8 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 											>
 												<div className="text-xs font-medium text-white mb-2">
 													{host?.agent_version
-														? "Reinstall PatchMon Agent"
-														: "Install PatchMon Agent"}
+														? t("Reinstall PatchMon Agent")
+														: t("Install PatchMon Agent")}
 												</div>
 												<div className="flex gap-1">
 													<code className="flex-1 px-2 py-1 text-xs bg-secondary-900 text-secondary-200 rounded border border-secondary-700 font-mono break-all">
@@ -971,7 +984,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 															setShowInstallCommands(false);
 														}}
 														className="px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white rounded flex items-center gap-1"
-														title="Copy"
+														title={t("Copy")}
 													>
 														<Copy className="h-3 w-3" />
 													</button>
@@ -981,9 +994,9 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 															pasteToTerminal(getInstallCommand());
 														}}
 														className="px-2 py-1 text-xs bg-secondary-700 hover:bg-secondary-600 text-white rounded"
-														title="Paste to Terminal"
+														title={t("Paste to Terminal")}
 													>
-														Paste
+														{t("Paste")}
 													</button>
 												</div>
 											</div>
@@ -994,21 +1007,21 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 									type="button"
 									onClick={handleDisconnect}
 									className="px-2 py-0.5 text-xs font-medium text-secondary-300 hover:text-white hover:bg-secondary-700 rounded transition-colors"
-									title="Disconnect"
+									title={t("Disconnect")}
 								>
-									Disconnect
+									{t("Disconnect")}
 								</button>
 							</>
 						)}
 						{isConnecting && (
 							<span className="px-2 py-0.5 text-xs font-medium bg-yellow-900 text-yellow-200 rounded flex items-center gap-1">
 								<Loader2 className="h-3 w-3 animate-spin" />
-								Connecting...
+								{t("Connecting...")}
 							</span>
 						)}
 						{error && (
 							<span className="px-2 py-0.5 text-xs font-medium bg-red-900 text-red-200 rounded">
-								Error
+								{t("Error")}
 							</span>
 						)}
 					</div>
@@ -1045,7 +1058,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 										className="text-primary-600 focus:ring-primary-500"
 									/>
 									<span className="text-xs font-medium text-secondary-300 group-hover:text-secondary-200 transition-colors">
-										Direct
+										{t("Direct")}
 									</span>
 								</label>
 								<label className="flex items-center gap-2 cursor-pointer group">
@@ -1063,13 +1076,13 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 										className="text-primary-600 focus:ring-primary-500"
 									/>
 									<span className="text-xs font-medium text-secondary-300 group-hover:text-secondary-200 transition-colors">
-										Proxy via Agent
+										{t("Proxy via Agent")}
 									</span>
 									<a
 										href="https://patchmon.net/docs/patchmon-operator-guide#ssh-proxy-ssh-proxy-enabled"
 										target="_blank"
 										rel="noopener noreferrer"
-										title="SSH Proxy documentation"
+										title={t("SSH Proxy documentation")}
 										className="text-secondary-500 hover:text-primary-400 transition-colors"
 									>
 										<Info className="h-3.5 w-3.5" />
@@ -1082,7 +1095,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 								<div className="flex gap-3 items-end mb-3 p-3 bg-secondary-700/50 rounded border border-secondary-600">
 									<div className="flex-1">
 										<label className="block text-xs font-medium text-secondary-300 mb-1">
-											Proxy Target Host
+											{t("Proxy Target Host")}
 										</label>
 										<input
 											type="text"
@@ -1099,7 +1112,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 									</div>
 									<div className="w-20">
 										<label className="block text-xs font-medium text-secondary-300 mb-1">
-											Port
+											{t("Port")}
 										</label>
 										<input
 											type="number"
@@ -1133,7 +1146,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 										className="text-primary-600 focus:ring-primary-500"
 									/>
 									<span className="text-xs font-medium text-secondary-300 group-hover:text-secondary-200 transition-colors">
-										Password
+										{t("Password")}
 									</span>
 								</label>
 								<label className="flex items-center gap-2 cursor-pointer group">
@@ -1148,7 +1161,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 										className="text-primary-600 focus:ring-primary-500"
 									/>
 									<span className="text-xs font-medium text-secondary-300 group-hover:text-secondary-200 transition-colors">
-										SSH Key
+										{t("SSH Key")}
 									</span>
 								</label>
 							</div>
@@ -1158,7 +1171,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 								<div className="flex gap-3 items-end">
 									<div className="flex-1">
 										<label className="block text-xs font-medium text-secondary-300 mb-1">
-											Username
+											{t("Username")}
 										</label>
 										<input
 											type="text"
@@ -1175,7 +1188,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 									</div>
 									<div className="flex-1">
 										<label className="block text-xs font-medium text-secondary-300 mb-1">
-											Password
+											{t("Password")}
 										</label>
 										<input
 											type="password"
@@ -1189,13 +1202,13 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 												}
 											}}
 											className="w-full px-3 py-2 text-sm bg-secondary-700 border border-secondary-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-											placeholder="Password"
+											placeholder={t("Password")}
 											tabIndex="0"
 										/>
 									</div>
 									<div className="w-20">
 										<label className="block text-xs font-medium text-secondary-300 mb-1">
-											Port
+											{t("Port")}
 										</label>
 										<input
 											type="number"
@@ -1218,7 +1231,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 										className="px-4 py-2 text-sm bg-primary-600 hover:bg-primary-700 text-white font-medium rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm hover:shadow disabled:shadow-none"
 										tabIndex="0"
 									>
-										Connect
+										{t("Connect")}
 									</button>
 								</div>
 							)}
@@ -1228,7 +1241,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 								<div className="flex gap-3">
 									<div className="flex-1">
 										<label className="block text-xs font-medium text-secondary-300 mb-1">
-											Username
+											{t("Username")}
 										</label>
 										<input
 											type="text"
@@ -1245,7 +1258,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 									</div>
 									<div className="w-20">
 										<label className="block text-xs font-medium text-secondary-300 mb-1">
-											Port
+											{t("Port")}
 										</label>
 										<input
 											type="number"
@@ -1269,7 +1282,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 								<>
 									<div>
 										<label className="block text-xs font-medium text-secondary-300 mb-1">
-											Private Key
+											{t("Private Key")}
 										</label>
 										<textarea
 											value={sshConfig.privateKey}
@@ -1286,19 +1299,20 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 										/>
 										<div className="mt-1 space-y-0.5">
 											<p className="text-xs text-secondary-400">
-												Paste your private SSH key here (supports encrypted
-												keys)
+												{t(
+													"Paste your private SSH key here (supports encrypted keys)",
+												)}
 											</p>
 											<p className="text-xs text-secondary-500 italic">
-												🔒 Security: Your private key is never stored. It's only
-												used in memory for the SSH connection and cleared when
-												you disconnect.
+												{t(
+													"🔒 Security: Your private key is never stored. It's only used in memory for the SSH connection and cleared when you disconnect.",
+												)}
 											</p>
 										</div>
 									</div>
 									<div>
 										<label className="block text-xs font-medium text-secondary-300 mb-1">
-											Passphrase (if key is encrypted)
+											{t("Passphrase (if key is encrypted)")}
 										</label>
 										<input
 											type="password"
@@ -1315,7 +1329,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 												}
 											}}
 											className="w-full px-3 py-2 text-sm bg-secondary-700 border border-secondary-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-											placeholder="Passphrase (optional)"
+											placeholder={t("Passphrase (optional)")}
 											tabIndex="0"
 										/>
 									</div>
@@ -1331,7 +1345,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 									className="w-full px-4 py-2 text-sm bg-primary-600 hover:bg-primary-700 text-white font-medium rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow disabled:shadow-none"
 									tabIndex="0"
 								>
-									Connect
+									{t("Connect")}
 								</button>
 							)}
 						</div>
@@ -1344,7 +1358,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 						<div className="flex items-center gap-2 text-sm">
 							<Loader2 className="h-4 w-4 text-primary-400 animate-spin" />
 							<span className="text-secondary-300">
-								Connecting to SSH server...
+								{t("Connecting to SSH server...")}
 							</span>
 						</div>
 					</div>
@@ -1377,7 +1391,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 										}`}
 									>
 										<Bot className="h-4 w-4" />
-										AI Assistant
+										{t("AI Assistant")}
 										{aiPanelOpen ? (
 											<PanelRightClose className="h-3 w-3" />
 										) : (
@@ -1396,7 +1410,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 									<div className="flex items-center gap-2">
 										<Bot className="h-4 w-4 text-primary-400" />
 										<span className="text-sm font-medium text-white">
-											AI Assistant
+											{t("AI Assistant")}
 										</span>
 									</div>
 									<button
@@ -1413,10 +1427,13 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 									{aiMessages.length === 0 && (
 										<div className="text-center text-secondary-400 text-xs py-4">
 											<Bot className="h-8 w-8 mx-auto mb-2 opacity-50" />
-											<p>Ask about terminal output,</p>
-											<p>errors, or get command help.</p>
+											<p>
+												{t(
+													"Ask about terminal output, errors, or get command help.",
+												)}
+											</p>
 											<p className="mt-2 text-secondary-500">
-												Commands can be sent directly to terminal!
+												{t("Commands can be sent directly to terminal!")}
 											</p>
 										</div>
 									)}
@@ -1450,7 +1467,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 														{codeBlocks.length > 0 && isConnected && (
 															<div className="mt-2 pt-2 border-t border-secondary-600/50 space-y-1.5">
 																<span className="text-xs text-secondary-400">
-																	Send to terminal:
+																	{t("Send to terminal:")}
 																</span>
 																{codeBlocks.map((cmd) => (
 																	<button
@@ -1458,7 +1475,9 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 																		type="button"
 																		onClick={() => sendCommandToTerminal(cmd)}
 																		className="w-full flex items-center gap-2 px-2 py-1.5 text-xs bg-secondary-600/50 hover:bg-primary-600/50 border border-secondary-500/50 hover:border-primary-500/50 rounded text-left transition-colors group"
-																		title="Click to send command to terminal"
+																		title={t(
+																			"Click to send command to terminal",
+																		)}
 																	>
 																		<Play className="h-3 w-3 text-primary-400 group-hover:text-primary-300 flex-shrink-0" />
 																		<code className="flex-1 text-secondary-200 group-hover:text-white font-mono truncate">
@@ -1478,7 +1497,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 											<div className="flex items-center gap-2">
 												<Loader2 className="h-4 w-4 animate-spin text-primary-400" />
 												<span className="text-sm text-secondary-400">
-													Thinking...
+													{t("Thinking...")}
 												</span>
 											</div>
 										</div>
@@ -1499,7 +1518,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 													sendAiMessage();
 												}
 											}}
-											placeholder="Ask about the terminal..."
+											placeholder={t("Ask about the terminal...")}
 											className="flex-1 px-3 py-2 text-sm bg-secondary-700 border border-secondary-600 rounded-lg text-white placeholder-secondary-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
 											disabled={aiLoading}
 										/>
@@ -1524,7 +1543,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 						<div className="flex items-center gap-2.5">
 							<TerminalSquare className="h-5 w-5 text-secondary-500 opacity-60" />
 							<p className="text-xs text-secondary-400 font-medium">
-								Enter credentials above to connect
+								{t("Enter credentials above to connect")}
 							</p>
 						</div>
 					</div>
@@ -1543,7 +1562,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 						<TerminalSquare className="h-5 w-5 text-primary-400" />
 						<div>
 							<h3 className="text-lg font-semibold text-white">
-								SSH Terminal - {host?.friendly_name}
+								{t("SSH Terminal - {{name}}", { name: host?.friendly_name })}
 							</h3>
 							<p className="text-sm text-secondary-400">
 								{host?.ip_address || host?.hostname}
@@ -1553,18 +1572,18 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 					<div className="flex items-center gap-2">
 						{isConnected && (
 							<span className="px-2 py-1 text-xs font-medium bg-green-900 text-green-200 rounded">
-								Connected
+								{t("Connected")}
 							</span>
 						)}
 						{isConnecting && (
 							<span className="px-2 py-1 text-xs font-medium bg-yellow-900 text-yellow-200 rounded flex items-center gap-1">
 								<Loader2 className="h-3 w-3 animate-spin" />
-								Connecting...
+								{t("Connecting...")}
 							</span>
 						)}
 						{error && (
 							<span className="px-2 py-1 text-xs font-medium bg-red-900 text-red-200 rounded">
-								Error
+								{t("Error")}
 							</span>
 						)}
 						<button
@@ -1590,7 +1609,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 							<div className="grid grid-cols-2 gap-4">
 								<div>
 									<label className="block text-sm font-medium text-secondary-300 mb-1">
-										Username
+										{t("Username")}
 									</label>
 									<input
 										type="text"
@@ -1606,7 +1625,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 								</div>
 								<div>
 									<label className="block text-sm font-medium text-secondary-300 mb-1">
-										Port
+										{t("Port")}
 									</label>
 									<input
 										type="number"
@@ -1624,7 +1643,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 							</div>
 							<div>
 								<label className="block text-sm font-medium text-secondary-300 mb-1">
-									Password
+									{t("Password")}
 								</label>
 								<input
 									type="password"
@@ -1638,7 +1657,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 										}
 									}}
 									className="w-full px-3 py-2 bg-secondary-700 border border-secondary-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-									placeholder="Enter SSH password"
+									placeholder={t("Enter SSH password")}
 								/>
 							</div>
 							<button
@@ -1647,7 +1666,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 								disabled={!sshConfig.username || !sshConfig.password}
 								className="w-full px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Connect
+								{t("Connect")}
 							</button>
 						</div>
 					</div>
@@ -1659,7 +1678,7 @@ const SshTerminal = ({ host, isOpen, onClose, embedded = false }) => {
 						<div className="max-w-2xl mx-auto flex items-center gap-3">
 							<Loader2 className="h-5 w-5 text-primary-400 animate-spin" />
 							<span className="text-secondary-300">
-								Connecting to SSH server...
+								{t("Connecting to SSH server...")}
 							</span>
 						</div>
 					</div>

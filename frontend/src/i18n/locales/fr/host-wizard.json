@@ -1,0 +1,20 @@
+{
+	"Choose OS": "Choisir l'OS",
+	"Host details": "Détails de l'hôte",
+	"Copy command": "Copier la commande",
+	"Failed to create host": "Échec de la création de l'hôte",
+	"Add New Host": "Ajouter un hôte",
+	"Select the operating system of the host you want to add. The install command will match this choice.": "Sélectionnez le système d'exploitation de l'hôte à ajouter. La commande d'installation correspondra à ce choix.",
+	"Friendly Name *": "Nom d'affichage *",
+	"System information will be detected when the agent connects.": "Les informations système seront détectées à la connexion de l'agent.",
+	"Integrations (Optional)": "Intégrations (facultatif)",
+	"Run this command on your Windows host to install the agent (run PowerShell as Administrator). After copying, the wizard will wait for the connection.": "Exécutez cette commande sur votre hôte Windows pour installer l'agent (lancez PowerShell en tant qu'administrateur). Une fois la commande copiée, l'assistant attendra la connexion.",
+	"Run this command on your {{os}} host to install the agent. After copying, the wizard will wait for the connection.": "Exécutez cette commande sur votre hôte {{os}} pour installer l'agent. Une fois la commande copiée, l'assistant attendra la connexion.",
+	"Use curl instead of Invoke-WebRequest (if download fails)": "Utiliser curl au lieu d'Invoke-WebRequest (si le téléchargement échoue)",
+	"Run the installation command on your host. This will update automatically when the agent connects.": "Exécutez la commande d'installation sur votre hôte. Cet écran se mettra à jour tout seul à la connexion de l'agent.",
+	"Waiting for initial system report...": "En attente du rapport système initial…",
+	"Waiting for report...": "En attente du rapport…",
+	"Collecting system information...": "Collecte des informations système…",
+	"Redirecting to host page...": "Redirection vers la page de l'hôte…",
+	"View command again": "Revoir la commande"
+}
