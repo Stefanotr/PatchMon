@@ -86,6 +86,7 @@ func NewServer(opts asynq.RedisClientOpt, registry *agentregistry.Registry, db *
 			notifications.QueueNotifications: 2,
 			QueueScheduledReports:            1,
 			QueueMetricsSend:                 1,
+			QueuePatchSchedules:              1,
 		},
 	})
 
@@ -155,6 +156,7 @@ func Mux(opts MuxOpts) *asynq.ServeMux {
 	patchRunsStore := store.NewPatchRunsStore(&hostctx.DBResolver{Default: db})
 	mux.Handle(TypeRunPatch, wrap(TypeRunPatch, NewRunPatchHandler(registry, patchRunsStore, opts.PoolCache, opts.QueueClient, log)))
 	mux.Handle(TypeMetricsSend, wrap(TypeMetricsSend, NewMetricsSendHandler(db, opts.PoolCache, opts.ServerVersion, log)))
+	mux.Handle(TypePatchScheduleTick, wrap(TypePatchScheduleTick, NewPatchScheduleTickHandler(db, opts.PoolCache, opts.QueueClient, log)))
 	return mux
 }
 
@@ -311,6 +313,17 @@ func NewScheduler(opts asynq.RedisClientOpt, db *database.DB, log *slog.Logger) 
 
 	metricsSendTask := asynq.NewTask(TypeMetricsSend, nil)
 	if _, err := scheduler.Register("0 6 * * *", metricsSendTask, asynq.Queue(QueueMetricsSend), asynq.Retention(AutomationRetention)); err != nil {
+		return nil, err
+	}
+
+	// Patch schedules: each tick fires the schedules due, once each even
+	// with several server instances (see patchschedule.Store.Claim).
+	patchScheduleTask := asynq.NewTask(TypePatchScheduleTick, nil)
+	if _, err := scheduler.Register("* * * * *", patchScheduleTask,
+		asynq.Queue(QueuePatchSchedules),
+		asynq.Unique(patchScheduleUniqueWindow),
+		asynq.MaxRetry(0),
+		asynq.Retention(patchScheduleRetention)); err != nil {
 		return nil, err
 	}
 
