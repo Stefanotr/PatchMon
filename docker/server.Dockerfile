@@ -1,5 +1,5 @@
 # Development stage - run with go run, source can be volume-mounted for live reload
-FROM golang:1.26.10-alpine3.24 AS development
+FROM golang:1.26.11-alpine3.24 AS development
 
 RUN apk add --no-cache git ca-certificates tzdata curl nodejs npm
 
