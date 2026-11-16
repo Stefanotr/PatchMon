@@ -939,3 +939,22 @@ CREATE TABLE host_remote_restart (
     enabled BOOLEAN NOT NULL,
     reported_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE patch_schedules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    host_group_id TEXT REFERENCES host_groups(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL,
+    frequency TEXT NOT NULL,
+    weekdays INTEGER[] NOT NULL DEFAULT '{}',
+    month_week INTEGER NOT NULL DEFAULT 0,
+    month_weekday INTEGER NOT NULL DEFAULT 0,
+    time_of_day TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    next_run_at TIMESTAMP(3),
+    last_run_at TIMESTAMP(3),
+    last_result JSONB,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX patch_schedules_due ON patch_schedules (next_run_at) WHERE enabled;

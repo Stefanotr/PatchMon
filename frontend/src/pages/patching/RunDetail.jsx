@@ -393,6 +393,15 @@ const RunDetail = () => {
 	const policyDetail = (() => {
 		const snap = run.policy_snapshot;
 		if (!snap) return null;
+		if (snap.schedule?.name) {
+			return snap.schedule.manual
+				? t('Run now from the patch schedule "{{name}}"', {
+						name: snap.schedule.name,
+					})
+				: t('Started by the patch schedule "{{name}}"', {
+						name: snap.schedule.name,
+					});
+		}
 		const type = snap.patch_delay_type;
 		if (type === "immediate") return t("Runs immediately on trigger");
 		if (type === "delayed" && snap.delay_minutes != null)

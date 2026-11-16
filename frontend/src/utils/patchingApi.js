@@ -314,6 +314,16 @@ export const patchingAPI = {
 			.get("/patching/preview-run", { params: { host_id } })
 			.then((res) => res.data),
 
+	// Schedules (fork): recurring dry runs, approved before anything installs.
+	getSchedules: () => api.get("/patching/schedules").then((res) => res.data),
+	createSchedule: (data) =>
+		api.post("/patching/schedules", data).then((res) => res.data),
+	updateSchedule: (id, data) =>
+		api.put(`/patching/schedules/${id}`, data).then((res) => res.data),
+	deleteSchedule: (id) => api.delete(`/patching/schedules/${id}`),
+	runSchedule: (id) =>
+		api.post(`/patching/schedules/${id}/run`).then((res) => res.data),
+
 	// Policies
 	getPolicies: () => api.get("/patching/policies").then((res) => res.data),
 	getPolicyById: (id) =>

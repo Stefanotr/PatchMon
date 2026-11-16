@@ -1,0 +1,12 @@
+{
+	"{{count}} dry run queued_one": "{{count}} dry run queued",
+	"{{count}} dry run queued_other": "{{count}} dry runs queued",
+	"{{count}} host up to date_one": "{{count}} host up to date",
+	"{{count}} host up to date_other": "{{count}} hosts up to date",
+	"{{count}} host busy_one": "{{count}} host busy",
+	"{{count}} host busy_other": "{{count}} hosts busy",
+	"{{count}} host not supported_one": "{{count}} host not supported",
+	"{{count}} host not supported_other": "{{count}} hosts not supported",
+	"{{count}} host failed_one": "{{count}} host failed",
+	"{{count}} host failed_other": "{{count}} hosts failed"
+}

@@ -182,3 +182,29 @@ func TestABusyTableIsRetried(t *testing.T) {
 		t.Fatal("a table busy on every attempt did not fail the start")
 	}
 }
+
+func TestCreatesThePatchSchedulesTable(t *testing.T) {
+	db := &fakeDB{}
+	if err := Apply(context.Background(), db, nil); err != nil {
+		t.Fatal(err)
+	}
+	tx := db.txs[2]
+	if tx.stmts[0] != "SELECT pg_advisory_xact_lock($1)" {
+		t.Fatalf("the lock is not taken first: %q", tx.stmts)
+	}
+	if !tx.ran("CREATE TABLE patch_schedules") || !tx.ran("REFERENCES host_groups(id) ON DELETE CASCADE") ||
+		!tx.ran("CREATE INDEX patch_schedules_due") {
+		t.Fatalf("table not created: %q", tx.stmts)
+	}
+	if !tx.commit {
+		t.Fatal("not committed")
+	}
+
+	db = &fakeDB{hasColumn: true}
+	if err := Apply(context.Background(), db, nil); err != nil {
+		t.Fatal(err)
+	}
+	if tx := db.txs[2]; tx.ran("CREATE TABLE") {
+		t.Fatalf("an existing table was recreated: %q", tx.stmts)
+	}
+}

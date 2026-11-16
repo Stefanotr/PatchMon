@@ -165,7 +165,7 @@ func NewRunPatchTask(p RunPatchPayload) (*asynq.Task, error) {
 	opts := []asynq.Option{
 		asynq.Queue(QueuePatching),
 		asynq.MaxRetry(10),
-		asynq.TaskID("patch-run-" + p.PatchRunID),
+		asynq.TaskID(RunPatchJobID(p.PatchRunID)),
 	}
 	return asynq.NewTask(TypeRunPatch, payload, opts...), nil
 }

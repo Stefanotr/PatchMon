@@ -4,6 +4,7 @@ Ce dépôt est un fork de [PatchMon/PatchMon](https://github.com/PatchMon/PatchM
 
 - la gestion des redémarrages, après un patch ou à la demande, avec leur historique, Windows compris ;
 - l'activité de l'agent en direct (mise à jour de l'agent, patchs, scans) ;
+- les plannings de patch : un dry-run récurrent des mises à jour en attente d'un groupe d'hôtes, approuvé par une personne avant toute installation ;
 - le tampon du fork : le serveur sait de quel dépôt il vient et suit les releases du fork ;
 - une veille des versions officielles ;
 - l'interface en français (langue du navigateur, ou choisie dans le profil ou sur la page de connexion). Les écrans principaux sont traduits, les autres restent en anglais pour l'instant.
@@ -58,7 +59,7 @@ Les builds faits avant `fork.2` (les binaires de `deploy-patchmon-custom.sh`, la
    git diff c8f42251 v2.1.4 -- server-source-code/internal/migrate/migrations/000048_* server-source-code/internal/migrate/migrations/000049_*
    ```
 
-**Colonnes propres au fork** : le fork n'ajoute jamais de migration numérotée, car elle entrerait en collision avec celles de PatchMon. Ses changements de base sont des étapes idempotentes (`server-source-code/internal/forkschema`), lancées au démarrage après les migrations. Aujourd'hui, il n'y en a qu'une : la colonne `can_restart_hosts` des rôles.
+**Colonnes propres au fork** : le fork n'ajoute jamais de migration numérotée, car elle entrerait en collision avec celles de PatchMon. Ses changements de base sont des étapes idempotentes (`server-source-code/internal/forkschema`), lancées au démarrage après les migrations. Aujourd'hui : la colonne `can_restart_hosts` des rôles, la table `host_remote_restart` et la table `patch_schedules`.
 
 ## Le tampon du fork
 
