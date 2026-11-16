@@ -25,6 +25,8 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
+import { tk } from "../i18n";
 import { rdpAPI } from "../utils/api";
 import {
 	loadRdpKeyboardLayout,
@@ -95,10 +97,12 @@ const AUTH_FAILURE_PATTERNS = [
  */
 const GUIDANCE = {
 	guacd_unavailable: {
-		title: "guacd is not running on the PatchMon server",
+		title: tk("guacd is not running on the PatchMon server"),
 		body: [
-			"The RDP gateway (guacd) is required to render Windows desktops in the browser.",
-			"On the PatchMon server, install and start guacd:",
+			tk(
+				"The RDP gateway (guacd) is required to render Windows desktops in the browser.",
+			),
+			tk("On the PatchMon server, install and start guacd:"),
 		],
 		code: `# Debian / Ubuntu
 apt install guacd
@@ -108,13 +112,15 @@ dnf install guacd
 
 # Docker: run the guacamole/guacd sidecar with network_mode: "service:server"
 # and set GUACD_ADDRESS=127.0.0.1:4822 (see the operator guide)`,
-		doc: "See Internal documentation: technical/WINDOWS.md",
+		doc: tk("See Internal documentation: technical/WINDOWS.md"),
 	},
 	agent_disconnected: {
-		title: "The PatchMon agent on this host is not connected",
+		title: tk("The PatchMon agent on this host is not connected"),
 		body: [
-			"The agent must be running and maintain a WebSocket to the PatchMon server for RDP to work.",
-			"Check the agent service status on the Windows host:",
+			tk(
+				"The agent must be running and maintain a WebSocket to the PatchMon server for RDP to work.",
+			),
+			tk("Check the agent service status on the Windows host:"),
 		],
 		code: `# PowerShell (as Administrator)
 Get-Service -Name PatchMonAgent
@@ -124,17 +130,23 @@ Start-Service -Name PatchMonAgent
 Get-Content "C:\\ProgramData\\PatchMon\\patchmon-agent.log" -Tail 200`,
 	},
 	agent_timeout: {
-		title: "The agent did not respond in time",
+		title: tk("The agent did not respond in time"),
 		body: [
-			"The RDP proxy request was sent but no reply arrived within 12 seconds.",
-			"Usually this means the agent is unhealthy or the network link is saturated. Try again, and if it keeps failing, restart the agent service.",
+			tk(
+				"The RDP proxy request was sent but no reply arrived within 12 seconds.",
+			),
+			tk(
+				"Usually this means the agent is unhealthy or the network link is saturated. Try again, and if it keeps failing, restart the agent service.",
+			),
 		],
 	},
 	agent_rdp_disabled: {
-		title: "RDP proxy is disabled in the agent config",
+		title: tk("RDP proxy is disabled in the agent config"),
 		body: [
-			"The agent rejected the request because the RDP proxy integration is not enabled. This must be enabled manually on the host — it cannot be pushed from the server.",
-			"Edit the agent config and restart the service:",
+			tk(
+				"The agent rejected the request because the RDP proxy integration is not enabled. This must be enabled manually on the host — it cannot be pushed from the server.",
+			),
+			tk("Edit the agent config and restart the service:"),
 		],
 		code: `# C:\\ProgramData\\PatchMon\\config.yml
 integrations:
@@ -144,11 +156,17 @@ integrations:
 Restart-Service -Name PatchMonAgent`,
 	},
 	rdp_port_unreachable: {
-		title: "The Windows host's RDP service is not reachable on port 3389",
+		title: tk("The Windows host's RDP service is not reachable on port 3389"),
 		body: [
-			"The agent connected to the server but could not open a TCP connection to localhost:3389 on the host.",
-			"PatchMon only needs the service listening locally on the host. You do not need to expose RDP publicly just to make browser RDP work.",
-			"On the Windows host, confirm Remote Desktop is enabled and listening:",
+			tk(
+				"The agent connected to the server but could not open a TCP connection to localhost:3389 on the host.",
+			),
+			tk(
+				"PatchMon only needs the service listening locally on the host. You do not need to expose RDP publicly just to make browser RDP work.",
+			),
+			tk(
+				"On the Windows host, confirm Remote Desktop is enabled and listening:",
+			),
 		],
 		code: `# PowerShell (as Administrator)
 # 1. Enable Remote Desktop
@@ -160,101 +178,141 @@ Test-NetConnection -ComputerName localhost -Port 3389
 Get-NetTCPConnection -LocalPort 3389 -State Listen`,
 	},
 	rdp_upstream_unreachable: {
-		title: "guacd could not reach the RDP session",
+		title: tk("guacd could not reach the RDP session"),
 		body: [
-			"The RDP gateway (guacd) on the PatchMon server accepted the session, but the connection to the Windows desktop was refused or dropped before it started.",
+			tk(
+				"The RDP gateway (guacd) on the PatchMon server accepted the session, but the connection to the Windows desktop was refused or dropped before it started.",
+			),
 		],
 		causes: [
-			"Remote Desktop is disabled on the Windows host.",
-			"guacd cannot connect back to the PatchMon server's RDP session listener. Deploy guacd as in the shipped Docker Compose file, or on the same host as the PatchMon server.",
-			"guacd or the PatchMon server restarted while the session was open. Retry the connection.",
+			tk("Remote Desktop is disabled on the Windows host."),
+			tk(
+				"guacd cannot connect back to the PatchMon server's RDP session listener. Deploy guacd as in the shipped Docker Compose file, or on the same host as the PatchMon server.",
+			),
+			tk(
+				"guacd or the PatchMon server restarted while the session was open. Retry the connection.",
+			),
 		],
 		code: `# PowerShell (as Administrator): enable Remote Desktop
 Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name fDenyTSConnections -Value 0`,
 	},
 	agent_invalid_host: {
-		title: "The agent rejected the proxy host",
+		title: tk("The agent rejected the proxy host"),
 		body: [
-			"The server requested a proxy target that the agent refused to dial. This is typically a version mismatch — update the PatchMon agent on the host to the latest release.",
+			tk(
+				"The server requested a proxy target that the agent refused to dial. This is typically a version mismatch — update the PatchMon agent on the host to the latest release.",
+			),
 		],
 	},
 	agent_error: {
-		title: "The agent reported an error",
+		title: tk("The agent reported an error"),
 		body: [
-			"The RDP proxy could not be established. The raw diagnostic text from the agent is shown above for troubleshooting.",
-			"Treat that text as untrusted diagnostic output and verify it against the curated guidance in PatchMon before acting on it.",
+			tk(
+				"The RDP proxy could not be established. The raw diagnostic text from the agent is shown above for troubleshooting.",
+			),
+			tk(
+				"Treat that text as untrusted diagnostic output and verify it against the curated guidance in PatchMon before acting on it.",
+			),
 		],
 	},
 	agent_send_failed: {
-		title: "Could not deliver the RDP proxy request to the agent",
+		title: tk("Could not deliver the RDP proxy request to the agent"),
 		body: [
-			"The agent's WebSocket was accepted but the write failed. The agent may have just disconnected. Wait a few seconds and try again.",
+			tk(
+				"The agent's WebSocket was accepted but the write failed. The agent may have just disconnected. Wait a few seconds and try again.",
+			),
 		],
 	},
 	max_sessions: {
-		title: "Too many concurrent RDP sessions",
+		title: tk("Too many concurrent RDP sessions"),
 		body: [
-			"The server is at its concurrent RDP session limit. Close unused sessions and try again.",
+			tk(
+				"The server is at its concurrent RDP session limit. Close unused sessions and try again.",
+			),
 		],
 	},
 	max_sessions_context: {
-		title: "Too many concurrent RDP sessions for this PatchMon instance",
+		title: tk("Too many concurrent RDP sessions for this PatchMon instance"),
 		body: [
-			"This PatchMon instance is at its concurrent RDP session limit. Close unused sessions and try again.",
+			tk(
+				"This PatchMon instance is at its concurrent RDP session limit. Close unused sessions and try again.",
+			),
 		],
 	},
 	rdp_session_ended: {
-		title: "The RDP session ended before it started",
-		body: ["Click Connect again."],
+		title: tk("The RDP session ended before it started"),
+		body: [tk("Click Connect again.")],
 	},
 	rdp_ticket_invalid: {
-		title: "The RDP connection ticket is no longer valid",
+		title: tk("The RDP connection ticket is no longer valid"),
 		body: [
-			"Tickets expire after a few minutes and can only be used once. Click Connect again to get a new one. If it keeps failing, check that your role still allows remote access.",
+			tk(
+				"Tickets expire after a few minutes and can only be used once. Click Connect again to get a new one. If it keeps failing, check that your role still allows remote access.",
+			),
 		],
 	},
 	invalid_keyboard_layout: {
-		title: "The server does not support this keyboard layout",
+		title: tk("The server does not support this keyboard layout"),
 		body: [
-			"Pick another layout from the list and connect again. If the list offers a layout the server rejects, the frontend and server versions do not match.",
+			tk(
+				"Pick another layout from the list and connect again. If the list offers a layout the server rejects, the frontend and server versions do not match.",
+			),
 		],
 	},
 	rate_limited: {
-		title: "Too many RDP connection attempts",
-		body: ["Wait a minute, then click Connect again."],
+		title: tk("Too many RDP connection attempts"),
+		body: [tk("Wait a minute, then click Connect again.")],
 	},
 	server_error: {
-		title: "An unexpected server error occurred",
+		title: tk("An unexpected server error occurred"),
 		body: [
-			"The request failed on the server. Check the PatchMon server logs for details.",
+			tk(
+				"The request failed on the server. Check the PatchMon server logs for details.",
+			),
 		],
 	},
 	rdp_auth_failed: {
-		title: "Authentication to the Windows host failed",
+		title: tk("Authentication to the Windows host failed"),
 		body: [
-			"The Windows host accepted the connection but refused the credentials.",
-			"Confirm the username and password are correct. If the host requires Network Level Authentication (NLA), the credentials must belong to a user permitted by the host's Remote Desktop settings.",
-			"If you left credentials blank, try providing them explicitly — some hosts do not allow NLA with empty credentials.",
+			tk(
+				"The Windows host accepted the connection but refused the credentials.",
+			),
+			tk(
+				"Confirm the username and password are correct. If the host requires Network Level Authentication (NLA), the credentials must belong to a user permitted by the host's Remote Desktop settings.",
+			),
+			tk(
+				"If you left credentials blank, try providing them explicitly — some hosts do not allow NLA with empty credentials.",
+			),
 		],
 	},
 	rdp_security_negotiation_failed: {
-		title: "The Windows host rejected the RDP security negotiation",
+		title: tk("The Windows host rejected the RDP security negotiation"),
 		body: [
-			"PatchMon reached the host, but Windows and guacd could not agree on the RDP security layer or certificate checks.",
-			"Verify the host's RDP certificate is valid and that its Remote Desktop security policy is compatible with the mode PatchMon requested. If the host was recently hardened, compare the host policy with the PatchMon server logs before changing it.",
+			tk(
+				"PatchMon reached the host, but Windows and guacd could not agree on the RDP security layer or certificate checks.",
+			),
+			tk(
+				"Verify the host's RDP certificate is valid and that its Remote Desktop security policy is compatible with the mode PatchMon requested. If the host was recently hardened, compare the host policy with the PatchMon server logs before changing it.",
+			),
 		],
 	},
 	rdp_gateway_failed: {
-		title: "The Windows host refused the RDP session after TCP connected",
+		title: tk("The Windows host refused the RDP session after TCP connected"),
 		body: [
-			"PatchMon reached the host's RDP service through the agent, but Windows refused the session setup after the TCP connection opened.",
-			"This can still be caused by credentials, NLA policy, Remote Desktop permissions, or an RDP security-layer mismatch. Try explicit credentials first, then verify the account is allowed to sign in via Remote Desktop and compare the host's RDP policy with the requested mode in the PatchMon server logs.",
+			tk(
+				"PatchMon reached the host's RDP service through the agent, but Windows refused the session setup after the TCP connection opened.",
+			),
+			tk(
+				"This can still be caused by credentials, NLA policy, Remote Desktop permissions, or an RDP security-layer mismatch. Try explicit credentials first, then verify the account is allowed to sign in via Remote Desktop and compare the host's RDP policy with the requested mode in the PatchMon server logs.",
+			),
 		],
 	},
 	rdp_unknown: {
-		title: "RDP connection failed",
+		title: tk("RDP connection failed"),
 		body: [
-			"The connection failed for an unclassified reason. The underlying message is shown above.",
+			tk(
+				"The connection failed for an unclassified reason. The underlying message is shown above.",
+			),
 		],
 	},
 };
@@ -322,6 +380,12 @@ export const deriveCodeFromGuacStatus = (status) => {
 	}
 };
 
+// Tags of the requirement sentences (<Trans> components).
+const REQUIREMENT_TAGS = {
+	strong: <strong className="text-white" />,
+	code: <code />,
+};
+
 const Requirement = ({ children }) => (
 	<li className="flex items-start gap-2 text-sm text-secondary-300">
 		<CheckCircle2 className="h-4 w-4 text-primary-500 shrink-0 mt-0.5" />
@@ -330,6 +394,7 @@ const Requirement = ({ children }) => (
 );
 
 const ErrorPanel = ({ code, message, onRetry }) => {
+	const { t } = useTranslation();
 	const guidance = GUIDANCE[code] || GUIDANCE.rdp_unknown;
 	return (
 		<div className="w-full max-w-2xl bg-secondary-800 border border-secondary-700 rounded-lg p-5 shadow-lg">
@@ -337,7 +402,7 @@ const ErrorPanel = ({ code, message, onRetry }) => {
 				<AlertCircle className="h-6 w-6 text-danger-400 shrink-0 mt-0.5" />
 				<div className="flex-1 min-w-0">
 					<h3 className="text-base font-semibold text-white">
-						{guidance.title}
+						{t(guidance.title)}
 					</h3>
 					{message && (
 						<pre className="mt-2 whitespace-pre-wrap text-xs text-danger-300 bg-secondary-900/60 border border-secondary-700 rounded p-2 font-mono">
@@ -347,14 +412,14 @@ const ErrorPanel = ({ code, message, onRetry }) => {
 					<div className="mt-3 space-y-2">
 						{guidance.body.map((p) => (
 							<p key={p} className="text-sm text-secondary-300">
-								{p}
+								{t(p)}
 							</p>
 						))}
 					</div>
 					{guidance.causes && (
 						<ul className="mt-2 list-disc pl-5 space-y-1 text-sm text-secondary-300">
 							{guidance.causes.map((c) => (
-								<li key={c}>{c}</li>
+								<li key={c}>{t(c)}</li>
 							))}
 						</ul>
 					)}
@@ -364,7 +429,7 @@ const ErrorPanel = ({ code, message, onRetry }) => {
 						</pre>
 					)}
 					{guidance.doc && (
-						<p className="mt-2 text-xs text-secondary-500">{guidance.doc}</p>
+						<p className="mt-2 text-xs text-secondary-500">{t(guidance.doc)}</p>
 					)}
 					{onRetry && (
 						<button
@@ -373,7 +438,7 @@ const ErrorPanel = ({ code, message, onRetry }) => {
 							className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium"
 						>
 							<RefreshCw className="h-4 w-4" />
-							Retry
+							{t("Retry")}
 						</button>
 					)}
 				</div>
@@ -382,63 +447,78 @@ const ErrorPanel = ({ code, message, onRetry }) => {
 	);
 };
 
-const RequirementsChecklist = ({ open, onToggle }) => (
-	<div className="w-full max-w-2xl bg-secondary-800/60 border border-secondary-700 rounded-lg">
-		<button
-			type="button"
-			onClick={onToggle}
-			className="w-full flex items-center gap-2 px-4 py-3 text-left"
-			aria-expanded={open}
-		>
-			{open ? (
-				<ChevronDown className="h-4 w-4 text-secondary-400" />
-			) : (
-				<ChevronRight className="h-4 w-4 text-secondary-400" />
+const RequirementsChecklist = ({ open, onToggle }) => {
+	const { t } = useTranslation();
+	return (
+		<div className="w-full max-w-2xl bg-secondary-800/60 border border-secondary-700 rounded-lg">
+			<button
+				type="button"
+				onClick={onToggle}
+				className="w-full flex items-center gap-2 px-4 py-3 text-left"
+				aria-expanded={open}
+			>
+				{open ? (
+					<ChevronDown className="h-4 w-4 text-secondary-400" />
+				) : (
+					<ChevronRight className="h-4 w-4 text-secondary-400" />
+				)}
+				<Info className="h-4 w-4 text-primary-500" />
+				<span className="text-sm font-medium text-white">
+					{t("What does RDP need to work?")}
+				</span>
+			</button>
+			{open && (
+				<div className="px-4 pb-4 space-y-3">
+					<p className="text-xs text-secondary-400">
+						{t(
+							"In-browser RDP bridges your browser → PatchMon server (guacd) → PatchMon agent on the host → Windows RDP service on port 3389. All four pieces must be in place.",
+						)}
+					</p>
+					<ul className="space-y-2">
+						<Requirement>
+							<Trans
+								i18nKey="<strong>On the Windows host:</strong> Remote Desktop enabled and listening on <code>{{port}}</code>."
+								values={{ port: 3389 }}
+								components={REQUIREMENT_TAGS}
+							/>
+						</Requirement>
+						<Requirement>
+							<Trans
+								i18nKey="<strong>PatchMon agent</strong> installed, connected, and at a recent version."
+								components={REQUIREMENT_TAGS}
+							/>
+						</Requirement>
+						<Requirement>
+							<Trans
+								i18nKey="<strong>Agent config:</strong> <code>{{setting}}</code> in <code>{{file}}</code>, then restart the agent service. This is opt-in per host — the server cannot enable it remotely."
+								values={{
+									setting: "integrations: rdp-proxy-enabled: true",
+									file: "config.yml",
+								}}
+								components={REQUIREMENT_TAGS}
+							/>
+						</Requirement>
+						<Requirement>
+							<Trans
+								i18nKey="<strong>PatchMon server:</strong> <code>{{gateway}}</code> running locally or as a sidecar, with <code>{{variable}}</code> pointing to it."
+								values={{ gateway: "guacd", variable: "GUACD_ADDRESS" }}
+								components={REQUIREMENT_TAGS}
+							/>
+						</Requirement>
+					</ul>
+					<p className="text-xs text-secondary-500">
+						{t(
+							"Valid credentials for a user with Remote Desktop access are usually required. If blank credentials fail, retry with an explicit username and password.",
+						)}
+					</p>
+				</div>
 			)}
-			<Info className="h-4 w-4 text-primary-500" />
-			<span className="text-sm font-medium text-white">
-				What does RDP need to work?
-			</span>
-		</button>
-		{open && (
-			<div className="px-4 pb-4 space-y-3">
-				<p className="text-xs text-secondary-400">
-					In-browser RDP bridges your browser → PatchMon server (guacd) →
-					PatchMon agent on the host → Windows RDP service on port 3389. All
-					four pieces must be in place.
-				</p>
-				<ul className="space-y-2">
-					<Requirement>
-						<strong className="text-white">On the Windows host:</strong> Remote
-						Desktop enabled and listening on <code>3389</code>.
-					</Requirement>
-					<Requirement>
-						<strong className="text-white">PatchMon agent</strong> installed,
-						connected, and at a recent version.
-					</Requirement>
-					<Requirement>
-						<strong className="text-white">Agent config:</strong>{" "}
-						<code>integrations: rdp-proxy-enabled: true</code> in{" "}
-						<code>config.yml</code>, then restart the agent service. This is
-						opt-in per host — the server cannot enable it remotely.
-					</Requirement>
-					<Requirement>
-						<strong className="text-white">PatchMon server:</strong>{" "}
-						<code>guacd</code> running locally or as a sidecar, with{" "}
-						<code>GUACD_ADDRESS</code> pointing to it.
-					</Requirement>
-				</ul>
-				<p className="text-xs text-secondary-500">
-					Valid credentials for a user with Remote Desktop access are usually
-					required. If blank credentials fail, retry with an explicit username
-					and password.
-				</p>
-			</div>
-		)}
-	</div>
-);
+		</div>
+	);
+};
 
 const RdpViewer = ({ host, isOpen }) => {
+	const { t } = useTranslation();
 	const displayRef = useRef(null);
 	const clientRef = useRef(null);
 	const tunnelRef = useRef(null);
@@ -594,7 +674,10 @@ const RdpViewer = ({ host, isOpen }) => {
 			height = containerHeight,
 		} = ticketData;
 		if (!ticket || !websocketTunnelUrl) {
-			setError({ code: "server_error", message: "Invalid ticket response" });
+			setError({
+				code: "server_error",
+				message: t("Invalid ticket response"),
+			});
 			setIsConnecting(false);
 			return;
 		}
@@ -617,7 +700,9 @@ const RdpViewer = ({ host, isOpen }) => {
 						? prev
 						: guacErrorFromStatus(
 								status,
-								`Tunnel error (code ${status?.code ?? "?"})`,
+								t("Tunnel error (code {{code}})", {
+									code: status?.code ?? "?",
+								}),
 							),
 				);
 				setIsConnecting(false);
@@ -689,7 +774,9 @@ const RdpViewer = ({ host, isOpen }) => {
 						? prev
 						: guacErrorFromStatus(
 								status,
-								`RDP error (code ${status?.code ?? "?"})`,
+								t("RDP error (code {{code}})", {
+									code: status?.code ?? "?",
+								}),
 							),
 				);
 				setIsConnecting(false);
@@ -870,7 +957,7 @@ const RdpViewer = ({ host, isOpen }) => {
 		} catch (err) {
 			setError({
 				code: "rdp_unknown",
-				message: err?.message || "Failed to connect",
+				message: err?.message || t("Failed to connect"),
 			});
 			setIsConnecting(false);
 			disconnect({ clearCredentials: true });
@@ -884,6 +971,7 @@ const RdpViewer = ({ host, isOpen }) => {
 		keyboardLayout,
 		disconnect,
 		scaleDisplay,
+		t,
 	]);
 
 	const handleCredentialKeyDown = useCallback(
@@ -934,12 +1022,12 @@ const RdpViewer = ({ host, isOpen }) => {
 					{isConnected ? (
 						<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-900/50 text-green-400 border border-green-700/50">
 							<span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-							Connected
+							{t("Connected")}
 						</span>
 					) : (
 						<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-secondary-700 text-secondary-400 border border-secondary-600">
 							<span className="h-1.5 w-1.5 rounded-full bg-secondary-500" />
-							Disconnected
+							{t("Disconnected")}
 						</span>
 					)}
 				</div>
@@ -948,8 +1036,8 @@ const RdpViewer = ({ host, isOpen }) => {
 						<div className="flex flex-wrap gap-2 items-center justify-end">
 							<div className="relative">
 								<select
-									aria-label="Keyboard layout"
-									title="Keyboard layout of the Windows session"
+									aria-label={t("Keyboard layout")}
+									title={t("Keyboard layout of the Windows session")}
 									value={keyboardLayout}
 									onChange={(e) => {
 										setKeyboardLayout(e.target.value);
@@ -960,7 +1048,7 @@ const RdpViewer = ({ host, isOpen }) => {
 								>
 									{RDP_KEYBOARD_LAYOUTS.map((l) => (
 										<option key={l.value} value={l.value}>
-											{l.label}
+											{t(l.label)}
 										</option>
 									))}
 								</select>
@@ -968,7 +1056,7 @@ const RdpViewer = ({ host, isOpen }) => {
 							</div>
 							<input
 								type="text"
-								placeholder="Username (optional)"
+								placeholder={t("Username (optional)")}
 								autoComplete="off"
 								value={credentials.username}
 								onChange={(e) =>
@@ -982,7 +1070,7 @@ const RdpViewer = ({ host, isOpen }) => {
 							/>
 							<input
 								type="password"
-								placeholder="Password (optional)"
+								placeholder={t("Password (optional)")}
 								autoComplete="new-password"
 								value={credentials.password}
 								onChange={(e) =>
@@ -1008,7 +1096,7 @@ const RdpViewer = ({ host, isOpen }) => {
 							) : (
 								<RefreshCw className="h-4 w-4" />
 							)}
-							{isConnecting ? "Connecting..." : "Connect"}
+							{isConnecting ? t("Connecting...") : t("Connect")}
 						</button>
 					)}
 					{isConnected && (
@@ -1019,13 +1107,13 @@ const RdpViewer = ({ host, isOpen }) => {
 								className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-700 hover:bg-red-600 text-white text-sm font-medium"
 							>
 								<Power className="h-4 w-4" />
-								Disconnect
+								{t("Disconnect")}
 							</button>
 							<button
 								type="button"
 								onClick={toggleFullscreen}
 								className="p-1.5 rounded hover:bg-secondary-600 text-secondary-300 hover:text-white"
-								title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+								title={isFullscreen ? t("Exit fullscreen") : t("Fullscreen")}
 							>
 								{isFullscreen ? (
 									<Minimize2 className="h-4 w-4" />
@@ -1045,7 +1133,9 @@ const RdpViewer = ({ host, isOpen }) => {
 							htmlFor="rdp-remote-clipboard"
 							className="block text-xs text-secondary-300 mb-1"
 						>
-							Remote clipboard (select and copy; automatic copy needs HTTPS)
+							{t(
+								"Remote clipboard (select and copy; automatic copy needs HTTPS)",
+							)}
 						</label>
 						<textarea
 							id="rdp-remote-clipboard"
@@ -1059,7 +1149,7 @@ const RdpViewer = ({ host, isOpen }) => {
 					<button
 						type="button"
 						onClick={() => setRemoteClipboard(null)}
-						aria-label="Dismiss remote clipboard"
+						aria-label={t("Dismiss remote clipboard")}
 						className="p-1.5 rounded hover:bg-secondary-600 text-secondary-300 hover:text-white min-h-[44px] md:min-h-0"
 					>
 						<X className="h-4 w-4" />
@@ -1085,7 +1175,7 @@ const RdpViewer = ({ host, isOpen }) => {
 						<div className="flex flex-col items-center gap-2">
 							<RefreshCw className="h-8 w-8 text-primary-500 animate-spin" />
 							<span className="text-sm text-secondary-400">
-								Connecting to RDP...
+								{t("Connecting to RDP...")}
 							</span>
 						</div>
 					</div>

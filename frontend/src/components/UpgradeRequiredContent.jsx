@@ -1,4 +1,5 @@
 import { ArrowUpRight, Check, Lock, Mail } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
 	getModuleLabel,
@@ -15,6 +16,7 @@ import TierBadge from "./TierBadge";
 // static constants + auth/settings context. This keeps the locked surfaces
 // free of any API calls that could leak information or trigger 403s.
 const UpgradeRequiredContent = ({ module: moduleKey, variant = "page" }) => {
+	const { t } = useTranslation();
 	const { hasPermission } = useAuth();
 	const { settings: publicSettings } = useSettings();
 
@@ -30,10 +32,10 @@ const UpgradeRequiredContent = ({ module: moduleKey, variant = "page" }) => {
 		return (
 			<div className="card p-6 text-center">
 				<h2 className="text-lg font-semibold text-secondary-900 dark:text-white mb-2">
-					Feature unavailable
+					{t("Feature unavailable")}
 				</h2>
 				<p className="text-secondary-600 dark:text-secondary-300">
-					This feature is not included in your current plan.
+					{t("This feature is not included in your current plan.")}
 				</p>
 			</div>
 		);
@@ -60,19 +62,19 @@ const UpgradeRequiredContent = ({ module: moduleKey, variant = "page" }) => {
 				<div className="text-center mb-6">
 					<div className="flex items-center justify-center gap-2 mb-3">
 						<h2 className="text-2xl font-bold text-secondary-900 dark:text-white">
-							{featureName}
+							{t(featureName)}
 						</h2>
 						<TierBadge tier={tierId} />
 					</div>
 					<p className="text-secondary-600 dark:text-secondary-300 text-base">
-						{tierDef.tagline}
+						{t(tierDef.tagline)}
 					</p>
 				</div>
 
 				{unlocks.length > 0 && (
 					<div className="mb-6">
 						<p className="text-sm font-semibold text-secondary-700 dark:text-secondary-200 mb-3 text-center">
-							Unlock with {tierDef.name}:
+							{t("Unlock with {{name}}:", { name: tierDef.name })}
 						</p>
 						<ul className="space-y-2 max-w-md mx-auto">
 							{unlocks.map((label) => (
@@ -81,7 +83,7 @@ const UpgradeRequiredContent = ({ module: moduleKey, variant = "page" }) => {
 									className="flex items-start gap-2 text-sm text-secondary-700 dark:text-secondary-200"
 								>
 									<Check className="h-4 w-4 mt-0.5 flex-shrink-0 text-success-600 dark:text-success-400" />
-									<span>{label}</span>
+									<span>{t(label)}</span>
 								</li>
 							))}
 						</ul>
@@ -94,15 +96,18 @@ const UpgradeRequiredContent = ({ module: moduleKey, variant = "page" }) => {
 							to="/billing"
 							className="btn-primary inline-flex items-center gap-2 min-h-[44px]"
 						>
-							Upgrade to {tierDef.name}
+							{t("Upgrade to {{name}}", { name: tierDef.name })}
 							<ArrowUpRight className="h-4 w-4" />
 						</Link>
 					) : (
 						<div className="inline-flex items-start gap-3 px-4 py-3 rounded-md bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 text-sm text-primary-800 dark:text-primary-200 max-w-md">
 							<Mail className="h-4 w-4 mt-0.5 flex-shrink-0" />
 							<span>
-								Contact your administrator to upgrade to{" "}
-								<strong>{tierDef.name}</strong> and unlock this feature.
+								<Trans
+									i18nKey="Contact your administrator to upgrade to <strong>{{name}}</strong> and unlock this feature."
+									values={{ name: tierDef.name }}
+									components={{ strong: <strong /> }}
+								/>
 							</span>
 						</div>
 					)}

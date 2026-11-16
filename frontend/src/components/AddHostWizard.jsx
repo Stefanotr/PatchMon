@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, Copy, Download, RefreshCw, Wifi, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { DiWindows } from "react-icons/di";
 import { SiFreebsd, SiLinux } from "react-icons/si";
 import { useNavigate } from "react-router-dom";
+import { tk } from "../i18n";
 import {
 	adminHostsAPI,
 	dashboardAPI,
@@ -17,10 +19,10 @@ import ServerUrlCorsWarning from "./ServerUrlCorsWarning";
 import ModalPortal from "./ui/ModalPortal";
 
 const STEPS = [
-	{ key: 1, label: "Choose OS" },
-	{ key: 2, label: "Host details" },
-	{ key: 3, label: "Copy command" },
-	{ key: 4, label: "Connection" },
+	{ key: 1, label: tk("Choose OS") },
+	{ key: 2, label: tk("Host details") },
+	{ key: 3, label: tk("Copy command") },
+	{ key: 4, label: tk("Connection") },
 ];
 
 const hasInitialReport = (hostData) => {
@@ -41,6 +43,7 @@ const hasInitialReport = (hostData) => {
 };
 
 const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
+	const { t } = useTranslation();
 	const [step, setStep] = useState(1);
 	const [platform, setPlatform] = useState("linux"); // linux | freebsd | windows
 	const [formData, setFormData] = useState({
@@ -248,7 +251,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 			setPlaintextApiKey(data.apiKey);
 			setStep(3);
 		} catch (err) {
-			let errorMessage = "Failed to create host";
+			let errorMessage = t("Failed to create host");
 			if (err.response?.data?.errors)
 				errorMessage = err.response.data.errors.map((e) => e.msg).join(", ");
 			else if (err.response?.data?.error)
@@ -283,7 +286,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 			}
 			setStep(4);
 		} catch (_err) {
-			prompt("Copy this command:", command);
+			prompt(t("Copy this command:"), command);
 		}
 	};
 
@@ -321,7 +324,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 							: "bg-secondary-100 dark:bg-secondary-700 text-secondary-500"
 					}`}
 				>
-					{s.key}. {s.label}
+					{s.key}. {t(s.label)}
 				</span>
 			))}
 		</div>
@@ -332,7 +335,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-4 sm:p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
 				<div className="flex justify-between items-center mb-2">
 					<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-						Add New Host
+						{t("Add New Host")}
 					</h3>
 					<button
 						type="button"
@@ -351,8 +354,9 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 				{step === 1 && (
 					<div className="space-y-4">
 						<p className="text-sm text-secondary-600 dark:text-white">
-							Select the operating system of the host you want to add. The
-							install command will match this choice.
+							{t(
+								"Select the operating system of the host you want to add. The install command will match this choice.",
+							)}
 						</p>
 						<div className="grid grid-cols-3 gap-4">
 							<button
@@ -398,7 +402,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 								onClick={() => setStep(2)}
 								className="px-6 py-3 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 min-h-[44px]"
 							>
-								Next
+								{t("Next")}
 							</button>
 						</div>
 					</div>
@@ -409,7 +413,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 					<form onSubmit={handleStep2Next} className="space-y-6">
 						<div>
 							<label className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2">
-								Friendly Name *
+								{t("Friendly Name *")}
 							</label>
 							<input
 								type="text"
@@ -422,12 +426,14 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 								placeholder="server.example.com"
 							/>
 							<p className="mt-2 text-sm text-secondary-500 dark:text-white">
-								System information will be detected when the agent connects.
+								{t(
+									"System information will be detected when the agent connects.",
+								)}
 							</p>
 						</div>
 						<div>
 							<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-3">
-								Host Groups
+								{t("Host Groups")}
 							</span>
 							<div className="space-y-2 max-h-48 overflow-y-auto">
 								{hostGroups?.map((group) => (
@@ -471,7 +477,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 						</div>
 						<div>
 							<p className="text-xs text-secondary-500 dark:text-white mb-1.5">
-								Integrations (Optional)
+								{t("Integrations (Optional)")}
 							</p>
 							<ul className="space-y-0 border border-secondary-200 dark:border-secondary-600 rounded-lg divide-y divide-secondary-200 dark:divide-secondary-600 overflow-hidden">
 								<li className="flex items-center justify-between gap-3 px-3 py-2.5 bg-white dark:bg-secondary-700/50">
@@ -505,7 +511,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 								</li>
 								<li className="flex items-center justify-between gap-3 px-3 py-2.5 bg-white dark:bg-secondary-700/50">
 									<span className="text-sm font-medium text-secondary-900 dark:text-white">
-										Compliance
+										{t("Compliance")}
 									</span>
 									<button
 										type="button"
@@ -547,14 +553,14 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 								onClick={() => setStep(1)}
 								className="px-6 py-3 text-sm font-medium text-secondary-700 dark:text-secondary-200 bg-white dark:bg-secondary-700 border-2 border-secondary-300 dark:border-secondary-600 rounded-lg min-h-[44px]"
 							>
-								Back
+								{t("Back")}
 							</button>
 							<button
 								type="submit"
 								disabled={isSubmitting}
 								className="px-6 py-3 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 min-h-[44px]"
 							>
-								{isSubmitting ? "Creating..." : "Next"}
+								{isSubmitting ? t("Creating...") : t("Next")}
 							</button>
 						</div>
 					</form>
@@ -564,17 +570,14 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 				{step === 3 && createdHost && (
 					<div className="space-y-4">
 						<p className="text-sm text-secondary-600 dark:text-white">
-							Run this command on your{" "}
 							{platform === "windows"
-								? "Windows"
-								: platform === "freebsd"
-									? "FreeBSD"
-									: "Linux"}{" "}
-							host to install the agent
-							{platform === "windows"
-								? " (run PowerShell as Administrator)"
-								: ""}
-							. After copying, the wizard will wait for the connection.
+								? t(
+										"Run this command on your Windows host to install the agent (run PowerShell as Administrator). After copying, the wizard will wait for the connection.",
+									)
+								: t(
+										"Run this command on your {{os}} host to install the agent. After copying, the wizard will wait for the connection.",
+										{ os: platform === "freebsd" ? "FreeBSD" : "Linux" },
+									)}
 						</p>
 						<ServerUrlCorsWarning enabled={isOpen} />
 						<AllowRemoteRestartOption
@@ -592,7 +595,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 										className="rounded border-secondary-400 text-primary-600 focus:ring-primary-500"
 									/>
 									<span className="text-sm text-secondary-600 dark:text-white">
-										Self-signed certificate (SSL bypass)
+										{t("Self-signed certificate (SSL bypass)")}
 									</span>
 								</label>
 								<label className="flex items-center gap-2 cursor-pointer">
@@ -603,7 +606,9 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 										className="rounded border-secondary-400 text-primary-600 focus:ring-primary-500"
 									/>
 									<span className="text-sm text-secondary-600 dark:text-white">
-										Use curl instead of Invoke-WebRequest (if download fails)
+										{t(
+											"Use curl instead of Invoke-WebRequest (if download fails)",
+										)}
 									</span>
 								</label>
 							</div>
@@ -633,7 +638,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 								className="btn-primary flex items-center justify-center gap-2"
 							>
 								<Copy className="h-4 w-4" />
-								Copy command
+								{t("Copy command")}
 							</button>
 						</div>
 						<div className="flex justify-between pt-2">
@@ -642,7 +647,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 								onClick={() => setStep(2)}
 								className="px-6 py-3 text-sm font-medium text-secondary-700 dark:text-secondary-200 bg-white dark:bg-secondary-700 border-2 border-secondary-300 dark:border-secondary-600 rounded-lg min-h-[44px]"
 							>
-								Back
+								{t("Back")}
 							</button>
 						</div>
 					</div>
@@ -657,15 +662,16 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 									<Wifi className="h-8 w-8 text-primary-600 dark:text-primary-400 animate-pulse" />
 								</div>
 								<h4 className="text-lg font-semibold text-secondary-900 dark:text-white mb-2">
-									Waiting for connection
+									{t("Waiting for connection")}
 								</h4>
 								<p className="text-sm text-secondary-600 dark:text-white text-center">
-									Run the installation command on your host. This will update
-									automatically when the agent connects.
+									{t(
+										"Run the installation command on your host. This will update automatically when the agent connects.",
+									)}
 								</p>
 								<div className="mt-4 flex items-center gap-2 text-xs text-secondary-500">
 									<RefreshCw className="h-4 w-4 animate-spin" />
-									<span>Checking...</span>
+									<span>{t("Checking...")}</span>
 								</div>
 							</div>
 						)}
@@ -675,14 +681,14 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 									<CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
 								</div>
 								<h4 className="text-lg font-semibold text-green-600 dark:text-green-400 mb-2">
-									Connected
+									{t("Connected")}
 								</h4>
 								<p className="text-sm text-secondary-600 dark:text-white text-center">
-									Waiting for initial system report...
+									{t("Waiting for initial system report...")}
 								</p>
 								<div className="mt-4 flex items-center gap-2 text-xs text-secondary-500">
 									<RefreshCw className="h-4 w-4 animate-spin" />
-									<span>Waiting for report...</span>
+									<span>{t("Waiting for report...")}</span>
 								</div>
 							</div>
 						)}
@@ -692,10 +698,10 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 									<Download className="h-8 w-8 text-blue-600 dark:text-blue-400 animate-pulse" />
 								</div>
 								<h4 className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-2">
-									Receiving initial report
+									{t("Receiving initial report")}
 								</h4>
 								<p className="text-sm text-secondary-600 dark:text-white text-center">
-									Collecting system information...
+									{t("Collecting system information...")}
 								</p>
 							</div>
 						)}
@@ -705,10 +711,10 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 									<CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
 								</div>
 								<h4 className="text-lg font-semibold text-green-600 dark:text-green-400 mb-2">
-									Done
+									{t("Done")}
 								</h4>
 								<p className="text-sm text-secondary-600 dark:text-white text-center">
-									Redirecting to host page...
+									{t("Redirecting to host page...")}
 								</p>
 							</div>
 						)}
@@ -719,7 +725,7 @@ const AddHostWizard = ({ isOpen, onClose, onSuccess }) => {
 								className="btn-outline w-full flex items-center justify-center gap-2"
 							>
 								<Copy className="h-4 w-4" />
-								View command again
+								{t("View command again")}
 							</button>
 						)}
 					</div>

@@ -1,0 +1,18 @@
+{
+	"Host count synced: {{count}} active host._one": "Host count synced: {{count}} active host.",
+	"Host count synced: {{count}} active host._other": "Host count synced: {{count}} active hosts.",
+	"{{count}} day left in trial_one": "{{count}} day left in trial",
+	"{{count}} day left in trial_other": "{{count}} days left in trial",
+	"{{count}} <unit>host</unit>_one": "{{count}} <unit>host</unit>",
+	"{{count}} <unit>host</unit>_other": "{{count}} <unit>hosts</unit>",
+	"{{count}} host above your annual commitment. These will be prorated on your next invoice at {{price}} per host._one": "{{count}} host above your annual commitment. It will be prorated on your next invoice at {{price}} per host.",
+	"{{count}} host above your annual commitment. These will be prorated on your next invoice at {{price}} per host._other": "{{count}} hosts above your annual commitment. These will be prorated on your next invoice at {{price}} per host.",
+	"You pay for {{count}} host × {{price}}/host/year = {{total}}_one": "You pay for {{count}} host × {{price}}/host/year = {{total}}",
+	"You pay for {{count}} host × {{price}}/host/year = {{total}}_other": "You pay for {{count}} hosts × {{price}}/host/year = {{total}}",
+	"You pay for {{count}} host × {{price}}/host/month = {{total}}_one": "You pay for {{count}} host × {{price}}/host/month = {{total}}",
+	"You pay for {{count}} host × {{price}}/host/month = {{total}}_other": "You pay for {{count}} hosts × {{price}}/host/month = {{total}}",
+	"Can't commit to fewer than your current {{count}} host._one": "Can't commit to fewer than your current {{count}} host.",
+	"Can't commit to fewer than your current {{count}} host._other": "Can't commit to fewer than your current {{count}} hosts.",
+	"Committing to <b>{{count}} host</b> × <b>{{price}}/year</b> = <b>{{total}}/year</b> total._one": "Committing to <b>{{count}} host</b> × <b>{{price}}/year</b> = <b>{{total}}/year</b> total.",
+	"Committing to <b>{{count}} host</b> × <b>{{price}}/year</b> = <b>{{total}}/year</b> total._other": "Committing to <b>{{count}} hosts</b> × <b>{{price}}/year</b> = <b>{{total}}/year</b> total."
+}

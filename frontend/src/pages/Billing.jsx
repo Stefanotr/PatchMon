@@ -18,6 +18,7 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import ModalPortal from "../components/ui/ModalPortal";
 import {
 	getNextTier,
@@ -29,6 +30,7 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
+import i18n, { tk } from "../i18n";
 import { billingAPI, formatRelativeTime } from "../utils/api";
 
 // Annual pre-commitment hard cap (matches backend fat-finger protection).
@@ -71,7 +73,15 @@ const daysUntil = (iso) => {
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 const intervalLabel = (interval) =>
-	interval === "year" ? "Annual" : "Monthly";
+	interval === "year"
+		? i18n.t("Annual")
+		: i18n.t("Monthly", { context: "billing" });
+
+// <Trans> components: the host unit after a count, bold amounts and dates.
+const HOST_UNIT = (
+	<span className="text-sm font-normal text-secondary-500 dark:text-white/70" />
+);
+const BOLD = { b: <span className="font-semibold" /> };
 
 // --- Status banner --------------------------------------------------------
 
@@ -79,32 +89,41 @@ const STATUS_BANNERS = {
 	past_due: {
 		cls: "bg-danger-50 dark:bg-danger-900/20 border-danger-200 dark:border-danger-800 text-danger-700 dark:text-danger-300",
 		iconCls: "text-danger-600 dark:text-danger-400",
-		title: "Payment past due",
-		body: "Your last invoice failed. Please update your payment method in the Stripe portal to avoid service interruption.",
+		title: tk("Payment past due"),
+		body: tk(
+			"Your last invoice failed. Please update your payment method in the Stripe portal to avoid service interruption.",
+		),
 	},
 	canceled: {
 		cls: "bg-secondary-100 dark:bg-secondary-800 border-secondary-300 dark:border-secondary-600 text-secondary-700 dark:text-secondary-200",
 		iconCls: "text-secondary-600 dark:text-secondary-300",
-		title: "Subscription canceled",
-		body: "Your subscription has been canceled. You can reactivate from the Stripe portal.",
+		title: tk("Subscription canceled"),
+		body: tk(
+			"Your subscription has been canceled. You can reactivate from the Stripe portal.",
+		),
 	},
 	paused: {
 		cls: "bg-warning-50 dark:bg-warning-900/20 border-warning-200 dark:border-warning-800 text-warning-700 dark:text-warning-300",
 		iconCls: "text-warning-600 dark:text-warning-400",
-		title: "Subscription paused",
-		body: "Your trial ended without a payment method on file. Add one in the Stripe portal to resume service.",
+		title: tk("Subscription paused"),
+		body: tk(
+			"Your trial ended without a payment method on file. Add one in the Stripe portal to resume service.",
+		),
 	},
 	grace: {
 		cls: "bg-warning-50 dark:bg-warning-900/20 border-warning-200 dark:border-warning-800 text-warning-700 dark:text-warning-300",
 		iconCls: "text-warning-600 dark:text-warning-400",
-		title: "Grace period active",
-		body: "Your plan is in a grace period. Please resolve the outstanding issue to avoid losing access.",
+		title: tk("Grace period active"),
+		body: tk(
+			"Your plan is in a grace period. Please resolve the outstanding issue to avoid losing access.",
+		),
 	},
 };
 
 // --- Main page ------------------------------------------------------------
 
 const Billing = () => {
+	const { t } = useTranslation();
 	const { settings: publicSettings } = useSettings();
 	const { error: toastError } = useToast();
 	const queryClient = useQueryClient();
@@ -148,15 +167,15 @@ const Billing = () => {
 			const count = data?.active_host_count;
 			const msg =
 				typeof count === "number"
-					? `Host count synced: ${count} active host${count === 1 ? "" : "s"}.`
-					: "Host count synced.";
+					? t("Host count synced: {{count}} active host.", { count })
+					: t("Host count synced.");
 			setSyncBanner({ kind: "success", message: msg });
 			queryClient.invalidateQueries({ queryKey: ["billing", "me"] });
 		},
 		onError: () => {
 			setSyncBanner({
 				kind: "error",
-				message: "Sync failed. Try again in a moment.",
+				message: t("Sync failed. Try again in a moment."),
 			});
 		},
 	});
@@ -165,8 +184,8 @@ const Billing = () => {
 	// next user action (triggering another sync will overwrite them).
 	useEffect(() => {
 		if (syncBanner?.kind !== "success") return undefined;
-		const t = setTimeout(() => setSyncBanner(null), 5000);
-		return () => clearTimeout(t);
+		const timer = setTimeout(() => setSyncBanner(null), 5000);
+		return () => clearTimeout(timer);
 	}, [syncBanner]);
 
 	const portalMutation = useMutation({
@@ -179,7 +198,7 @@ const Billing = () => {
 				window.location.assign(data.url);
 			} else {
 				toastError(
-					"Stripe portal session did not return a URL. Please try again.",
+					t("Stripe portal session did not return a URL. Please try again."),
 				);
 			}
 		},
@@ -187,7 +206,7 @@ const Billing = () => {
 			const msg =
 				err?.response?.data?.error ||
 				err?.message ||
-				"Failed to open the Stripe billing portal. Please try again.";
+				t("Failed to open the Stripe billing portal. Please try again.");
 			toastError(msg);
 		},
 	});
@@ -212,12 +231,12 @@ const Billing = () => {
 				<div className="card p-6 max-w-2xl mx-auto mt-12 text-center">
 					<CreditCard className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 					<h2 className="text-lg font-medium text-secondary-900 dark:text-white mb-2">
-						Billing is not available on this installation
+						{t("Billing is not available on this installation")}
 					</h2>
 					<p className="text-sm text-secondary-600 dark:text-white/80">
-						The Billing dashboard is only available on PatchMon Cloud. On
-						self-hosted installations, Community Edition is free forever under
-						AGPLv3.
+						{t(
+							"The Billing dashboard is only available on PatchMon Cloud. On self-hosted installations, Community Edition is free forever under AGPLv3.",
+						)}
 					</p>
 				</div>
 			</div>
@@ -242,12 +261,12 @@ const Billing = () => {
 				<div className="card p-6 max-w-2xl mx-auto mt-12 text-center">
 					<CreditCard className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 					<h2 className="text-lg font-medium text-secondary-900 dark:text-white mb-2">
-						Billing is not available on this installation
+						{t("Billing is not available on this installation")}
 					</h2>
 					<p className="text-sm text-secondary-600 dark:text-white/80">
-						No subscription is associated with this workspace yet. If you
-						expected to see billing information here, contact your account
-						owner.
+						{t(
+							"No subscription is associated with this workspace yet. If you expected to see billing information here, contact your account owner.",
+						)}
 					</p>
 				</div>
 			</div>
@@ -260,10 +279,12 @@ const Billing = () => {
 				<div className="card p-6 max-w-2xl mx-auto mt-12 text-center">
 					<AlertTriangle className="h-12 w-12 text-warning-500 mx-auto mb-4" />
 					<h2 className="text-lg font-medium text-secondary-900 dark:text-white mb-2">
-						You don't have permission to view this page
+						{t("You don't have permission to view this page")}
 					</h2>
 					<p className="text-sm text-secondary-600 dark:text-white/80">
-						Ask an administrator to grant you the Manage Billing permission.
+						{t(
+							"Ask an administrator to grant you the Manage Billing permission.",
+						)}
 					</p>
 				</div>
 			</div>
@@ -278,19 +299,19 @@ const Billing = () => {
 						<AlertTriangle className="h-6 w-6 text-danger-500 flex-shrink-0 mt-0.5" />
 						<div className="flex-1">
 							<h2 className="text-lg font-medium text-secondary-900 dark:text-white mb-1">
-								Could not load billing information
+								{t("Could not load billing information")}
 							</h2>
 							<p className="text-sm text-secondary-600 dark:text-white/80 mb-4">
 								{queryError?.response?.data?.error ||
 									queryError?.message ||
-									"An unexpected error occurred."}
+									t("An unexpected error occurred.")}
 							</p>
 							<button
 								type="button"
 								className="btn-primary min-h-[44px]"
 								onClick={() => refetch()}
 							>
-								Try again
+								{t("Try again")}
 							</button>
 						</div>
 					</div>
@@ -342,10 +363,10 @@ const Billing = () => {
 			<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3">
 				<div>
 					<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
-						Billing
+						{t("Billing")}
 					</h1>
 					<p className="text-sm text-secondary-600 dark:text-white/80 mt-1">
-						Your plan, usage, and invoices for this workspace.
+						{t("Your plan, usage, and invoices for this workspace.")}
 					</p>
 				</div>
 				<div className="flex items-center gap-2">
@@ -355,7 +376,7 @@ const Billing = () => {
 						onClick={() => refetch()}
 					>
 						<RefreshCw className="h-4 w-4" />
-						<span className="hidden sm:inline">Refresh</span>
+						<span className="hidden sm:inline">{t("Refresh")}</span>
 					</button>
 				</div>
 			</div>
@@ -366,7 +387,7 @@ const Billing = () => {
 					<div className="flex-1 min-w-0">
 						<div className="flex items-center gap-3 flex-wrap mb-2">
 							<h2 className="text-lg font-medium text-secondary-900 dark:text-white">
-								Current plan
+								{t("Current plan")}
 							</h2>
 							{tier ? (
 								<span
@@ -376,7 +397,7 @@ const Billing = () => {
 								</span>
 							) : (
 								<span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
-									{capitalize(billing.tier) || "Unknown"}
+									{capitalize(billing.tier) || t("Unknown")}
 								</span>
 							)}
 							<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
@@ -384,12 +405,12 @@ const Billing = () => {
 							</span>
 							{billing.status === "trialing" && (
 								<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-									Trial
+									{t("Trial")}
 								</span>
 							)}
 							{billing.status === "active" && (
 								<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-									<CheckCircle className="h-3 w-3" /> Active
+									<CheckCircle className="h-3 w-3" /> {t("Active")}
 								</span>
 							)}
 						</div>
@@ -398,13 +419,14 @@ const Billing = () => {
 							{renewalDate && (
 								<span className="inline-flex items-center gap-1.5">
 									<Calendar className="h-4 w-4" />
-									{billing.cancel_at_period_end ? "Ends" : "Renews"}{" "}
-									{renewalDate}
+									{billing.cancel_at_period_end
+										? t("Ends {{date}}", { date: renewalDate })
+										: t("Renews {{date}}", { date: renewalDate })}
 								</span>
 							)}
 							{tier?.tagline && (
 								<span className="hidden md:inline text-secondary-500 dark:text-white/60">
-									{tier.tagline}
+									{t(tier.tagline)}
 								</span>
 							)}
 						</div>
@@ -412,14 +434,14 @@ const Billing = () => {
 
 					<div className="md:text-right bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4 md:min-w-[220px]">
 						<p className="text-xs uppercase tracking-wider text-secondary-500 dark:text-white/70">
-							Next invoice
+							{t("Next invoice")}
 						</p>
 						<p className="text-2xl font-semibold text-secondary-900 dark:text-white mt-1">
 							{nextInvoiceFormatted}
 						</p>
 						{renewalDate && (
 							<p className="text-xs text-secondary-500 dark:text-white/70 mt-1">
-								due {renewalDate}
+								{t("due {{date}}", { date: renewalDate })}
 							</p>
 						)}
 					</div>
@@ -432,12 +454,18 @@ const Billing = () => {
 						<Sparkles className="h-5 w-5 text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5" />
 						<div className="flex-1 min-w-0">
 							<p className="text-sm font-medium text-primary-900 dark:text-primary-100">
-								{trialDays} {trialDays === 1 ? "day" : "days"} left in trial
+								{t("{{count}} day left in trial", { count: trialDays })}
 							</p>
 							<p className="text-sm text-primary-800 dark:text-primary-200 mt-0.5">
-								{nextInvoiceFormatted} will be charged
-								{trialChargeDate ? ` on ${trialChargeDate}` : ""} unless you
-								change or cancel your plan.
+								{trialChargeDate
+									? t(
+											"{{amount}} will be charged on {{date}} unless you change or cancel your plan.",
+											{ amount: nextInvoiceFormatted, date: trialChargeDate },
+										)
+									: t(
+											"{{amount}} will be charged unless you change or cancel your plan.",
+											{ amount: nextInvoiceFormatted },
+										)}
 							</p>
 						</div>
 					</div>
@@ -449,10 +477,12 @@ const Billing = () => {
 						<AlertTriangle className="h-5 w-5 text-secondary-600 dark:text-secondary-300 flex-shrink-0 mt-0.5" />
 						<div className="flex-1 min-w-0">
 							<p className="text-sm font-medium text-secondary-900 dark:text-white">
-								Subscription ends on {renewalDate || "the next renewal date"}
+								{renewalDate
+									? t("Subscription ends on {{date}}", { date: renewalDate })
+									: t("Subscription ends on the next renewal date")}
 							</p>
 							<p className="text-sm text-secondary-700 dark:text-secondary-200 mt-0.5">
-								You can reactivate any time in the Stripe portal.
+								{t("You can reactivate any time in the Stripe portal.")}
 							</p>
 						</div>
 					</div>
@@ -467,8 +497,8 @@ const Billing = () => {
 							className={`h-5 w-5 flex-shrink-0 mt-0.5 ${statusBanner.iconCls}`}
 						/>
 						<div className="flex-1 min-w-0">
-							<p className="text-sm font-medium">{statusBanner.title}</p>
-							<p className="text-sm mt-0.5">{statusBanner.body}</p>
+							<p className="text-sm font-medium">{t(statusBanner.title)}</p>
+							<p className="text-sm mt-0.5">{t(statusBanner.body)}</p>
 						</div>
 					</div>
 				)}
@@ -480,7 +510,7 @@ const Billing = () => {
 					<div className="flex items-center gap-2">
 						<Server className="h-5 w-5 text-primary-600" />
 						<h2 className="text-lg font-medium text-secondary-900 dark:text-white">
-							Host usage
+							{t("Host usage")}
 						</h2>
 					</div>
 					<div className="flex flex-col items-stretch sm:items-end gap-1">
@@ -496,19 +526,21 @@ const Billing = () => {
 							{syncMutation.isPending ? (
 								<>
 									<RefreshCw className="h-4 w-4 animate-spin" />
-									Syncing...
+									{t("Syncing...")}
 								</>
 							) : (
 								<>
 									<RefreshCw className="h-4 w-4" />
-									Sync host count
+									{t("Sync host count")}
 								</>
 							)}
 						</button>
 						<p className="text-xs text-secondary-500 dark:text-white/60 sm:text-right">
 							{billing.last_synced_at
-								? `Last synced ${formatRelativeTime(billing.last_synced_at)}`
-								: "Never synced"}
+								? t("Last synced {{time}}", {
+										time: formatRelativeTime(billing.last_synced_at),
+									})
+								: t("Never synced")}
 						</p>
 					</div>
 				</div>
@@ -532,7 +564,7 @@ const Billing = () => {
 						<button
 							type="button"
 							onClick={() => setSyncBanner(null)}
-							aria-label="Dismiss"
+							aria-label={t("Dismiss")}
 							className="flex-shrink-0 opacity-70 hover:opacity-100"
 						>
 							<X className="h-4 w-4" />
@@ -550,13 +582,14 @@ const Billing = () => {
 					{/* Active hosts */}
 					<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4">
 						<p className="text-xs uppercase tracking-wider text-secondary-500 dark:text-white/70">
-							Active hosts
+							{t("Active hosts")}
 						</p>
 						<p className="text-2xl font-semibold text-secondary-900 dark:text-white mt-1">
-							{activeHosts}{" "}
-							<span className="text-sm font-normal text-secondary-500 dark:text-white/70">
-								host{activeHosts === 1 ? "" : "s"}
-							</span>
+							<Trans
+								i18nKey="{{count}} <unit>host</unit>"
+								count={activeHosts}
+								components={{ unit: HOST_UNIT }}
+							/>
 						</p>
 					</div>
 
@@ -565,17 +598,18 @@ const Billing = () => {
 						<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4">
 							<div className="flex items-center gap-2">
 								<p className="text-xs uppercase tracking-wider text-secondary-500 dark:text-white/70">
-									Annual commitment
+									{t("Annual commitment")}
 								</p>
 							</div>
 							<p className="text-2xl font-semibold text-secondary-900 dark:text-white mt-1">
-								{committedHosts}{" "}
-								<span className="text-sm font-normal text-secondary-500 dark:text-white/70">
-									host{committedHosts === 1 ? "" : "s"}
-								</span>
+								<Trans
+									i18nKey="{{count}} <unit>host</unit>"
+									count={committedHosts}
+									components={{ unit: HOST_UNIT }}
+								/>
 							</p>
 							<p className="text-xs text-secondary-500 dark:text-white/70 mt-1">
-								prepaid capacity for the year
+								{t("prepaid capacity for the year")}
 							</p>
 						</div>
 					)}
@@ -583,7 +617,7 @@ const Billing = () => {
 					{/* Billed this period — largest, emphasis */}
 					<div className="bg-primary-50 dark:bg-primary-900/20 rounded-lg p-4 border border-primary-100 dark:border-primary-800">
 						<p className="text-xs uppercase tracking-wider text-primary-700 dark:text-primary-300 font-semibold">
-							Billed this period
+							{t("Billed this period")}
 						</p>
 						<p className="text-3xl font-bold text-primary-900 dark:text-primary-100 mt-1">
 							{billedQuantity}{" "}
@@ -592,7 +626,9 @@ const Billing = () => {
 							</span>
 						</p>
 						<p className="text-sm text-primary-800 dark:text-primary-200 mt-1 font-medium">
-							= {totalLine}/{isAnnualPlan ? "year" : "month"}
+							{isAnnualPlan
+								? t("= {{amount}}/year", { amount: totalLine })
+								: t("= {{amount}}/month", { amount: totalLine })}
 						</p>
 					</div>
 				</div>
@@ -602,17 +638,32 @@ const Billing = () => {
 					<div className="mb-4 rounded-md border bg-warning-50 dark:bg-warning-900/20 border-warning-200 dark:border-warning-800 p-3 flex items-start gap-3">
 						<AlertTriangle className="h-5 w-5 text-warning-600 dark:text-warning-400 flex-shrink-0 mt-0.5" />
 						<p className="text-sm text-warning-800 dark:text-warning-200 flex-1 min-w-0">
-							{overCommitment} host{overCommitment === 1 ? "" : "s"} above your
-							annual commitment. These will be prorated on your next invoice at{" "}
-							{unitPrice} per host.
+							{t(
+								"{{count}} host above your annual commitment. These will be prorated on your next invoice at {{price}} per host.",
+								{ count: overCommitment, price: unitPrice },
+							)}
 						</p>
 					</div>
 				)}
 
 				<div className="rounded-md bg-secondary-50 dark:bg-secondary-700 border border-secondary-200 dark:border-secondary-600 px-3 py-2 text-sm text-secondary-800 dark:text-secondary-200">
-					You pay for {billedQuantity} host{billedQuantity === 1 ? "" : "s"} ×{" "}
-					{unitPrice}/host/
-					{interval === "year" ? "year" : "month"} = {totalLine}
+					{interval === "year"
+						? t(
+								"You pay for {{count}} host × {{price}}/host/year = {{total}}",
+								{
+									count: billedQuantity,
+									price: unitPrice,
+									total: totalLine,
+								},
+							)
+						: t(
+								"You pay for {{count}} host × {{price}}/host/month = {{total}}",
+								{
+									count: billedQuantity,
+									price: unitPrice,
+									total: totalLine,
+								},
+							)}
 				</div>
 			</div>
 
@@ -621,10 +672,12 @@ const Billing = () => {
 				<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
 					<div>
 						<h2 className="text-lg font-medium text-secondary-900 dark:text-white">
-							What's included
+							{t("What's included")}
 						</h2>
 						<p className="text-sm text-secondary-600 dark:text-white/80 mt-1">
-							Compare tiers side by side. Your current tier is highlighted.
+							{t(
+								"Compare tiers side by side. Your current tier is highlighted.",
+							)}
 						</p>
 					</div>
 					<div className="flex flex-col items-stretch sm:flex-row sm:items-center gap-2">
@@ -637,7 +690,7 @@ const Billing = () => {
 							className="btn-outline min-h-[44px] flex items-center justify-center gap-2"
 						>
 							<Settings className="h-4 w-4" />
-							Change plan
+							{t("Change plan")}
 						</button>
 						{nextTier && (
 							<UpgradeCta
@@ -677,11 +730,12 @@ const Billing = () => {
 			<div className="card p-4 sm:p-6 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 				<div>
 					<h2 className="text-lg font-medium text-secondary-900 dark:text-white">
-						Manage payment and invoices
+						{t("Manage payment and invoices")}
 					</h2>
 					<p className="text-sm text-secondary-600 dark:text-white/80 mt-1">
-						Update your card, view invoices, and cancel or reactivate your
-						subscription in the Stripe billing portal.
+						{t(
+							"Update your card, view invoices, and cancel or reactivate your subscription in the Stripe billing portal.",
+						)}
 					</p>
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
@@ -692,7 +746,7 @@ const Billing = () => {
 						className="btn-outline min-h-[44px] flex items-center gap-2"
 					>
 						<HelpCircle className="h-4 w-4" />
-						View FAQs
+						{t("View FAQs")}
 						<ExternalLink className="h-3 w-3" />
 					</a>
 					<button
@@ -704,12 +758,12 @@ const Billing = () => {
 						{portalMutation.isPending ? (
 							<>
 								<RefreshCw className="h-4 w-4 animate-spin" />
-								Opening portal...
+								{t("Opening portal...")}
 							</>
 						) : (
 							<>
 								<CreditCard className="h-4 w-4" />
-								Manage billing in Stripe
+								{t("Manage billing in Stripe")}
 								<ArrowUpRight className="h-3 w-3" />
 							</>
 						)}
@@ -723,10 +777,13 @@ const Billing = () => {
 // --- Upgrade CTA ----------------------------------------------------------
 
 const UpgradeCta = ({ currentTier, nextTier, onClick }) => {
+	const { t } = useTranslation();
 	const deltaCents =
 		(nextTier?.unitAmountCents || 0) - (currentTier?.unitAmountCents || 0);
 	const deltaText =
-		deltaCents > 0 ? `+${(deltaCents / 100).toFixed(2)}/host/month` : "";
+		deltaCents > 0
+			? t("+{{amount}}/host/month", { amount: (deltaCents / 100).toFixed(2) })
+			: "";
 
 	return (
 		<button
@@ -735,7 +792,7 @@ const UpgradeCta = ({ currentTier, nextTier, onClick }) => {
 			className="btn-primary min-h-[44px] flex items-center justify-center gap-2"
 		>
 			<Sparkles className="h-4 w-4" />
-			Upgrade to {nextTier.name}
+			{t("Upgrade to {{name}}", { name: nextTier.name })}
 			{deltaText && (
 				<span className="ml-1 text-xs opacity-80">({deltaText})</span>
 			)}
@@ -769,6 +826,7 @@ const TierChangeModal = ({
 	onClose,
 	onApplied,
 }) => {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const { error: toastError } = useToast();
 	// refetchTenantContext updates AuthContext.tenant.modules after a tier
@@ -899,7 +957,7 @@ const TierChangeModal = ({
 			const msg =
 				err?.response?.data?.error ||
 				err?.message ||
-				"Failed to apply the tier change. Please try again.";
+				t("Failed to apply the tier change. Please try again.");
 			toastError(msg);
 		},
 	});
@@ -940,11 +998,12 @@ const TierChangeModal = ({
 							id="tier-change-title"
 							className="text-lg font-medium text-secondary-900 dark:text-white"
 						>
-							Change plan
+							{t("Change plan")}
 						</h2>
 						<p className="text-sm text-secondary-600 dark:text-white/80 mt-1">
-							Pick your new tier and billing interval. We'll show you the exact
-							charge before confirming.
+							{t(
+								"Pick your new tier and billing interval. We'll show you the exact charge before confirming.",
+							)}
 						</p>
 					</div>
 					<button
@@ -952,7 +1011,7 @@ const TierChangeModal = ({
 						onClick={() => !applyMutation.isPending && onClose()}
 						disabled={applyMutation.isPending}
 						className="text-secondary-500 hover:text-secondary-700 dark:text-white/60 dark:hover:text-white min-h-[44px] min-w-[44px] flex items-center justify-center"
-						aria-label="Close"
+						aria-label={t("Close")}
 					>
 						<X className="h-5 w-5" />
 					</button>
@@ -961,7 +1020,7 @@ const TierChangeModal = ({
 				{/* Tier picker */}
 				<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
 					{TIER_ORDER.map((tid) => {
-						const t = TIERS[tid];
+						const tier = TIERS[tid];
 						const selected = targetTier === tid;
 						const isCurrent = tid === currentTierId;
 						return (
@@ -977,19 +1036,20 @@ const TierChangeModal = ({
 							>
 								<div className="flex items-center justify-between mb-1">
 									<span
-										className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${t.badgeClass}`}
+										className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${tier.badgeClass}`}
 									>
-										{t.name}
+										{tier.name}
 									</span>
 									{isCurrent && (
 										<span className="text-[10px] uppercase tracking-wider text-secondary-500 dark:text-white/60">
-											Current
+											{t("Current")}
 										</span>
 									)}
 								</div>
 								<div className="text-sm font-semibold text-secondary-900 dark:text-white">
-									{CURRENCY_SYMBOLS[currency] || ""}
-									{(t.unitAmountCents / 100).toFixed(0)}/host/mo
+									{t("{{price}}/host/mo", {
+										price: `${CURRENCY_SYMBOLS[currency] || ""}${(tier.unitAmountCents / 100).toFixed(0)}`,
+									})}
 								</div>
 							</button>
 						);
@@ -999,12 +1059,12 @@ const TierChangeModal = ({
 				{/* Interval toggle */}
 				<div className="mb-5">
 					<div className="text-xs uppercase tracking-wider text-secondary-500 dark:text-white/60 mb-2">
-						Billing interval
+						{t("Billing interval")}
 					</div>
 					<div className="inline-flex rounded-md border border-secondary-200 dark:border-secondary-600 bg-secondary-50 dark:bg-secondary-800 p-1">
 						{[
-							{ id: "month", label: "Monthly" },
-							{ id: "year", label: "Annual (save ~17%)" },
+							{ id: "month", label: t("Monthly", { context: "billing" }) },
+							{ id: "year", label: t("Annual (save ~17%)") },
 						].map((opt) => (
 							<button
 								key={opt.id}
@@ -1031,7 +1091,7 @@ const TierChangeModal = ({
 							htmlFor="commit-hosts-input"
 							className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
 						>
-							Pre-commit hosts (annual)
+							{t("Pre-commit hosts (annual)")}
 						</label>
 						<input
 							id="commit-hosts-input"
@@ -1052,22 +1112,27 @@ const TierChangeModal = ({
 							Number.isFinite(commitParsed) &&
 							commitParsed < commitFloor && (
 								<p className="mt-1 text-xs text-danger-600 dark:text-danger-400">
-									Can't commit to fewer than your current {commitFloor} hosts.
+									{t(
+										"Can't commit to fewer than your current {{count}} host.",
+										{
+											count: commitFloor,
+										},
+									)}
 								</p>
 							)}
 						{commitInvalid &&
 							Number.isFinite(commitParsed) &&
 							commitParsed > COMMIT_HOSTS_MAX && (
 								<p className="mt-1 text-xs text-danger-600 dark:text-danger-400">
-									Maximum commitment is {COMMIT_HOSTS_MAX.toLocaleString()}{" "}
-									hosts.
+									{t("Maximum commitment is {{max}} hosts.", {
+										max: COMMIT_HOSTS_MAX.toLocaleString(),
+									})}
 								</p>
 							)}
 						<p className="mt-2 text-xs text-secondary-500 dark:text-white/70">
-							Prepay for a fixed host count for the year. You're billed for this
-							capacity even if actual usage is lower. Adding hosts above this
-							will trigger a prorated charge against the remaining annual
-							period.
+							{t(
+								"Prepay for a fixed host count for the year. You're billed for this capacity even if actual usage is lower. Adding hosts above this will trigger a prorated charge against the remaining annual period.",
+							)}
 						</p>
 					</div>
 				)}
@@ -1088,7 +1153,7 @@ const TierChangeModal = ({
 						<AlertTriangle className="h-5 w-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
 						<div className="flex-1 min-w-0">
 							<p className="text-sm font-medium text-danger-700 dark:text-danger-300">
-								Could not apply the tier change
+								{t("Could not apply the tier change")}
 							</p>
 							<p className="text-sm text-danger-700 dark:text-danger-300 mt-0.5">
 								{applyErrMsg}
@@ -1103,7 +1168,7 @@ const TierChangeModal = ({
 						<CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
 						<div className="flex-1 min-w-0">
 							<p className="text-sm font-medium text-green-700 dark:text-green-300">
-								Plan updated successfully.
+								{t("Plan updated successfully.")}
 							</p>
 						</div>
 					</div>
@@ -1117,7 +1182,7 @@ const TierChangeModal = ({
 						disabled={applyMutation.isPending}
 						className="btn-outline min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
 					>
-						Cancel
+						{t("Cancel")}
 					</button>
 					<button
 						type="button"
@@ -1135,7 +1200,7 @@ const TierChangeModal = ({
 						{applyMutation.isPending ? (
 							<>
 								<RefreshCw className="h-4 w-4 animate-spin" />
-								Applying...
+								{t("Applying...")}
 							</>
 						) : (
 							<>
@@ -1144,10 +1209,9 @@ const TierChangeModal = ({
 								) : (
 									<ArrowUp className="h-4 w-4" />
 								)}
-								Confirm{" "}
 								{previewData?.direction === "downgrade"
-									? "downgrade"
-									: "change"}
+									? t("Confirm downgrade")
+									: t("Confirm change")}
 							</>
 						)}
 					</button>
@@ -1172,11 +1236,13 @@ const PreviewPanel = ({
 	currency,
 	interval,
 }) => {
+	const { t } = useTranslation();
 	if (isNoop) {
 		return (
 			<div className="rounded-md border bg-secondary-50 dark:bg-secondary-800 border-secondary-200 dark:border-secondary-600 p-3 sm:p-4 text-sm text-secondary-700 dark:text-white/80">
-				You're already on this tier and interval. Pick a different tier or
-				interval to see the charge.
+				{t(
+					"You're already on this tier and interval. Pick a different tier or interval to see the charge.",
+				)}
 			</div>
 		);
 	}
@@ -1185,7 +1251,7 @@ const PreviewPanel = ({
 		return (
 			<div className="rounded-md border bg-secondary-50 dark:bg-secondary-800 border-secondary-200 dark:border-secondary-600 p-3 sm:p-4 flex items-center gap-3 text-sm text-secondary-600 dark:text-white/70">
 				<RefreshCw className="h-4 w-4 animate-spin" />
-				Calculating your new charge...
+				{t("Calculating your new charge...")}
 			</div>
 		);
 	}
@@ -1196,7 +1262,7 @@ const PreviewPanel = ({
 				<AlertTriangle className="h-5 w-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
 				<div className="flex-1 min-w-0">
 					<p className="text-sm font-medium text-danger-700 dark:text-danger-300">
-						Preview unavailable
+						{t("Preview unavailable")}
 					</p>
 					<p className="text-sm text-danger-700 dark:text-danger-300 mt-0.5">
 						{errorMsg}
@@ -1213,7 +1279,7 @@ const PreviewPanel = ({
 	const fromName = TIERS[data.from_tier]?.name || capitalize(data.from_tier);
 	const toName = TIERS[data.to_tier]?.name || capitalize(data.to_tier);
 	const nextInvoiceStr = formatMoney(data.next_invoice_cents, currency);
-	const nextInvoiceDate = formatDate(data.next_invoice_at) || "renewal";
+	const nextInvoiceDate = formatDate(data.next_invoice_at) || t("renewal");
 
 	if (data.direction === "upgrade") {
 		const proratedStr = formatMoney(data.prorated_invoice_cents, currency);
@@ -1230,29 +1296,42 @@ const PreviewPanel = ({
 				<div className="flex items-center gap-2 mb-2">
 					<ArrowUp className="h-4 w-4 text-primary-600 dark:text-primary-400" />
 					<p className="text-sm font-medium text-primary-900 dark:text-primary-200">
-						Upgrade: {fromName} {intervalLabel(data.from_interval)} to {toName}{" "}
-						{intervalLabel(data.to_interval)}
+						{t("Upgrade: {{from}} {{fromInterval}} to {{to}} {{toInterval}}", {
+							from: fromName,
+							fromInterval: intervalLabel(data.from_interval),
+							to: toName,
+							toInterval: intervalLabel(data.to_interval),
+						})}
 					</p>
 				</div>
 				<ul className="text-sm text-primary-900 dark:text-primary-200 space-y-1 list-disc pl-5">
 					{showCommit && (
 						<li>
-							Committing to{" "}
-							<span className="font-semibold">{committed} hosts</span> ×{" "}
-							<span className="font-semibold">{unitStr}/year</span> ={" "}
-							<span className="font-semibold">{totalStr}/year</span> total.
+							<Trans
+								i18nKey="Committing to <b>{{count}} host</b> × <b>{{price}}/year</b> = <b>{{total}}/year</b> total."
+								count={committed}
+								values={{ price: unitStr, total: totalStr }}
+								components={BOLD}
+							/>
 						</li>
 					)}
 					<li>
-						<span className="font-semibold">{proratedStr}</span> charged today
-						(prorated for the remainder of your current billing cycle).
+						<Trans
+							i18nKey="<b>{{amount}}</b> charged today (prorated for the remainder of your current billing cycle)."
+							values={{ amount: proratedStr }}
+							components={BOLD}
+						/>
 					</li>
 					<li>
-						Your next full invoice of{" "}
-						<span className="font-semibold">{nextInvoiceStr}</span> lands on{" "}
-						<span className="font-semibold">{nextInvoiceDate}</span>.
+						<Trans
+							i18nKey="Your next full invoice of <b>{{amount}}</b> lands on <b>{{date}}</b>."
+							values={{ amount: nextInvoiceStr, date: nextInvoiceDate }}
+							components={BOLD}
+						/>
 					</li>
-					<li>The new tier is available immediately after confirmation.</li>
+					<li>
+						{t("The new tier is available immediately after confirmation.")}
+					</li>
 				</ul>
 			</div>
 		);
@@ -1265,22 +1344,48 @@ const PreviewPanel = ({
 				<div className="flex items-center gap-2 mb-2">
 					<ArrowDown className="h-4 w-4 text-warning-600 dark:text-warning-400" />
 					<p className="text-sm font-medium text-warning-800 dark:text-warning-200">
-						Downgrade: {fromName} {intervalLabel(data.from_interval)} to{" "}
-						{toName} {intervalLabel(data.to_interval)}
+						{t(
+							"Downgrade: {{from}} {{fromInterval}} to {{to}} {{toInterval}}",
+							{
+								from: fromName,
+								fromInterval: intervalLabel(data.from_interval),
+								to: toName,
+								toInterval: intervalLabel(data.to_interval),
+							},
+						)}
 					</p>
 				</div>
 				<ul className="text-sm text-warning-800 dark:text-warning-200 space-y-1 list-disc pl-5">
 					<li>
-						No change to today's bill. You keep {fromName} until{" "}
-						<span className="font-semibold">{effectiveDate}</span>.
+						<Trans
+							i18nKey="No change to today's bill. You keep {{tier}} until <b>{{date}}</b>."
+							values={{ tier: fromName, date: effectiveDate }}
+							components={BOLD}
+						/>
 					</li>
 					<li>
-						From <span className="font-semibold">{effectiveDate}</span> onwards
-						you'll pay <span className="font-semibold">{nextInvoiceStr}</span>{" "}
-						per {data.to_interval === "year" ? "year" : "month"}.
+						<Trans
+							i18nKey={
+								data.to_interval === "year"
+									? tk(
+											"From <b>{{date}}</b> onwards you'll pay <b>{{amount}}</b> per year.",
+										)
+									: tk(
+											"From <b>{{date}}</b> onwards you'll pay <b>{{amount}}</b> per month.",
+										)
+							}
+							values={{ date: effectiveDate, amount: nextInvoiceStr }}
+							components={BOLD}
+						/>
 					</li>
 					<li>
-						Any {toName}-only features will remain active until {effectiveDate}.
+						{t(
+							"Any {{tier}}-only features will remain active until {{date}}.",
+							{
+								tier: toName,
+								date: effectiveDate,
+							},
+						)}
 					</li>
 				</ul>
 			</div>
@@ -1290,7 +1395,10 @@ const PreviewPanel = ({
 	// Fallback: direction should only ever be upgrade or downgrade.
 	return (
 		<div className="rounded-md border bg-secondary-50 dark:bg-secondary-800 border-secondary-200 dark:border-secondary-600 p-3 sm:p-4 text-sm text-secondary-700 dark:text-white/80">
-			Next invoice will be {nextInvoiceStr} on {nextInvoiceDate}.
+			{t("Next invoice will be {{amount}} on {{date}}.", {
+				amount: nextInvoiceStr,
+				date: nextInvoiceDate,
+			})}
 		</div>
 	);
 };
@@ -1298,6 +1406,7 @@ const PreviewPanel = ({
 // --- Tier matrix ----------------------------------------------------------
 
 const TierMatrix = ({ currentTierId }) => {
+	const { t } = useTranslation();
 	return (
 		<div className="overflow-x-auto -mx-4 sm:mx-0">
 			<div className="min-w-[640px] px-4 sm:px-0">
@@ -1305,10 +1414,10 @@ const TierMatrix = ({ currentTierId }) => {
 					<thead className="bg-secondary-50 dark:bg-secondary-700">
 						<tr>
 							<th className="px-3 sm:px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider whitespace-nowrap">
-								Feature
+								{t("Feature")}
 							</th>
 							{TIER_ORDER.map((tid) => {
-								const t = TIERS[tid];
+								const tier = TIERS[tid];
 								const isCurrent = tid === currentTierId;
 								return (
 									<th
@@ -1320,16 +1429,17 @@ const TierMatrix = ({ currentTierId }) => {
 										}`}
 									>
 										<div className="flex items-center justify-center gap-2">
-											<span>{t.name}</span>
+											<span>{tier.name}</span>
 											{isCurrent && (
 												<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
-													Current
+													{t("Current")}
 												</span>
 											)}
 										</div>
 										<div className="mt-1 text-[11px] normal-case tracking-normal text-secondary-400 dark:text-white/60 font-normal">
-											{CURRENCY_SYMBOLS.gbp}
-											{(t.unitAmountCents / 100).toFixed(0)}/host/mo
+											{t("{{price}}/host/mo", {
+												price: `${CURRENCY_SYMBOLS.gbp}${(tier.unitAmountCents / 100).toFixed(0)}`,
+											})}
 										</div>
 									</th>
 								);
@@ -1343,7 +1453,7 @@ const TierMatrix = ({ currentTierId }) => {
 								className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
 							>
 								<td className="px-3 sm:px-4 py-2 text-sm text-secondary-900 dark:text-white">
-									{row.label}
+									{t(row.label)}
 								</td>
 								{TIER_ORDER.map((tid) => {
 									const v = row[tid];
@@ -1371,6 +1481,7 @@ const TierMatrix = ({ currentTierId }) => {
 };
 
 const TierCell = ({ value }) => {
+	const { t } = useTranslation();
 	if (value === true) {
 		return (
 			<span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300">
@@ -1394,7 +1505,7 @@ const TierCell = ({ value }) => {
 	}
 	return (
 		<span className="text-sm font-medium text-secondary-900 dark:text-white">
-			{value}
+			{typeof value === "string" ? t(value) : value}
 		</span>
 	);
 };

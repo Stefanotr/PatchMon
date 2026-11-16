@@ -1,3 +1,5 @@
+import { tk } from "../i18n";
+
 // Tier feature matrix — hardcoded from
 // docs/research/per-host-pricing/10-tiers-v2-starter-plus-max.md §1.
 //
@@ -11,7 +13,7 @@ export const TIERS = {
 	starter: {
 		id: "starter",
 		name: "Starter",
-		tagline: "Monitor your patches. Patch elsewhere.",
+		tagline: tk("Monitor your patches. Patch elsewhere."),
 		userLimit: 3,
 		unitAmountCents: 100, // per host / month (psychological parity across USD/GBP/EUR)
 		// Tailwind badge classes — match Packages list in the manager
@@ -21,7 +23,7 @@ export const TIERS = {
 	plus: {
 		id: "plus",
 		name: "Plus",
-		tagline: "Patch, monitor, report. The everyday workhorse.",
+		tagline: tk("Patch, monitor, report. The everyday workhorse."),
 		userLimit: null, // unlimited
 		unitAmountCents: 200,
 		badgeClass:
@@ -31,7 +33,7 @@ export const TIERS = {
 	max: {
 		id: "max",
 		name: "Max",
-		tagline: "Everything. SSH, RDP, AI, compliance.",
+		tagline: tk("Everything. SSH, RDP, AI, compliance."),
 		userLimit: null,
 		unitAmountCents: 300,
 		badgeClass:
@@ -43,126 +45,126 @@ export const TIERS = {
 // Feature matrix rows. `value` entries are either boolean or a display string.
 export const TIER_FEATURES = [
 	{
-		label: "Core monitoring (inventory, detection, repos)",
+		label: tk("Core monitoring (inventory, detection, repos)"),
 		starter: true,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "Linux + FreeBSD + Windows agents",
+		label: tk("Linux + FreeBSD + Windows agents"),
 		starter: true,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "Host groups, dashboards, search, Gethomepage",
+		label: tk("Host groups, dashboards, search, Gethomepage"),
 		starter: true,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "Basic alerts (host-down, threshold)",
+		label: tk("Basic alerts (host-down, threshold)"),
 		starter: true,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "Scheduled reports (email/PDF)",
+		label: tk("Scheduled reports (email/PDF)"),
 		starter: true,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "Notification destinations + routes",
+		label: tk("Notification destinations + routes"),
 		starter: true,
 		plus: true,
 		max: true,
 	},
-	{ label: "2FA / TOTP", starter: true, plus: true, max: true },
-	{ label: "Trusted devices", starter: true, plus: true, max: true },
-	{ label: "OIDC / SSO", starter: true, plus: true, max: true },
-	{ label: "Discord OAuth login", starter: true, plus: true, max: true },
+	{ label: tk("2FA / TOTP"), starter: true, plus: true, max: true },
+	{ label: tk("Trusted devices"), starter: true, plus: true, max: true },
+	{ label: tk("OIDC / SSO"), starter: true, plus: true, max: true },
+	{ label: tk("Discord OAuth login"), starter: true, plus: true, max: true },
 	{
-		label: "Built-in roles (admin/viewer)",
-		starter: true,
-		plus: true,
-		max: true,
-	},
-	{
-		label: "Scoped REST API + auto-enrollment tokens",
+		label: tk("Built-in roles (admin/viewer)"),
 		starter: true,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "Automation / job management",
+		label: tk("Scoped REST API + auto-enrollment tokens"),
 		starter: true,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "User limit",
+		label: tk("Automation / job management"),
+		starter: true,
+		plus: true,
+		max: true,
+	},
+	{
+		label: tk("User limit"),
 		starter: "3",
-		plus: "Unlimited",
-		max: "Unlimited",
+		plus: tk("Unlimited"),
+		max: tk("Unlimited"),
 	},
-	{ label: "Manual patch runs", starter: false, plus: true, max: true },
+	{ label: tk("Manual patch runs"), starter: false, plus: true, max: true },
 	{
-		label: "Patch scheduling policies + approval workflow",
+		label: tk("Patch scheduling policies + approval workflow"),
 		starter: false,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "Docker container monitoring",
+		label: tk("Docker container monitoring"),
 		starter: false,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "Advanced alert config + custom rules",
+		label: tk("Advanced alert config + custom rules"),
 		starter: false,
 		plus: true,
 		max: true,
 	},
-	{ label: "Custom RBAC roles", starter: false, plus: true, max: true },
-	{ label: "Audit log export", starter: false, plus: true, max: true },
+	{ label: tk("Custom RBAC roles"), starter: false, plus: true, max: true },
+	{ label: tk("Audit log export"), starter: false, plus: true, max: true },
 	{
-		label: "Custom domain (email to request)",
+		label: tk("Custom domain (email to request)"),
 		starter: false,
 		plus: true,
 		max: true,
 	},
 	{
-		label: "Custom branding (logo/favicon)",
+		label: tk("Custom branding (logo/favicon)"),
 		starter: false,
 		plus: true,
 		max: true,
 	},
-	{ label: "Browser SSH terminal", starter: false, plus: false, max: true },
+	{ label: tk("Browser SSH terminal"), starter: false, plus: false, max: true },
 	{
-		label: "Browser RDP (Guacamole)",
+		label: tk("Browser RDP (Guacamole)"),
 		starter: false,
 		plus: false,
 		max: true,
 	},
 	{
-		label: "BYO-AI terminal assistant",
+		label: tk("BYO-AI terminal assistant"),
 		starter: false,
 		plus: false,
 		max: true,
 	},
 	{
-		label: "Compliance (OpenSCAP + CIS + Docker Bench)",
+		label: tk("Compliance (OpenSCAP + CIS + Docker Bench)"),
 		starter: false,
 		plus: false,
 		max: true,
 	},
 	{
-		label: "Direct support channels",
-		starter: "Email, Discord",
-		plus: "Email, Slack, Discord",
-		max: "Email, Slack, Discord, Phone",
+		label: tk("Direct support channels"),
+		starter: tk("Email, Discord"),
+		plus: tk("Email, Slack, Discord"),
+		max: tk("Email, Slack, Discord, Phone"),
 	},
 ];
 
@@ -193,16 +195,16 @@ export const MODULE_TIER_MAP = {
 
 // Human-readable feature names for upgrade screens.
 export const MODULE_LABELS = {
-	patching: "Patching",
-	patching_policies: "Patching Policies",
-	docker: "Docker Monitoring",
-	alerts_advanced: "Advanced Alerts",
-	rbac_custom: "Custom RBAC Roles",
-	custom_branding: "Custom Branding",
-	compliance: "Compliance Scanning",
-	ssh_terminal: "Browser SSH Terminal",
-	rdp: "Browser RDP",
-	ai: "AI Terminal Assistant",
+	patching: tk("Patching"),
+	patching_policies: tk("Patching Policies"),
+	docker: tk("Docker Monitoring"),
+	alerts_advanced: tk("Advanced Alerts"),
+	rbac_custom: tk("Custom RBAC Roles"),
+	custom_branding: tk("Custom Branding"),
+	compliance: tk("Compliance Scanning"),
+	ssh_terminal: tk("Browser SSH Terminal"),
+	rdp: tk("Browser RDP"),
+	ai: tk("AI Terminal Assistant"),
 };
 
 // Rows from TIER_FEATURES that a given tier unlocks compared to the previous
@@ -210,19 +212,19 @@ export const MODULE_LABELS = {
 // Plus or Max. Starter-exclusive rows are never shown as an upgrade benefit.
 const TIER_UNLOCK_LABELS = {
 	plus: [
-		"Manual patch runs",
-		"Patch scheduling policies + approval workflow",
-		"Docker container monitoring",
-		"Advanced alert config + custom rules",
-		"Custom RBAC roles",
-		"Audit log export",
-		"Custom branding (logo/favicon)",
+		tk("Manual patch runs"),
+		tk("Patch scheduling policies + approval workflow"),
+		tk("Docker container monitoring"),
+		tk("Advanced alert config + custom rules"),
+		tk("Custom RBAC roles"),
+		tk("Audit log export"),
+		tk("Custom branding (logo/favicon)"),
 	],
 	max: [
-		"Browser SSH terminal",
-		"Browser RDP (Guacamole)",
-		"BYO-AI terminal assistant",
-		"Compliance (OpenSCAP + CIS + Docker Bench)",
+		tk("Browser SSH terminal"),
+		tk("Browser RDP (Guacamole)"),
+		tk("BYO-AI terminal assistant"),
+		tk("Compliance (OpenSCAP + CIS + Docker Bench)"),
 	],
 };
 
