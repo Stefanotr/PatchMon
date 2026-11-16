@@ -1,24 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-	AlertTriangle,
-	Check,
-	Edit,
-	Info,
-	Minus,
-	Save,
-	Shield,
-	Trash2,
-	X,
-} from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { AlertTriangle, Columns3, Info, ListChecks } from "lucide-react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import {
 	countPermissions,
 	PERMISSION_GROUPS,
 	ROLE_PRESETS,
 	riskBadgeClasses,
 	riskBorderColor,
-	riskGroupBg,
 	riskLabel,
 } from "../../constants/permissionGroups";
 import { useAuth } from "../../contexts/AuthContext";
@@ -26,14 +16,20 @@ import { useConfirm } from "../../contexts/ConfirmContext";
 import { useToast } from "../../contexts/ToastContext";
 import { hostScopeAPI, permissionsAPI } from "../../utils/api";
 import ModalPortal from "../ui/ModalPortal";
-import RoleHostAccess from "./RoleHostAccess";
+import RoleEditor from "./roles/RoleEditor";
+import RoleList from "./roles/RoleList";
+import RolesMatrix from "./roles/RolesMatrix";
+import { roleLabel, sortRoles } from "./roles/roleRules";
 
+// The role shown and the view live in the URL (?role=, ?view=compare), so a
+// reload or a shared link opens the same place.
 const RolesTab = () => {
 	const { t } = useTranslation();
 	const confirm = useConfirm();
 	const toast = useToast();
-	const [editingRole, setEditingRole] = useState(null);
 	const [showAddModal, setShowAddModal] = useState(false);
+	const [dirty, setDirty] = useState(false);
+	const [searchParams, setSearchParams] = useSearchParams();
 	const queryClient = useQueryClient();
 	const { refreshPermissions } = useAuth();
 
@@ -83,23 +79,45 @@ const RolesTab = () => {
 		(hostScopeData?.roles ?? []).map((scope) => scope.role),
 	);
 
-	// Sort roles by permission level: superadmin > admin > host_manager > user > readonly
-	// Custom roles come after built-in roles, sorted alphabetically
-	const roles = rolesData
-		? [...rolesData].sort((a, b) => {
-				const order = {
-					superadmin: 0,
-					admin: 1,
-					host_manager: 2,
-					user: 3,
-					readonly: 4,
-				};
-				const aOrder = order[a.role] ?? 999;
-				const bOrder = order[b.role] ?? 999;
-				if (aOrder !== bOrder) return aOrder - bOrder;
-				return a.role.localeCompare(b.role);
-			})
-		: null;
+	const roles = Array.isArray(rolesData) ? sortRoles(rolesData) : [];
+	const view = searchParams.get("view") === "compare" ? "compare" : "roles";
+	const selected =
+		roles.find((r) => r.role === searchParams.get("role")) ?? roles[0] ?? null;
+
+	const setParams = (changes) =>
+		setSearchParams(
+			(prev) => {
+				const next = new URLSearchParams(prev);
+				for (const [key, value] of Object.entries(changes)) {
+					if (value) next.set(key, value);
+					else next.delete(key);
+				}
+				return next;
+			},
+			{ replace: true },
+		);
+
+	// Leaving the editor drops its unsaved changes: ask first.
+	const canLeaveEditor = async () =>
+		!dirty ||
+		confirm({
+			title: t("Discard changes?"),
+			message: t("Your changes to this role are not saved."),
+			confirmLabel: t("Discard"),
+		});
+
+	const openRole = async (role) => {
+		if (view === "roles" && role === selected?.role) return;
+		if (await canLeaveEditor()) setParams({ role, view: null });
+	};
+
+	const showView = async (next) => {
+		if (next === view) return;
+		if (next === "compare" && !(await canLeaveEditor())) return;
+		setParams({ view: next === "compare" ? "compare" : null });
+	};
+
+	const handleDirtyChange = useCallback((value) => setDirty(value), []);
 
 	// Update role permissions mutation
 	const updateRoleMutation = useMutation({
@@ -107,7 +125,6 @@ const RolesTab = () => {
 			permissionsAPI.updateRole(role, permissions),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["rolePermissions"] });
-			setEditingRole(null);
 			// Refresh user permissions to apply changes immediately
 			refreshPermissions();
 		},
@@ -124,6 +141,7 @@ const RolesTab = () => {
 	const handleSavePermissions = async (role, permissions) => {
 		try {
 			await updateRoleMutation.mutateAsync({ role, permissions });
+			toast.success(t('Role "{{role}}" saved', { role: roleLabel(role) }));
 		} catch (error) {
 			console.error("Failed to update permissions:", error);
 			toast.error(error.response?.data?.error || t("Failed to update role"));
@@ -143,6 +161,8 @@ const RolesTab = () => {
 		try {
 			await deleteRoleMutation.mutateAsync(role);
 			toast.success(t('Role "{{role}}" deleted', { role }));
+			setDirty(false);
+			setParams({ role: null });
 		} catch (error) {
 			console.error("Failed to delete role:", error);
 			toast.error(error.response?.data?.error || t("Failed to delete role"));
@@ -172,6 +192,22 @@ const RolesTab = () => {
 			</div>
 		);
 	}
+
+	const viewButton = (id, Icon, label) => (
+		<button
+			type="button"
+			onClick={() => showView(id)}
+			aria-pressed={view === id}
+			className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+				view === id
+					? "bg-white text-secondary-900 shadow-sm dark:bg-secondary-600 dark:text-white"
+					: "text-secondary-600 hover:text-secondary-900 dark:text-secondary-300 dark:hover:text-white"
+			}`}
+		>
+			<Icon className="h-4 w-4" />
+			{label}
+		</button>
+	);
 
 	return (
 		<div className="space-y-6">
@@ -230,142 +266,47 @@ const RolesTab = () => {
 				</div>
 			)}
 
-			{/* Roles Matrix Table */}
-			<div className="bg-white dark:bg-secondary-800 shadow overflow-hidden sm:rounded-lg">
-				<div className="overflow-x-auto">
-					<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
-						<thead className="bg-secondary-50 dark:bg-secondary-700">
-							<tr>
-								<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider sticky left-0 z-10 bg-secondary-50 dark:bg-secondary-700 border-r border-secondary-200 dark:border-secondary-700">
-									{t("Permission")}
-								</th>
-								{roles &&
-									Array.isArray(roles) &&
-									roles.map((r) => {
-										const { enabled, total } = countPermissions(r);
-										return (
-											<th
-												key={r.role}
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-white uppercase tracking-wider"
-											>
-												<div className="flex items-center gap-2">
-													<div>
-														<span className="capitalize">
-															{r.role.replace(/_/g, " ")}
-														</span>
-														<div className="text-[10px] font-normal normal-case text-secondary-400 dark:text-secondary-300 mt-0.5">
-															{enabled}/{total}
-														</div>
-														{limitedRoles.has(r.role) && (
-															<div className="text-[10px] font-medium normal-case text-warning-700 dark:text-warning-300 mt-0.5">
-																{t("Some host groups only")}
-															</div>
-														)}
-													</div>
-													<button
-														type="button"
-														onClick={() => setEditingRole(r.role)}
-														className="text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-200"
-														title={t("Edit role permissions")}
-													>
-														<Edit className="h-4 w-4" />
-													</button>
-												</div>
-											</th>
-										);
-									})}
-							</tr>
-						</thead>
-						<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
-							{roles &&
-								Array.isArray(roles) &&
-								roles.length > 0 &&
-								PERMISSION_GROUPS.map((group) => {
-									const GroupIcon = group.icon;
-									return [
-										/* Group header row */
-										<tr
-											key={`group-${group.id}`}
-											className={`border-l-4 ${riskBorderColor(group.riskLevel)} ${riskGroupBg(group.riskLevel)}`}
-										>
-											<td colSpan={1 + roles.length} className="px-6 py-2.5">
-												<div className="flex items-center gap-2">
-													<GroupIcon className="h-4 w-4 text-secondary-500 dark:text-secondary-300" />
-													<span className="text-sm font-semibold text-secondary-800 dark:text-secondary-100">
-														{t(group.name)}
-													</span>
-													<span className="text-xs text-secondary-500 dark:text-secondary-400 hidden sm:inline">
-														{t(group.description)}
-													</span>
-												</div>
-											</td>
-										</tr>,
-										/* Permission rows within the group */
-										...group.permissions.map((perm, permIdx) => {
-											const PermIcon = perm.icon;
-											return (
-												<tr
-													key={perm.key}
-													className={`hover:bg-secondary-50 dark:hover:bg-secondary-700 ${permIdx % 2 === 0 ? "bg-secondary-50/50 dark:bg-secondary-800/50" : ""}`}
-												>
-													<td className="px-6 py-3 text-sm text-secondary-700 dark:text-secondary-200 whitespace-nowrap sticky left-0 z-10 bg-white dark:bg-secondary-800 border-r border-secondary-200 dark:border-secondary-700">
-														<div className="flex items-center gap-2">
-															<PermIcon className="h-4 w-4 text-secondary-400 flex-shrink-0" />
-															<div>
-																<div className="font-medium">
-																	{t(perm.label)}
-																</div>
-																<div className="text-xs text-secondary-400 dark:text-secondary-500 hidden lg:block">
-																	{t(perm.description)}
-																</div>
-															</div>
-														</div>
-													</td>
-													{roles.map((r) => (
-														<td
-															key={`${r.role}-${perm.key}`}
-															className="px-6 py-3 whitespace-nowrap"
-														>
-															{r[perm.key] ? (
-																<div className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 dark:bg-green-900/30">
-																	<Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-																</div>
-															) : (
-																<div className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-secondary-100 dark:bg-secondary-700">
-																	<Minus className="h-3.5 w-3.5 text-secondary-400 dark:text-secondary-500" />
-																</div>
-															)}
-														</td>
-													))}
-												</tr>
-											);
-										}),
-									];
-								})}
-						</tbody>
-					</table>
+			{roles.length > 0 && (
+				<div className="inline-flex rounded-lg bg-secondary-100 p-1 dark:bg-secondary-700">
+					{viewButton("roles", ListChecks, t("By role"))}
+					{viewButton("compare", Columns3, t("Compare roles"))}
 				</div>
-			</div>
+			)}
 
-			{/* Inline editor for selected role */}
-			{editingRole && roles && Array.isArray(roles) && (
-				<div className="space-y-4">
-					{roles
-						.filter((r) => r.role === editingRole)
-						.map((r) => (
-							<div key={`editor-${r.role}`} className="space-y-4">
-								<RolePermissionsCard
-									role={r}
-									isEditing={true}
-									isOIDCSyncRoles={isOIDCSyncRoles}
-									onEdit={() => {}}
-									onCancel={() => setEditingRole(null)}
-									onSave={handleSavePermissions}
-									onDelete={handleDeleteRole}
-								/>
-								<RoleHostAccess role={r} />
-							</div>
-						))}
+			{roles.length === 0 && (
+				<p className="text-sm text-secondary-500 dark:text-secondary-400">
+					{t("No role yet.")}
+				</p>
+			)}
+
+			{roles.length > 0 && view === "compare" && (
+				<RolesMatrix
+					roles={roles}
+					limitedRoles={limitedRoles}
+					isOIDCSyncRoles={isOIDCSyncRoles}
+					onOpen={openRole}
+				/>
+			)}
+
+			{selected && view === "roles" && (
+				<div className="grid items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
+					<RoleList
+						roles={roles}
+						selected={selected.role}
+						onSelect={openRole}
+						limitedRoles={limitedRoles}
+						isOIDCSyncRoles={isOIDCSyncRoles}
+					/>
+					<RoleEditor
+						key={selected.role}
+						role={selected}
+						isOIDCSyncRoles={isOIDCSyncRoles}
+						limited={limitedRoles.has(selected.role)}
+						saving={updateRoleMutation.isPending}
+						onSave={handleSavePermissions}
+						onDelete={handleDeleteRole}
+						onDirtyChange={handleDirtyChange}
+					/>
 				</div>
 			)}
 
@@ -374,192 +315,13 @@ const RolesTab = () => {
 				<AddRoleModal
 					isOpen={showAddModal}
 					onClose={() => setShowAddModal(false)}
-					onSuccess={() => {
+					onSuccess={(role) => {
 						queryClient.invalidateQueries({ queryKey: ["rolePermissions"] });
 						setShowAddModal(false);
+						openRole(role);
 					}}
 				/>
 			)}
-		</div>
-	);
-};
-
-// Role Permissions Card Component
-const RolePermissionsCard = ({
-	role,
-	isEditing,
-	isOIDCSyncRoles = false,
-	onEdit,
-	onCancel,
-	onSave,
-	onDelete,
-}) => {
-	const { t } = useTranslation();
-	const [permissions, setPermissions] = useState(role);
-
-	// Sync permissions state with role prop when it changes
-	useEffect(() => {
-		setPermissions(role);
-	}, [role]);
-
-	const handlePermissionChange = (key, value) => {
-		setPermissions((prev) => ({
-			...prev,
-			[key]: value,
-		}));
-	};
-
-	const handleSave = () => {
-		onSave(role.role, permissions);
-	};
-
-	// Standard built-in roles (always protected from deletion and permission changes)
-	const standardBuiltInRoles = ["superadmin", "admin", "user"];
-	// OIDC roles (protected from deletion when OIDC sync roles is active, but permissions can be edited)
-	const oidcRoles = ["superadmin", "admin", "host_manager", "readonly", "user"];
-
-	const isBuiltInRole = standardBuiltInRoles.includes(role.role);
-	const isOIDCRole = oidcRoles.includes(role.role);
-	// Can't delete OIDC roles when sync is active, or built-in roles ever
-	const cannotDelete = isOIDCSyncRoles ? isOIDCRole : isBuiltInRole;
-	// Can't edit permissions for built-in roles (superadmin, admin, user)
-	const cannotEditPermissions = isBuiltInRole;
-
-	return (
-		<div className="bg-white dark:bg-secondary-800 shadow rounded-lg">
-			<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600">
-				<div className="flex items-center justify-between">
-					<div className="flex items-center">
-						<Shield className="h-5 w-5 text-primary-600 mr-3" />
-						<h3 className="text-lg font-medium text-secondary-900 dark:text-white capitalize">
-							{role.role.replace(/_/g, " ")}
-						</h3>
-						{isOIDCSyncRoles && isOIDCRole && (
-							<span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-								{t("OIDC Synced")}
-							</span>
-						)}
-						{!isOIDCSyncRoles && isBuiltInRole && (
-							<span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
-								{t("Built-in Role")}
-							</span>
-						)}
-					</div>
-					<div className="flex items-center space-x-2">
-						{isEditing ? (
-							<>
-								<button
-									type="button"
-									onClick={handleSave}
-									className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-								>
-									<Save className="h-4 w-4 mr-1" />
-									{t("Save")}
-								</button>
-								<button
-									type="button"
-									onClick={onCancel}
-									className="inline-flex items-center px-3 py-1 border border-secondary-300 dark:border-secondary-600 text-sm font-medium rounded-md text-secondary-700 dark:text-secondary-200 bg-white dark:bg-secondary-700 hover:bg-secondary-50 dark:hover:bg-secondary-600"
-								>
-									<X className="h-4 w-4 mr-1" />
-									{t("Cancel")}
-								</button>
-								{!cannotDelete && (
-									<button
-										type="button"
-										onClick={() => onDelete(role.role)}
-										className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-									>
-										<Trash2 className="h-4 w-4 mr-1" />
-										{t("Delete")}
-									</button>
-								)}
-							</>
-						) : (
-							<>
-								<button
-									type="button"
-									onClick={onEdit}
-									disabled={cannotEditPermissions}
-									className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-								>
-									<Edit className="h-4 w-4 mr-1" />
-									{t("Edit")}
-								</button>
-								{!cannotDelete && (
-									<button
-										type="button"
-										onClick={() => onDelete(role.role)}
-										className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-									>
-										<Trash2 className="h-4 w-4 mr-1" />
-										{t("Delete")}
-									</button>
-								)}
-							</>
-						)}
-					</div>
-				</div>
-			</div>
-
-			<div className="px-6 py-4 space-y-6">
-				{PERMISSION_GROUPS.map((group) => {
-					const GroupIcon = group.icon;
-					return (
-						<div key={group.id}>
-							{/* Group header */}
-							<div className="flex items-center gap-2 mb-3">
-								<GroupIcon className="h-4 w-4 text-secondary-500 dark:text-secondary-300" />
-								<h4 className="text-sm font-semibold text-secondary-800 dark:text-secondary-100">
-									{t(group.name)}
-								</h4>
-								<span
-									className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${riskBadgeClasses(group.riskLevel)}`}
-								>
-									{t(riskLabel(group.riskLevel))}
-								</span>
-							</div>
-							{/* Permissions grid */}
-							<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-								{group.permissions.map((field) => {
-									const Icon = field.icon;
-									const isChecked = permissions[field.key];
-									return (
-										<div key={field.key} className="flex items-start">
-											<div className="flex items-center h-5">
-												<input
-													id={`${role.role}-${field.key}`}
-													type="checkbox"
-													checked={isChecked}
-													onChange={(e) =>
-														handlePermissionChange(field.key, e.target.checked)
-													}
-													disabled={!isEditing || cannotEditPermissions}
-													className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-secondary-300 rounded disabled:opacity-50"
-												/>
-											</div>
-											<div className="ml-3">
-												<div className="flex items-center">
-													<Icon className="h-4 w-4 text-secondary-400 mr-2" />
-													<label
-														htmlFor={`${role.role}-${field.key}`}
-														className="text-sm font-medium text-secondary-900 dark:text-white"
-													>
-														{t(field.label)}
-													</label>
-												</div>
-												<p className="text-xs text-secondary-500 mt-1">
-													{t(field.description)}
-												</p>
-											</div>
-										</div>
-									);
-								})}
-							</div>
-						</div>
-					);
-				})}
-			</div>
 		</div>
 	);
 };
@@ -582,7 +344,7 @@ const AddRoleModal = ({ isOpen, onClose, onSuccess }) => {
 
 		try {
 			await permissionsAPI.updateRole(formData.role, formData);
-			onSuccess();
+			onSuccess(formData.role);
 		} catch (err) {
 			setError(err.response?.data?.error || t("Failed to create role"));
 		} finally {

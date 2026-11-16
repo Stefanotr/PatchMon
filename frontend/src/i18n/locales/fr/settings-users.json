@@ -155,5 +155,16 @@
 	"Download and export data and reports": "Télécharger et exporter les données et les rapports",
 	"Low Risk": "Risque faible",
 	"Medium-High": "Moyenne-élevée",
-	"High Risk": "Risque élevé"
+	"High Risk": "Risque élevé",
+	"By role": "Par rôle",
+	"Compare roles": "Comparer les rôles",
+	"No role yet.": "Aucun rôle pour l'instant.",
+	"Filter roles": "Filtrer les rôles",
+	"No role matches this filter": "Aucun rôle ne correspond à ce filtre",
+	"{{enabled}} of {{total}} permissions": "{{enabled}} permissions sur {{total}}",
+	"This built-in role keeps its permissions. Create a role to choose them.": "Ce rôle intégré garde ses permissions. Créez un rôle pour les choisir.",
+	"Unsaved changes to this role": "Modifications non enregistrées sur ce rôle",
+	"Discard changes?": "Abandonner les modifications\u00a0?",
+	"Your changes to this role are not saved.": "Vos modifications de ce rôle ne sont pas enregistrées.",
+	"Role \"{{role}}\" saved": "Rôle «\u00a0{{role}}\u00a0» enregistré"
 }

@@ -227,7 +227,7 @@ The `superadmin`, `admin` and `user` roles cannot be edited. The other two built
 
 *Fork feature.* A role can be limited to the hosts of some host groups. Its users then see and act on those hosts only, everywhere a host appears: the host list and pages, packages and repositories, patch runs, Docker, compliance scans, alerts, the dashboard figures, search, and the SSH and RDP terminals. A host in no group is visible to unlimited roles only.
 
-To limit a role, open it in the Roles editor (pencil icon) and, under **Host access**, choose **Only the hosts of some host groups**, tick the groups and click **Save host access**. **Every host** gives the role its full view back. A role limited to groups that were all deleted since sees no host at all: deleting a group never widens a role.
+To limit a role, select it in **Settings → Roles** and, under **Host access**, choose **Only the hosts of some host groups**, tick the groups and click **Save host access**. **Every host** gives the role its full view back. A role limited to groups that were all deleted since sees no host at all: deleting a group never widens a role.
 
 A limited role:
 
@@ -5051,7 +5051,7 @@ PatchMon uses role-based access control (RBAC) to decide who can see and do what
 
 ### The Built-In Roles
 
-PatchMon ships with five roles. You see these in **Settings → Users** (in the **Role** dropdown) and in **Settings → Roles** (as the matrix columns).
+PatchMon ships with five roles. You see these in **Settings → Users** (in the **Role** dropdown) and in **Settings → Roles** (in the role list, and as the columns of **Compare roles**).
 
 | Role | Default Permissions | Typical Use |
 |------|--------------------|-------------|
@@ -5064,7 +5064,7 @@ PatchMon ships with five roles. You see these in **Settings → Users** (in the 
 Two important rules about built-ins:
 
 - **Cannot be deleted.** `superadmin`, `admin`, `host_manager`, `user` and `readonly` are always present. The **Delete** button does not appear for them.
-- **The core three cannot have their permissions edited.** `superadmin`, `admin` and `user` are *locked*: their permission matrix is hardcoded and the **Edit** button is disabled. `host_manager` and `readonly` can still be edited if you want to tune them.
+- **The core three cannot have their permissions edited.** `superadmin`, `admin` and `user` are *locked*: their permissions are hardcoded and shown read-only. `host_manager` and `readonly` can still be edited if you want to tune them.
 
 > **First user is always Super Admin.** When PatchMon is first installed and has no users, the setup wizard creates the initial account as `superadmin`, regardless of what role you type. If OIDC is configured for auto-create before first boot, the very first OIDC login is also promoted to `superadmin` automatically so you cannot lock yourself out.
 
@@ -5072,7 +5072,7 @@ Two important rules about built-ins:
 
 ### The Full Permission List
 
-Permissions are grouped into four risk tiers. The colour you see in the **Roles** matrix corresponds to this risk level.
+Permissions are grouped into four risk tiers. The colour you see on each permission group in **Settings → Roles** corresponds to this risk level.
 
 #### Monitoring & Visibility (Low risk)
 
@@ -5125,13 +5125,14 @@ Organisation-wide control.
 
 ---
 
-### Viewing the Role Matrix
+### Viewing Roles
 
 1. Sign in as a user with `can_manage_settings`.
 2. Go to **Settings → Roles**.
-3. You'll see a matrix: rows are permissions (grouped by tier), columns are roles. A green tick means the role has that permission.
+3. **By role** (the default) lists every role on the left, each with an `n/N` counter and a bar showing how many of the 20 permissions it holds. A lock marks a built-in role, a server icon a role limited to some host groups. Click a role to show its permissions, grouped by tier, on the right. Small screens show the roles in a dropdown instead.
+4. **Compare roles** shows a matrix: rows are permissions (grouped by tier), columns are roles. A green tick means the role has that permission. The role names and the permission names stay in view while you scroll; click a role name to open it.
 
-Each column header also shows an `n/N` counter showing the number of permissions that role currently holds out of the total 20.
+The role shown and the view are kept in the URL (`/settings/roles?role=ops_team`, `?view=compare`), so a reload or a shared link opens the same place.
 
 ---
 
@@ -5158,13 +5159,15 @@ To create one:
 
 > **You can only grant permissions you hold.** Unless you are a `superadmin`, a role you create or edit may only contain permissions your own role has. Saving a role with any other permission is refused with a message naming the permissions you lack. For example, an `admin` cannot create a role with `can_manage_superusers`, so the **Admin** preset only works for a `superadmin`.
 
-The new role appears as a new column in the matrix and is selectable when creating or editing users.
+The new role is selected in the role list, and is selectable when creating or editing users.
 
 #### Editing a Custom Role
 
-1. In the matrix, click the pencil icon in the column header of the role you want to edit.
-2. An editor panel opens below the matrix with all permissions listed.
-3. Tick / untick as needed, then click **Save**.
+1. Click the role in the role list (or its name in **Compare roles**).
+2. Tick / untick permissions, or use **Select all / Deselect all** on a group header.
+3. A bar with **Save** and **Discard** appears in the bottom-right corner as soon as something changed. Click **Save**.
+
+Switching to another role, or to **Compare roles**, with unsaved changes asks before dropping them.
 
 Changes take effect immediately. Any session held by a user with that role has its in-memory permissions refreshed on their next request.
 
@@ -5176,8 +5179,8 @@ You can only delete a role that is **not assigned to any user**. If any user hol
 
 To delete:
 
-1. Click the pencil in the role's column header to open the editor panel.
-2. Click **Delete** (appears only for non-built-in roles).
+1. Click the role in the role list.
+2. Click **Delete role** (appears only for non-built-in roles).
 3. Confirm.
 
 ---
