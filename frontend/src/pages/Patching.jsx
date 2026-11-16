@@ -53,6 +53,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useConfirm } from "../contexts/ConfirmContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
+import { useHostScope } from "../hooks/useHostScope";
 import { searchWithoutTab, useTabParam } from "../hooks/useTabParam";
 import { tk } from "../i18n";
 import {
@@ -1413,6 +1414,9 @@ const delay_type_labels = {
 };
 
 function PoliciesTab() {
+	// Fork: policies span every host; users limited to some host groups only
+	// read them.
+	const hostScope = useHostScope();
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const toast = useToast();
@@ -1552,14 +1556,16 @@ function PoliciesTab() {
 						"Patch policies control when patches run. Assign policies to hosts or host groups.",
 					)}
 				</p>
-				<button
-					type="button"
-					onClick={openCreate}
-					className="btn-primary flex items-center gap-2"
-				>
-					<Plus className="h-4 w-4" />
-					{t("Create policy")}
-				</button>
+				{!hostScope.limited && (
+					<button
+						type="button"
+						onClick={openCreate}
+						className="btn-primary flex items-center gap-2"
+					>
+						<Plus className="h-4 w-4" />
+						{t("Create policy")}
+					</button>
+				)}
 			</div>
 
 			<div className="card p-4 md:p-6">
@@ -1642,36 +1648,38 @@ function PoliciesTab() {
 												</button>
 											</td>
 											<td className="px-4 py-3 whitespace-nowrap text-right">
-												<div className="flex items-center justify-end gap-2">
-													<button
-														type="button"
-														onClick={() => openEdit(policy)}
-														className="p-1.5 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700 text-secondary-600 dark:text-secondary-300"
-														title={t("Edit")}
-													>
-														<Edit className="h-4 w-4" />
-													</button>
-													<button
-														type="button"
-														onClick={async () => {
-															if (
-																await confirm({
-																	title: t("Delete policy"),
-																	message: t(
-																		'Delete the patching policy "{{name}}"?',
-																		{ name: policy.name },
-																	),
-																	confirmLabel: t("Delete policy"),
-																})
-															)
-																deleteMutation.mutate(policy.id);
-														}}
-														className="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600"
-														title={t("Delete")}
-													>
-														<Trash2 className="h-4 w-4" />
-													</button>
-												</div>
+												{!hostScope.limited && (
+													<div className="flex items-center justify-end gap-2">
+														<button
+															type="button"
+															onClick={() => openEdit(policy)}
+															className="p-1.5 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700 text-secondary-600 dark:text-secondary-300"
+															title={t("Edit")}
+														>
+															<Edit className="h-4 w-4" />
+														</button>
+														<button
+															type="button"
+															onClick={async () => {
+																if (
+																	await confirm({
+																		title: t("Delete policy"),
+																		message: t(
+																			'Delete the patching policy "{{name}}"?',
+																			{ name: policy.name },
+																		),
+																		confirmLabel: t("Delete policy"),
+																	})
+																)
+																	deleteMutation.mutate(policy.id);
+															}}
+															className="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600"
+															title={t("Delete")}
+														>
+															<Trash2 className="h-4 w-4" />
+														</button>
+													</div>
+												)}
 											</td>
 										</tr>
 										{expandedPolicyId === policy.id && (
@@ -1848,6 +1856,7 @@ function PoliciesTab() {
 
 function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 	const { t } = useTranslation();
+	const { limited } = useHostScope();
 	const queryClient = useQueryClient();
 	const toast = useToast();
 	const [addTargetType, setAddTargetType] = useState("host");
@@ -1980,61 +1989,65 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 									<Users className="h-3 w-3" />
 								)}
 								{getTargetLabel(a)}
-								<button
-									type="button"
-									onClick={() => removeAssignmentMutation.mutate(a.id)}
-									className="ml-1 text-secondary-500 hover:text-red-600"
-									aria-label={t("Remove")}
-								>
-									<X className="h-3 w-3" />
-								</button>
+								{!limited && (
+									<button
+										type="button"
+										onClick={() => removeAssignmentMutation.mutate(a.id)}
+										className="ml-1 text-secondary-500 hover:text-red-600"
+										aria-label={t("Remove")}
+									>
+										<X className="h-3 w-3" />
+									</button>
+								)}
 							</li>
 						))}
 					</ul>
 				)}
-				<div className="flex flex-wrap items-center gap-2">
-					<select
-						value={addTargetType}
-						onChange={(e) => {
-							setAddTargetType(e.target.value);
-							setAddTargetId("");
-						}}
-						className="rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white text-sm px-2 py-1"
-					>
-						<option value="host">{t("Host")}</option>
-						<option value="host_group">{t("Host group")}</option>
-					</select>
-					<select
-						value={addTargetId}
-						onChange={(e) => setAddTargetId(e.target.value)}
-						className="rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white text-sm px-2 py-1 min-w-[160px]"
-					>
-						<option value="">
+				{!limited && (
+					<div className="flex flex-wrap items-center gap-2">
+						<select
+							value={addTargetType}
+							onChange={(e) => {
+								setAddTargetType(e.target.value);
+								setAddTargetId("");
+							}}
+							className="rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white text-sm px-2 py-1"
+						>
+							<option value="host">{t("Host")}</option>
+							<option value="host_group">{t("Host group")}</option>
+						</select>
+						<select
+							value={addTargetId}
+							onChange={(e) => setAddTargetId(e.target.value)}
+							className="rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white text-sm px-2 py-1 min-w-[160px]"
+						>
+							<option value="">
+								{addTargetType === "host"
+									? t("Select host...")
+									: t("Select group...")}
+							</option>
 							{addTargetType === "host"
-								? t("Select host...")
-								: t("Select group...")}
-						</option>
-						{addTargetType === "host"
-							? hosts.map((h) => (
-									<option key={h.id} value={h.id}>
-										{h.friendly_name || h.hostname || h.id}
-									</option>
-								))
-							: hostGroups.map((g) => (
-									<option key={g.id} value={g.id}>
-										{g.name}
-									</option>
-								))}
-					</select>
-					<button
-						type="button"
-						onClick={() => addTargetId && addAssignmentMutation.mutate()}
-						disabled={!addTargetId || addAssignmentMutation.isPending}
-						className="btn-outline text-sm py-1"
-					>
-						{t("Add")}
-					</button>
-				</div>
+								? hosts.map((h) => (
+										<option key={h.id} value={h.id}>
+											{h.friendly_name || h.hostname || h.id}
+										</option>
+									))
+								: hostGroups.map((g) => (
+										<option key={g.id} value={g.id}>
+											{g.name}
+										</option>
+									))}
+						</select>
+						<button
+							type="button"
+							onClick={() => addTargetId && addAssignmentMutation.mutate()}
+							disabled={!addTargetId || addAssignmentMutation.isPending}
+							className="btn-outline text-sm py-1"
+						>
+							{t("Add")}
+						</button>
+					</div>
+				)}
 
 				<div className="flex items-center gap-2 text-sm font-medium text-secondary-700 dark:text-secondary-300 pt-2 border-t border-secondary-200 dark:border-secondary-600">
 					<Clock className="h-4 w-4" />
@@ -2052,14 +2065,16 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 								className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-sm"
 							>
 								{exc.hosts?.friendly_name || exc.hosts?.hostname || exc.host_id}
-								<button
-									type="button"
-									onClick={() => removeExclusionMutation.mutate(exc.host_id)}
-									className="ml-1 text-amber-700 dark:text-amber-400 hover:text-red-600"
-									aria-label={t("Remove")}
-								>
-									<X className="h-3 w-3" />
-								</button>
+								{!limited && (
+									<button
+										type="button"
+										onClick={() => removeExclusionMutation.mutate(exc.host_id)}
+										className="ml-1 text-amber-700 dark:text-amber-400 hover:text-red-600"
+										aria-label={t("Remove")}
+									>
+										<X className="h-3 w-3" />
+									</button>
+								)}
 							</li>
 						))}
 					</ul>
@@ -2078,7 +2093,7 @@ function PolicyAssignments({ policy, hosts, hostGroups, onUpdate }) {
 							"Assign a host group to this policy before excluding hosts from it.",
 						)}
 					</p>
-				) : (
+				) : limited ? null : (
 					<div className="flex flex-wrap items-center gap-2">
 						<select
 							value={addExclusionHostId}

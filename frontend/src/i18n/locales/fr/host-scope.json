@@ -1,0 +1,16 @@
+{
+	"Host access": "Accès aux hôtes",
+	"Host access updated": "Accès aux hôtes mis à jour",
+	"Failed to update host access": "Impossible de mettre à jour l'accès aux hôtes",
+	"Which hosts users with this role can see and act on.": "Les hôtes que les utilisateurs de ce rôle peuvent voir et sur lesquels ils peuvent agir.",
+	"This role always has every host.": "Ce rôle a toujours accès à tous les hôtes.",
+	"Every host": "Tous les hôtes",
+	"Only the hosts of some host groups": "Seulement les hôtes de certains groupes",
+	"Limiting roles is not available on this server: {{reason}}": "La limitation des rôles n'est pas disponible sur ce serveur\u00a0: {{reason}}",
+	"A role limited to some host groups cannot hold these permissions, which act on every host: {{permissions}}. Remove them first.": "Un rôle limité à certains groupes d'hôtes ne peut pas avoir ces permissions, qui portent sur tous les hôtes\u00a0: {{permissions}}. Retirez-les d'abord.",
+	"No host group yet. Create host groups first.": "Aucun groupe d'hôtes pour l'instant. Créez d'abord des groupes d'hôtes.",
+	"No group selected: users with this role will see no host.": "Aucun groupe sélectionné\u00a0: les utilisateurs de ce rôle ne verront aucun hôte.",
+	"Users with this role see only these groups' hosts, with their packages, patch runs, containers, scans and alerts. They cannot add hosts, manage host groups, patch policies or patch schedules, or see the automation queues.": "Les utilisateurs de ce rôle ne voient que les hôtes de ces groupes, avec leurs paquets, exécutions de patch, conteneurs, scans et alertes. Ils ne peuvent pas ajouter d'hôtes, gérer les groupes d'hôtes, les politiques ou les plannings de patch, ni voir les files d'automatisation.",
+	"Save host access": "Enregistrer l'accès aux hôtes",
+	"Some host groups only": "Certains groupes seulement"
+}

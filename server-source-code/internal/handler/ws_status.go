@@ -9,6 +9,7 @@ import (
 
 	"github.com/PatchMon/PatchMon/server-source-code/internal/agentregistry"
 	hostctx "github.com/PatchMon/PatchMon/server-source-code/internal/context"
+	"github.com/PatchMon/PatchMon/server-source-code/internal/middleware"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/store"
 	"github.com/go-chi/chi/v5"
 )
@@ -135,6 +136,11 @@ func (h *WSStatusHandler) ServeStatusSingle(w http.ResponseWriter, r *http.Reque
 // contexts, so keeping the database out of this path is what makes the poll
 // affordable at that fan-out.
 func (h *WSStatusHandler) ServeSummary(w http.ResponseWriter, r *http.Request) {
+	// Fork: a user limited to some host groups counts their hosts only.
+	if middleware.HostScopeLimited(r) {
+		h.serveScopedSummary(w, r)
+		return
+	}
 	JSON(w, http.StatusOK, map[string]int{
 		"connected": h.registry.CountConnected(hostctx.TenantHostKey(r.Context())),
 	})

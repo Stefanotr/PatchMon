@@ -7,6 +7,7 @@ import (
 	"time"
 
 	hostctx "github.com/PatchMon/PatchMon/server-source-code/internal/context"
+	"github.com/PatchMon/PatchMon/server-source-code/internal/database"
 	"github.com/PatchMon/PatchMon/server-source-code/internal/db"
 )
 
@@ -232,9 +233,14 @@ type ComplianceDashboardProfileTypeStat struct {
 // nil hostIDs is unscoped; any non-nil slice (even empty) scopes and bypasses the cache.
 func (s *ComplianceStore) GetDashboard(ctx context.Context, hostIDs []string) (*ComplianceDashboard, error) {
 	d := s.db.DB(ctx)
+	// Fork: a user limited to some host groups gets a dashboard of their
+	// hosts (row security), which must neither come from nor go to the cache
+	// shared by the tenant's other users.
+	_, limited := database.HostScope(ctx)
 	scoped := hostIDs != nil
+	cached := !scoped && !limited
 	cacheKey := hostctx.TenantHostKey(ctx)
-	if !scoped {
+	if cached {
 		dashboardCacheMu.Lock()
 		if e, ok := dashboardCache[cacheKey]; ok && e.data != nil && time.Now().Before(e.exp) {
 			data := e.data
@@ -696,7 +702,7 @@ func (s *ComplianceStore) GetDashboard(ctx context.Context, hostIDs []string) (*
 		ProfileTypeStats:      profileTypeStatsList,
 	}
 
-	if !scoped {
+	if cached {
 		dashboardCacheMu.Lock()
 		dashboardCache[cacheKey] = dashboardCacheEntry{data: out, exp: time.Now().Add(dashboardCacheTTL)}
 		dashboardCacheMu.Unlock()

@@ -37,6 +37,7 @@ func NewDB(ctx context.Context, cfg *config.Config) (*DB, error) {
 	// Force UTC session time zone so NOW()/CURRENT_TIMESTAMP stored into tz-naive
 	// TIMESTAMP columns are UTC wall-clock, matching pgx's UTC assumption on read.
 	setUTCTimeZone(poolCfg)
+	withHostScope(poolCfg)
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("create pgx pool: %w", err)
@@ -77,6 +78,7 @@ func NewFromURL(ctx context.Context, databaseURL string, maxConns, minConns int,
 	poolCfg.ConnConfig.ConnectTimeout = time.Duration(cfg.DBConnectTimeout) * time.Second
 	poolCfg.HealthCheckPeriod = 30 * time.Second
 	setUTCTimeZone(poolCfg)
+	withHostScope(poolCfg)
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("create pgx pool: %w", err)

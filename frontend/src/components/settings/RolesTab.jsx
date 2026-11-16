@@ -24,8 +24,9 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 import { useConfirm } from "../../contexts/ConfirmContext";
 import { useToast } from "../../contexts/ToastContext";
-import { permissionsAPI } from "../../utils/api";
+import { hostScopeAPI, permissionsAPI } from "../../utils/api";
 import ModalPortal from "../ui/ModalPortal";
+import RoleHostAccess from "./RoleHostAccess";
 
 const RolesTab = () => {
 	const { t } = useTranslation();
@@ -72,6 +73,15 @@ const RolesTab = () => {
 		queryKey: ["rolePermissions"],
 		queryFn: () => permissionsAPI.getRoles().then((res) => res.data),
 	});
+
+	// Roles limited to some host groups (fork).
+	const { data: hostScopeData } = useQuery({
+		queryKey: ["host-scope", "roles"],
+		queryFn: () => hostScopeAPI.listRoles().then((res) => res.data),
+	});
+	const limitedRoles = new Set(
+		(hostScopeData?.roles ?? []).map((scope) => scope.role),
+	);
 
 	// Sort roles by permission level: superadmin > admin > host_manager > user > readonly
 	// Custom roles come after built-in roles, sorted alphabetically
@@ -246,6 +256,11 @@ const RolesTab = () => {
 														<div className="text-[10px] font-normal normal-case text-secondary-400 dark:text-secondary-300 mt-0.5">
 															{enabled}/{total}
 														</div>
+														{limitedRoles.has(r.role) && (
+															<div className="text-[10px] font-medium normal-case text-warning-700 dark:text-warning-300 mt-0.5">
+																{t("Some host groups only")}
+															</div>
+														)}
 													</div>
 													<button
 														type="button"
@@ -338,16 +353,18 @@ const RolesTab = () => {
 					{roles
 						.filter((r) => r.role === editingRole)
 						.map((r) => (
-							<RolePermissionsCard
-								key={`editor-${r.role}`}
-								role={r}
-								isEditing={true}
-								isOIDCSyncRoles={isOIDCSyncRoles}
-								onEdit={() => {}}
-								onCancel={() => setEditingRole(null)}
-								onSave={handleSavePermissions}
-								onDelete={handleDeleteRole}
-							/>
+							<div key={`editor-${r.role}`} className="space-y-4">
+								<RolePermissionsCard
+									role={r}
+									isEditing={true}
+									isOIDCSyncRoles={isOIDCSyncRoles}
+									onEdit={() => {}}
+									onCancel={() => setEditingRole(null)}
+									onSave={handleSavePermissions}
+									onDelete={handleDeleteRole}
+								/>
+								<RoleHostAccess role={r} />
+							</div>
 						))}
 				</div>
 			)}

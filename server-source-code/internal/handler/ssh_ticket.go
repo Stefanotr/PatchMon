@@ -44,6 +44,13 @@ func (h *SshTicketHandler) ServeCreate(w http.ResponseWriter, r *http.Request) {
 		JSON(w, http.StatusBadRequest, map[string]string{"error": "Host ID is required"})
 		return
 	}
+	// The terminal itself trusts the ticket: issue it only for a host the
+	// caller can see (fork: a user limited to some host groups sees theirs).
+	host, err := h.hosts.GetByID(r.Context(), req.HostID)
+	if err != nil || host == nil {
+		JSON(w, http.StatusNotFound, map[string]string{"error": "Host not found"})
+		return
+	}
 
 	ticket, err := h.tickets.CreateTicket(r.Context(), userID, req.HostID)
 	if err != nil {
@@ -55,12 +62,10 @@ func (h *SshTicketHandler) ServeCreate(w http.ResponseWriter, r *http.Request) {
 	if h.notify != nil {
 		if d := h.db.DB(r.Context()); d != nil {
 			hostName := req.HostID
-			if host, err := h.hosts.GetByID(r.Context(), req.HostID); err == nil && host != nil {
-				if host.FriendlyName != "" {
-					hostName = host.FriendlyName
-				} else if host.Hostname != nil && *host.Hostname != "" {
-					hostName = *host.Hostname
-				}
+			if host.FriendlyName != "" {
+				hostName = host.FriendlyName
+			} else if host.Hostname != nil && *host.Hostname != "" {
+				hostName = *host.Hostname
 			}
 			h.notify.EmitEvent(r.Context(), d, hostctx.TenantHostKey(r.Context()), notifications.Event{
 				Type:          "ssh_session_started",

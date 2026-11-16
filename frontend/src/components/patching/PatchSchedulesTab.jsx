@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useConfirm } from "../../contexts/ConfirmContext";
 import { useToast } from "../../contexts/ToastContext";
+import { useHostScope } from "../../hooks/useHostScope";
 import { formatDate, hostGroupsAPI } from "../../utils/api";
 import { patchingAPI } from "../../utils/patchingApi";
 import {
@@ -39,6 +40,10 @@ export default function PatchSchedulesTab() {
 	const confirm = useConfirm();
 	const { canManagePatching } = useAuth();
 	const canManage = canManagePatching();
+	// Users limited to some host groups can run their groups' schedules but
+	// not change them (fork, host access).
+	const hostScope = useHostScope();
+	const canEdit = canManage && !hostScope.limited;
 	const [editing, setEditing] = useState(null);
 	const [form, setForm] = useState(null);
 
@@ -181,7 +186,7 @@ export default function PatchSchedulesTab() {
 				</div>
 			</div>
 
-			{canManage && (
+			{canEdit && (
 				<div className="flex justify-end">
 					<button
 						type="button"
@@ -281,7 +286,7 @@ export default function PatchSchedulesTab() {
 												role="switch"
 												aria-checked={s.enabled}
 												aria-label={t("Enabled")}
-												disabled={!canManage || toggleMutation.isPending}
+												disabled={!canEdit || toggleMutation.isPending}
 												onClick={() => toggleMutation.mutate(s)}
 												className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${
 													s.enabled
@@ -308,22 +313,26 @@ export default function PatchSchedulesTab() {
 													>
 														<Play className="h-4 w-4" />
 													</button>
-													<button
-														type="button"
-														onClick={() => openEdit(s)}
-														className="p-1.5 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700 text-secondary-600 dark:text-secondary-300"
-														title={t("Edit")}
-													>
-														<Edit className="h-4 w-4" />
-													</button>
-													<button
-														type="button"
-														onClick={() => handleDelete(s)}
-														className="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600"
-														title={t("Delete")}
-													>
-														<Trash2 className="h-4 w-4" />
-													</button>
+													{canEdit && (
+														<>
+															<button
+																type="button"
+																onClick={() => openEdit(s)}
+																className="p-1.5 rounded hover:bg-secondary-100 dark:hover:bg-secondary-700 text-secondary-600 dark:text-secondary-300"
+																title={t("Edit")}
+															>
+																<Edit className="h-4 w-4" />
+															</button>
+															<button
+																type="button"
+																onClick={() => handleDelete(s)}
+																className="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600"
+																title={t("Delete")}
+															>
+																<Trash2 className="h-4 w-4" />
+															</button>
+														</>
+													)}
 												</div>
 											</td>
 										)}

@@ -223,6 +223,28 @@ The Roles editor is where custom roles are authored. A role is a named bundle of
 
 The `superadmin`, `admin` and `user` roles cannot be edited. The other two built-in roles, `host_manager` and `readonly`, can be edited like custom roles but cannot be deleted. The editor lets you create and edit additional roles alongside them and assign users to them, within the limits described under role escalation protection below.
 
+##### Host Access {#host-access}
+
+*Fork feature.* A role can be limited to the hosts of some host groups. Its users then see and act on those hosts only, everywhere a host appears: the host list and pages, packages and repositories, patch runs, Docker, compliance scans, alerts, the dashboard figures, search, and the SSH and RDP terminals. A host in no group is visible to unlimited roles only.
+
+To limit a role, open it in the Roles editor (pencil icon) and, under **Host access**, choose **Only the hosts of some host groups**, tick the groups and click **Save host access**. **Every host** gives the role its full view back. A role limited to groups that were all deleted since sees no host at all: deleting a group never widens a role.
+
+A limited role:
+
+- cannot hold permissions that act on every host or on access itself: Manage Users, Manage Superusers, Manage Settings, Manage Notifications, Manage Automation and Manage Billing. Remove them before limiting the role; once it is limited, the Roles editor refuses to add them back;
+- cannot add hosts, create, edit or delete host groups, move hosts between groups, manage patch policies or patch schedules, edit or delete repositories, delete Docker images, run the image checks, clean up compliance scans or see the automation queues. Those changes span every host and stay with unlimited roles;
+- can still patch, restart, scan and open terminals on its own hosts, as its permissions allow. Patch policies remain visible, read-only; the patch schedules of its groups are visible and can be run now.
+
+`superadmin` and `admin` always see every host. Each change is recorded in the audit log (`role_host_scope_update`).
+
+The limit is enforced by PostgreSQL itself (row-level security), not page by page: the queries of a limited user run as the database role `patchmon_scoped`, whose policies hide the other hosts' rows. The server sets this up at each start. It needs:
+
+- a database user that can create a role (the default Docker setup, whose user is a superuser, qualifies) and owns the PatchMon tables;
+- PostgreSQL 15 or later;
+- a direct connection to PostgreSQL, or a pooler in session mode. A pooler in transaction mode (PgBouncer `pool_mode = transaction`) is not supported.
+
+When it cannot be set up, the server logs why at startup, **Host access** says limiting is not available, and users of an already limited role are refused (HTTP 503) rather than shown every host. Roles keep working as before as long as none is limited.
+
 #### My Profile
 
 **Path:** `/settings/profile`

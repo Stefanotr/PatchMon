@@ -30,6 +30,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/PatchMon/PatchMon/server-source-code/internal/hostscope"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -57,6 +58,7 @@ var steps = []step{
 	{name: "role_permissions.can_restart_hosts", apply: addCanRestartHosts},
 	{name: "host_remote_restart", apply: addHostRemoteRestart},
 	{name: "patch_schedules", apply: addPatchSchedules},
+	{name: "role_host_scopes", apply: addRoleHostScopes},
 }
 
 // Waiting for a table a step changes: at most lockTimeout per attempt,
@@ -86,7 +88,14 @@ func ApplyURL(ctx context.Context, databaseURL string, log *slog.Logger) error {
 		return fmt.Errorf("connect: %w", err)
 	}
 	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
-	return Apply(ctx, conn, log)
+	if err := Apply(ctx, conn, log); err != nil {
+		return err
+	}
+	// Host scoping (row security on the host tables) is reconciled on every
+	// start, after the steps, so that it covers tables added since. It logs
+	// rather than fails: see hostscope.Reconcile.
+	hostscope.Reconcile(ctx, conn, log)
+	return nil
 }
 
 // Apply runs every step on db.
@@ -232,6 +241,28 @@ func addPatchSchedules(ctx context.Context, q querier) (bool, error) {
 		return false, err
 	}
 	if _, err := q.Exec(ctx, `CREATE INDEX patch_schedules_due ON patch_schedules (next_run_at) WHERE enabled`); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// addRoleHostScopes creates role_host_scopes: the roles limited to some host
+// groups (see internal/hostscope). A row limits its role, even with no group
+// left: deleting a group never widens what a role sees. No row: every host.
+func addRoleHostScopes(ctx context.Context, q querier) (bool, error) {
+	var exists bool
+	if err := q.QueryRow(ctx, `SELECT to_regclass('role_host_scopes') IS NOT NULL`).Scan(&exists); err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+	if _, err := q.Exec(ctx, `CREATE TABLE role_host_scopes (
+		role TEXT PRIMARY KEY REFERENCES role_permissions(role) ON UPDATE CASCADE ON DELETE CASCADE,
+		host_group_ids TEXT[] NOT NULL DEFAULT '{}',
+		updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+		updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`); err != nil {
 		return false, err
 	}
 	return true, nil
