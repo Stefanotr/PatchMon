@@ -221,12 +221,21 @@ type patchRun struct {
 // the server, which would otherwise record the real run as failed.
 var errDuplicatePatchRun = errors.New("this patch run is already in progress on this host")
 
-// registerPatchRun records a run so stop requests and restarts see it. A
-// real run is refused when a pending restart could cut it off: one this
-// agent scheduled, or one the operating system reports, before the run
-// could finish, or at a time it does not tell. A dry run changes nothing
-// and always starts. A duplicate of a run in progress is refused first,
-// with errDuplicatePatchRun, and leaves that run's entry alone.
+// errPatchRunBusy is returned for a run that arrives while another run is
+// still in progress on this host. The server allows one active run per host,
+// but it stops tracking a run it has timed out while the agent may still be
+// installing; two package managers at once break both runs, and a dry run
+// next to an install reads a half-updated package database.
+var errPatchRunBusy = errors.New("another patch run is still in progress on this host; run the patch again when it finishes")
+
+// registerPatchRun records a run so stop requests and restarts see it. One
+// run at a time: a run arriving while another is registered is refused with
+// errPatchRunBusy, dry runs included. A real run is also refused when a
+// pending restart could cut it off: one this agent scheduled, or one the
+// operating system reports, before the run could finish, or at a time it
+// does not tell; a dry run changes nothing and skips that check. A
+// duplicate of a run in progress is refused first, with
+// errDuplicatePatchRun, and leaves that run's entry alone.
 func registerPatchRun(id string, cancel context.CancelFunc, dryRun bool) (*patchRun, error) {
 	restartGate.Lock()
 	defer restartGate.Unlock()
@@ -238,6 +247,9 @@ func registerPatchRun(id string, cancel context.CancelFunc, dryRun bool) (*patch
 	}
 	if restartGate.agentRestartWaiting {
 		return nil, errors.New("the agent restarts to apply a new configuration once the patch run in progress is over; run the patch again in a few minutes")
+	}
+	if otherPatchRunInProgress(id) {
+		return nil, errPatchRunBusy
 	}
 	if !dryRun {
 		ctx, cancel := context.WithTimeout(context.Background(), ownerCheckTimeout)
