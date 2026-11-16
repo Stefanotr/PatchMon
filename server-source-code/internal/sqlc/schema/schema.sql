@@ -958,3 +958,9 @@ CREATE TABLE patch_schedules (
     updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX patch_schedules_due ON patch_schedules (next_run_at) WHERE enabled;
+CREATE TABLE role_host_scopes (
+    role TEXT PRIMARY KEY REFERENCES role_permissions(role) ON UPDATE CASCADE ON DELETE CASCADE,
+    host_group_ids TEXT[] NOT NULL DEFAULT '{}',
+    updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

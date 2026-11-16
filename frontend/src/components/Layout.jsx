@@ -35,6 +35,7 @@ import { useColorTheme } from "../contexts/ColorThemeContext";
 import { useSettings } from "../contexts/SettingsContext";
 import SidebarContext from "../contexts/SidebarContext";
 import { useUpdateNotification } from "../contexts/UpdateNotificationContext";
+import { useHostScope } from "../hooks/useHostScope";
 import { useGlobalRefresh } from "../hooks/usePageRefresh";
 import { tk } from "../i18n";
 import { alertsAPI, dashboardAPI, settingsAPI, versionAPI } from "../utils/api";
@@ -171,6 +172,9 @@ const Layout = ({ children }) => {
 	const canManageBilling =
 		publicSettings?.admin_mode === true && hasPermission("can_manage_billing");
 	const canViewHostsAllowed = canViewHosts();
+	// Fork: the job queues span every host; hidden from users limited to some
+	// host groups (the server refuses them too).
+	const hostScope = useHostScope();
 	const { updateAvailable } = useUpdateNotification();
 	const { themeConfig } = useColorTheme();
 	const userMenuRef = useRef(null);
@@ -422,7 +426,7 @@ const Layout = ({ children }) => {
 			// Automation shows asynq queue activity for the whole process, which
 			// on a managed deployment spans every context. Hidden there, as
 			// Metrics and Server Version are.
-			if (publicSettings?.admin_mode !== true) {
+			if (publicSettings?.admin_mode !== true && !hostScope.limited) {
 				systemItems.push({
 					name: tk("Automation"),
 					href: "/automation",

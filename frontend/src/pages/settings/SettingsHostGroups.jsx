@@ -4,9 +4,12 @@ import { useEffect, useId, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import ModalPortal from "../../components/ui/ModalPortal";
+import { useHostScope } from "../../hooks/useHostScope";
 import { hostGroupsAPI } from "../../utils/api";
 
 const SettingsHostGroups = () => {
+	// Fork: users limited to some host groups see theirs but cannot change them.
+	const hostScope = useHostScope();
 	const { t } = useTranslation();
 	const [showCreateModal, setShowCreateModal] = useState(false);
 	const [showEditModal, setShowEditModal] = useState(false);
@@ -105,15 +108,17 @@ const SettingsHostGroups = () => {
 		<div className="space-y-6">
 			{/* Header */}
 			<div className="flex justify-end items-center">
-				<button
-					type="button"
-					onClick={() => setShowCreateModal(true)}
-					className="btn-primary flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-end"
-					title={t("Create host group")}
-				>
-					<Plus className="h-4 w-4" />
-					{t("Create Group")}
-				</button>
+				{!hostScope.limited && (
+					<button
+						type="button"
+						onClick={() => setShowCreateModal(true)}
+						className="btn-primary flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-end"
+						title={t("Create host group")}
+					>
+						<Plus className="h-4 w-4" />
+						{t("Create Group")}
+					</button>
+				)}
 			</div>
 
 			{/* Host Groups Table */}
@@ -135,14 +140,16 @@ const SettingsHostGroups = () => {
 												{group.name}
 											</div>
 										</div>
-										<button
-											type="button"
-											onClick={() => handleEdit(group)}
-											className="text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-300 flex-shrink-0"
-											title={t("Edit group")}
-										>
-											<Edit className="h-4 w-4" />
-										</button>
+										{!hostScope.limited && (
+											<button
+												type="button"
+												onClick={() => handleEdit(group)}
+												className="text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-300 flex-shrink-0"
+												title={t("Edit group")}
+											>
+												<Edit className="h-4 w-4" />
+											</button>
+										)}
 									</div>
 
 									{/* Description */}
@@ -252,14 +259,16 @@ const SettingsHostGroups = () => {
 												</button>
 											</td>
 											<td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-												<button
-													type="button"
-													onClick={() => handleEdit(group)}
-													className="text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-300"
-													title={t("Edit group")}
-												>
-													<Edit className="h-4 w-4" />
-												</button>
+												{!hostScope.limited && (
+													<button
+														type="button"
+														onClick={() => handleEdit(group)}
+														className="text-secondary-400 hover:text-secondary-600 dark:text-white dark:hover:text-secondary-300"
+														title={t("Edit group")}
+													>
+														<Edit className="h-4 w-4" />
+													</button>
+												)}
 											</td>
 										</tr>
 									))}

@@ -76,7 +76,7 @@ import { useToast } from "../contexts/ToastContext";
 
 import { useHostDetailTab } from "../hooks/useHostDetailTab";
 import { useHostLiveActivity } from "../hooks/useHostLiveActivity";
-
+import { useHostScope } from "../hooks/useHostScope";
 import { usePageRefresh } from "../hooks/usePageRefresh";
 import { useHostRemoteRestart } from "../hooks/useRemoteRestart";
 import { useTick } from "../hooks/useTick";
@@ -171,6 +171,8 @@ const HostDetail = () => {
 	const toast = useToast();
 	const { canManageHosts, canRestartHosts, canUseRemoteAccess, hasModule } =
 		useAuth();
+	// Fork: users limited to some host groups cannot move hosts between them.
+	const hostScope = useHostScope();
 	const canRestart = canRestartHosts() && hasModule("patching");
 	// false when the host's agent refuses remote restarts: the restart is
 	// greyed out rather than refused once sent.
@@ -2343,6 +2345,7 @@ const HostDetail = () => {
 											) || [];
 										return (
 											<InlineMultiGroupEdit
+												disabled={hostScope.limited}
 												key={`${host.id}-${groupIds.join(",")}`}
 												value={groupIds}
 												onSave={(newGroupIds) =>
@@ -3442,6 +3445,7 @@ const HostDetail = () => {
 												) || [];
 											return (
 												<InlineMultiGroupEdit
+													disabled={hostScope.limited}
 													key={`${host.id}-${groupIds.join(",")}`}
 													value={groupIds}
 													onSave={(newGroupIds) =>

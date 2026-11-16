@@ -312,6 +312,17 @@ export const permissionsAPI = {
 	getUserPermissions: () => api.get("/permissions/user-permissions"),
 };
 
+// Host scope API (fork): roles limited to some host groups.
+export const hostScopeAPI = {
+	getMine: () => api.get("/host-scope/me"),
+	listRoles: () => api.get("/host-scope/roles"),
+	updateRole: (role, { limited, hostGroupIds }) =>
+		api.put(`/host-scope/roles/${encodeURIComponent(role)}`, {
+			limited,
+			host_group_ids: hostGroupIds,
+		}),
+};
+
 // Settings API
 export const settingsAPI = {
 	get: () => api.get("/settings"),

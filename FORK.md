@@ -7,6 +7,7 @@ Ce dépôt est un fork de [PatchMon/PatchMon](https://github.com/PatchMon/PatchM
 - les plannings de patch : un dry-run récurrent des mises à jour en attente d'un groupe d'hôtes, approuvé par une personne avant toute installation ;
 - le tampon du fork : le serveur sait de quel dépôt il vient et suit les releases du fork ;
 - une veille des versions officielles ;
+- l'accès aux hôtes par groupe : un rôle peut être limité aux hôtes de certains groupes, et PostgreSQL masque le reste (row-level security) ;
 - l'interface en français (langue du navigateur, ou choisie dans le profil ou sur la page de connexion). Les écrans principaux sont traduits, les autres restent en anglais pour l'instant.
 
 Le patching Windows est celui de PatchMon depuis la 2.1.4 : le fork a abandonné le sien en fusionnant cette version (release `v2.1.5-fork.1`).

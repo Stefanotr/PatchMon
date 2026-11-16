@@ -208,3 +208,42 @@ func TestCreatesThePatchSchedulesTable(t *testing.T) {
 		t.Fatalf("an existing table was recreated: %q", tx.stmts)
 	}
 }
+
+// txRunning returns the transaction that ran fragment, or nil.
+func txRunning(db *fakeDB, fragment string) *fakeTx {
+	for _, tx := range db.txs {
+		if tx.ran(fragment) {
+			return tx
+		}
+	}
+	return nil
+}
+
+func TestCreatesTheRoleHostScopesTable(t *testing.T) {
+	db := &fakeDB{}
+	if err := Apply(context.Background(), db, nil); err != nil {
+		t.Fatal(err)
+	}
+	tx := txRunning(db, "CREATE TABLE role_host_scopes")
+	if tx == nil {
+		t.Fatal("role_host_scopes not created")
+	}
+	// Deleting a role removes its limit; deleting a group never does (the
+	// ids are a plain array), so a limited role cannot end up unlimited.
+	if !tx.ran("REFERENCES role_permissions(role) ON UPDATE CASCADE ON DELETE CASCADE") || !tx.ran("host_group_ids TEXT[]") {
+		t.Fatalf("unexpected table: %q", tx.stmts)
+	}
+	if !tx.commit {
+		t.Fatal("not committed")
+	}
+}
+
+func TestLeavesAnExistingRoleHostScopesTableAlone(t *testing.T) {
+	db := &fakeDB{hasColumn: true}
+	if err := Apply(context.Background(), db, nil); err != nil {
+		t.Fatal(err)
+	}
+	if tx := txRunning(db, "CREATE TABLE role_host_scopes"); tx != nil {
+		t.Fatalf("an existing table was recreated: %q", tx.stmts)
+	}
+}

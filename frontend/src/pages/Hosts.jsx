@@ -53,6 +53,7 @@ import RestartHostModal from "../components/RestartHostModal";
 import ModalPortal from "../components/ui/ModalPortal";
 import Tooltip from "../components/ui/Tooltip";
 import { useAuth } from "../contexts/AuthContext";
+import { useHostScope } from "../hooks/useHostScope";
 import {
 	HOSTS_SORT_FIELDS,
 	useHostsUrlFilters,
@@ -159,6 +160,8 @@ const Hosts = () => {
 	// Host whose "allow remote restarts" command is shown.
 	const [restartHelpHost, setRestartHelpHost] = useState(null);
 	const { canRestartHosts, hasModule } = useAuth();
+	// Fork: users limited to some host groups cannot add hosts or move them.
+	const hostScope = useHostScope();
 	const canRestart = canRestartHosts() && hasModule("patching");
 	// Hosts whose agent refuses remote restarts: their restart is greyed out.
 	const remoteRestartByHost = useRemoteRestartMap(canRestart);
@@ -1440,6 +1443,7 @@ const Hosts = () => {
 					) || [];
 				return (
 					<InlineMultiGroupEdit
+						disabled={hostScope.limited}
 						key={`${host.id}-${groupIds.join(",")}`}
 						value={groupIds}
 						onSave={(newGroupIds) =>
@@ -1879,14 +1883,16 @@ const Hosts = () => {
 							className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
 						/>
 					</button>
-					<button
-						type="button"
-						onClick={() => setShowAddModal(true)}
-						className="btn-primary flex items-center gap-2"
-					>
-						<Plus className="h-4 w-4" />
-						{t("Add Host")}
-					</button>
+					{!hostScope.limited && (
+						<button
+							type="button"
+							onClick={() => setShowAddModal(true)}
+							className="btn-primary flex items-center gap-2"
+						>
+							<Plus className="h-4 w-4" />
+							{t("Add Host")}
+						</button>
+					)}
 				</div>
 			</div>
 
@@ -2039,17 +2045,19 @@ const Hosts = () => {
 									<span className="hidden sm:inline">{t("Fetch Reports")}</span>
 									<span className="sm:hidden">{t("Fetch")}</span>
 								</button>
-								<button
-									type="button"
-									onClick={() => setShowBulkAssignModal(true)}
-									className="btn-outline flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 min-h-[44px] text-xs sm:text-sm"
-								>
-									<FolderPlus className="h-4 w-4 flex-shrink-0" />
-									<span className="hidden sm:inline">
-										{t("Assign to Group")}
-									</span>
-									<span className="sm:hidden">{t("Assign")}</span>
-								</button>
+								{!hostScope.limited && (
+									<button
+										type="button"
+										onClick={() => setShowBulkAssignModal(true)}
+										className="btn-outline flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 min-h-[44px] text-xs sm:text-sm"
+									>
+										<FolderPlus className="h-4 w-4 flex-shrink-0" />
+										<span className="hidden sm:inline">
+											{t("Assign to Group")}
+										</span>
+										<span className="sm:hidden">{t("Assign")}</span>
+									</button>
+								)}
 								<button
 									type="button"
 									onClick={() => setShowBulkDeleteModal(true)}
